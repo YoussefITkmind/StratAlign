@@ -1,72 +1,49 @@
-import { plainToInstance, Type } from "class-transformer";
-import {
-  IsEnum,
-  IsInt,
-  IsString,
-  IsUrl,
-  Matches,
-  Max,
-  Min,
-  validateSync,
-} from "class-validator";
+import { z } from "zod";
 
-enum NodeEnvironment {
-  Development = "development",
-  Test = "test",
-  Production = "production",
-}
+const environmentSchema = z.object({
+  NODE_ENV: z
+    .enum(["development", "test", "production"])
+    .default("development"),
 
-class EnvironmentVariables {
-  @IsEnum(NodeEnvironment)
-  NODE_ENV!: NodeEnvironment;
+  PORT: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(65535, "PORT must not be greater than 65535")
+    .default(4000),
 
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(65535)
-  PORT!: number;
+  FRONTEND_URL: z
+    .string()
+    .url()
+    .default("http://localhost:3000"),
 
-  @IsUrl({
-    require_tld: false,
-    protocols: ["http", "https"],
-  })
-  FRONTEND_URL!: string;
+  DATABASE_URL: z
+    .string()
+    .regex(/^postgres(?:ql)?:\/\//, {
+      message: "DATABASE_URL must be a PostgreSQL connection URL",
+    }),
 
-  @IsString()
-  @Matches(/^postgres(?:ql)?:\/\//, {
-    message: "DATABASE_URL must be a PostgreSQL connection URL",
-  })
-  DATABASE_URL!: string;
+  REDIS_URL: z
+    .string()
+    .regex(/^rediss?:\/\//, {
+      message: "REDIS_URL must be a Redis connection URL",
+    }),
+});
 
-  @IsString()
-  @Matches(/^rediss?:\/\//, {
-    message: "REDIS_URL must be a Redis connection URL",
-  })
-  REDIS_URL!: string;
-}
+export type Environment = z.infer<typeof environmentSchema>;
 
 export function validateEnvironment(
   configuration: Record<string, unknown>,
-): Record<string, unknown> {
-  const validatedConfiguration = plainToInstance(
-    EnvironmentVariables,
-    configuration,
-    {
-      enableImplicitConversion: true,
-    },
-  );
+): Environment {
+  const result = environmentSchema.safeParse(configuration);
 
-  const errors = validateSync(validatedConfiguration, {
-    skipMissingProperties: false,
-  });
-
-  if (errors.length > 0) {
-    const messages = errors
-      .flatMap((error) => Object.values(error.constraints ?? {}))
+  if (!result.success) {
+    const messages = result.error.issues
+      .map((issue) => issue.message)
       .join("; ");
 
     throw new Error(`Environment validation failed: ${messages}`);
   }
 
-  return configuration;
+  return result.data;
 }

@@ -90,6 +90,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+    
+      - name: Build shared API
+        run: pnpm --filter @spm/api build
 
       - name: Validate Prisma schema
         run: pnpm --filter @spm/backend exec prisma validate

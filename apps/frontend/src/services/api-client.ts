@@ -1,22 +1,24 @@
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+import {
+  createTRPCClient,
+  httpBatchLink,
+} from "@trpc/client";
+import type { AppRouter } from "@spm/api";
 
-export async function apiRequest<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    cache: "no-store",
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
+const TRPC_URL =
+  process.env.NEXT_PUBLIC_TRPC_URL ??
+  "http://localhost:4000/trpc";
 
-  if (!response.ok) {
-    throw new Error(`API request failed with status ${response.status}`);
-  }
+export const trpcClient = createTRPCClient<AppRouter>({
+  links: [
+    httpBatchLink({
+      url: TRPC_URL,
 
-  return response.json() as Promise<T>;
-}
+      fetch(url, options) {
+        return globalThis.fetch(url, {
+          ...options,
+          cache: "no-store",
+        });
+      },
+    }),
+  ],
+});

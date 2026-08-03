@@ -1,17 +1,11 @@
-import { apiRequest } from "./api-client";
+import type { HealthStatus } from "@spm/api";
+import { trpcClient } from "./api-client";
 
-export type HealthStatus = {
-  status: string;
-  service: string;
-  database: string;
-  redis: string;
-  timestamp: string;
-  uptimeSeconds: number;
-};
+export type { HealthStatus };
 
 export async function getHealthStatus(): Promise<HealthStatus | null> {
   try {
-    return await apiRequest<HealthStatus>("/health");
+    return await trpcClient.health.check.query();
   } catch {
     return null;
   }

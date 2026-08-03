@@ -10,6 +10,8 @@
     "lint": "eslint src test --max-warnings=0"
   },
   "dependencies": {
+    "@spm/api": "workspace:*",
+    "@trpc/client": "^11.18.0",
     "next": "^16.2.12",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

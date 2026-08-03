@@ -1,15 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { apiRequest } from "../src/services/api-client";
+import { trpcClient } from "../src/services/api-client";
 import {
   getHealthStatus,
   type HealthStatus,
 } from "../src/services/health.service";
 
 vi.mock("../src/services/api-client", () => ({
-  apiRequest: vi.fn(),
+  trpcClient: {
+    health: {
+      check: {
+        query: vi.fn(),
+      },
+    },
+  },
 }));
 
-const mockedApiRequest = vi.mocked(apiRequest);
+const mockedHealthQuery = vi.mocked(
+  trpcClient.health.check.query,
+);
 
 const healthyResponse: HealthStatus = {
   status: "ok",
@@ -22,18 +30,22 @@ const healthyResponse: HealthStatus = {
 
 describe("getHealthStatus", () => {
   beforeEach(() => {
-    mockedApiRequest.mockReset();
+    mockedHealthQuery.mockReset();
   });
 
   it("returns backend health information", async () => {
-    mockedApiRequest.mockResolvedValue(healthyResponse);
+    mockedHealthQuery.mockResolvedValue(healthyResponse);
 
-    await expect(getHealthStatus()).resolves.toEqual(healthyResponse);
-    expect(mockedApiRequest).toHaveBeenCalledWith("/health");
+    await expect(getHealthStatus()).resolves.toEqual(
+      healthyResponse,
+    );
+    expect(mockedHealthQuery).toHaveBeenCalledOnce();
   });
 
   it("returns null when the backend request fails", async () => {
-    mockedApiRequest.mockRejectedValue(new Error("Backend unavailable"));
+    mockedHealthQuery.mockRejectedValue(
+      new Error("Backend unavailable"),
+    );
 
     await expect(getHealthStatus()).resolves.toBeNull();
   });
