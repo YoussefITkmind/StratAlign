@@ -1,0 +1,64 @@
+name: Pull Request Quality Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pull-request-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, test and build monorepo
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NODE_ENV: test
+      PORT: 4000
+      FRONTEND_URL: http://localhost:3000
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+      DATABASE_URL: postgresql://spm:spm_test_password@localhost:5432/spm_platform
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check peer dependencies
+        run: pnpm peers check
+
+      - name: Lint monorepo
+        run: pnpm lint
+
+      - name: Test monorepo
+        run: pnpm test
+
+      - name: Build monorepo
+        run: pnpm build
