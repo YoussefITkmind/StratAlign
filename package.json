@@ -10,8 +10,13 @@
     "lint": "turbo lint"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.2.12",
+    "globals": "^17.8.0",
     "turbo": "^2.5.0",
     "typescript": "^5.8.0",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^3.2.0"
   }
 }

@@ -9,6 +9,7 @@
     "start": "nest start",
     "start:prod": "node dist/main.js",
     "test": "vitest run",
+    "lint": "eslint src test --max-warnings=0",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
