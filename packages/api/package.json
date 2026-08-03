@@ -1,0 +1,17 @@
+{
+  "name": "@spm/api",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src --max-warnings=0"
+  },
+  "dependencies": {
+    "@trpc/server": "^11.18.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

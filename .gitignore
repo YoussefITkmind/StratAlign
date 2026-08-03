@@ -42,3 +42,6 @@ Thumbs.db
 
 # Pulumi local files
 .pulumi/
+
+# Generated Prisma client
+apps/backend/src/generated/

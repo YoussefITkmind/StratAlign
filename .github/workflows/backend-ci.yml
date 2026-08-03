@@ -1,0 +1,116 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/backend/**"
+      - "packages/**"
+      - "docker-compose.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
+      - "tsconfig.json"
+      - "eslint.config.js"
+      - ".github/workflows/backend-ci.yml"
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/backend/**"
+      - "packages/**"
+      - "docker-compose.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
+      - "tsconfig.json"
+      - "eslint.config.js"
+      - ".github/workflows/backend-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Lint, test, migrate and build backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NODE_ENV: test
+      PORT: 4000
+      FRONTEND_URL: http://localhost:3000
+      DATABASE_URL: postgresql://spm:spm_test_password@localhost:5432/spm_platform
+      REDIS_URL: redis://localhost:6379
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: spm
+          POSTGRES_PASSWORD: spm_test_password
+          POSTGRES_DB: spm_platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U spm -d spm_platform"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+    
+      - name: Build shared API
+        run: pnpm --filter @spm/api build
+
+      - name: Generate Prisma Client
+        run: pnpm --filter @spm/backend run db:generate
+
+      - name: Validate Prisma schema
+        run: pnpm --filter @spm/backend exec prisma validate
+
+      - name: Apply database migrations
+        run: pnpm --filter @spm/backend exec prisma migrate deploy
+
+      - name: Seed test database
+        run: pnpm --filter @spm/backend run db:seed
+
+      - name: Lint backend
+        run: pnpm --filter @spm/backend lint
+
+      - name: Test backend
+        run: pnpm --filter @spm/backend test
+
+      - name: Build backend
+        run: pnpm --filter @spm/backend build

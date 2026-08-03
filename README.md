@@ -17,7 +17,8 @@ The platform enables organizations to define strategic objectives, manage KPIs a
 
 ## Backend
 
-- NestJS
+- Node.js
+- tRPC
 - Prisma ORM
 - PostgreSQL
 - BullMQ
@@ -92,7 +93,7 @@ spm-platform/
 | -------------- | ----------------------------------------------- |
 | apps           | Deployable applications                         |
 | frontend       | Next.js web application                         |
-| backend        | NestJS backend API                              |
+| backend        | Node.js and tRPC backend API                    |
 | packages       | Shared code between applications                |
 | docs           | Project documentation                           |
 | tests          | End-to-end, performance and accessibility tests |
