@@ -5,6 +5,7 @@ import {
   beforeAll,
   afterAll,
   beforeEach,
+  afterEach,
   vi,
 } from 'vitest';
 import { setupTestEnvironment, TestEnvironment } from './db-test-helper';
@@ -195,6 +196,18 @@ describe('Audit Module - Phase 2, 3, 4 & 5', () => {
   });
 
   describe('HashChainVerificationService & VerificationWorker', () => {
+    beforeEach(() => {
+      // restoreMocks (vitest.config.ts) wipes mockQueue.add's implementation
+      // between tests, since it's only set once at module scope.
+      vi.mocked(mockQueue.add).mockImplementation(
+        (name: string, data: unknown) => {
+          return { id: 'mock-job-id', name, data } as unknown as ReturnType<
+            Queue['add']
+          >;
+        },
+      );
+    });
+
     it('should verify a complete valid chain', async () => {
       // Clear database journal entries for deterministic verification
       await env.prisma.journalEntry.deleteMany({});
