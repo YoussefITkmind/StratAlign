@@ -1,0 +1,9 @@
+- sub: foo
+  name: Foo
+  email: foo@example.com
+  aud: spm-web
+
+- sub: bar
+  name: Bar
+  email: bar@example.com
+  aud: spm-web
