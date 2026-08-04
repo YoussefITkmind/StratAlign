@@ -1,19 +1,138 @@
 generator client {
-  provider     = "prisma-client"
-  output       = "../src/generated/prisma"
-  moduleFormat = "cjs"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-model SystemSetting {
-  id        String   @id @default(uuid())
-  key       String   @unique
-  value     Json
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@map("system_settings")
+model PeriodCalendar {
+  id         String   @id @default(uuid())
+  name       String
+  fiscalYear Int
+  startDate  DateTime
+  endDate    DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
+
+enum CadenceType {
+  MONTHLY
+  QUARTERLY
+  ADHOC
+}
+
+model CadenceDefinition {
+  id              String            @id @default(uuid())
+  name            String
+  cadenceType     CadenceType
+  dayOffset       Int
+  warningLeadDays Int
+  active          Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  instances       CadenceInstance[]
+}
+
+enum CadenceStatus {
+  PENDING
+  OPEN
+  CLOSING
+  CLOSED
+}
+
+model CadenceInstance {
+  id                  String            @id @default(uuid())
+  cadenceDefinitionId String
+  cadenceDefinition   CadenceDefinition @relation(fields: [cadenceDefinitionId], references: [id], onDelete: Cascade)
+  periodRef           String
+  dueAt               DateTime
+  openedAt            DateTime
+  closingAt           DateTime
+  closedAt            DateTime
+  status              CadenceStatus
+  dueEventEmitted     Boolean           @default(false)
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+}
+
+enum NotificationChannel {
+  EMAIL
+  TEAMS
+}
+
+model NotificationTemplate {
+  id         String              @id @default(uuid())
+  key        String              @unique
+  channel    NotificationChannel
+  subjectEn  String
+  subjectAr  String
+  bodyEn     String
+  bodyAr     String
+  digestible Boolean             @default(false)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+}
+
+enum DeliveryStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+model NotificationDelivery {
+  id              String              @id @default(uuid())
+  templateKey     String
+  recipientUserId String
+  recipientUser   User                @relation(fields: [recipientUserId], references: [id], onDelete: Cascade)
+  channel         NotificationChannel
+  renderedSubject String
+  renderedBody    String
+  status          DeliveryStatus
+  retries         Int                 @default(0)
+  sentAt          DateTime?
+  createdAt       DateTime            @default(now())
+}
+
+enum Locale {
+  EN
+  AR
+}
+
+model User {
+  id              String                 @id @default(uuid())
+  name            String
+  email           String                 @unique
+  preferredLocale Locale                 @default(EN)
+  deliveries      NotificationDelivery[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+}
+
+model JournalEntry {
+  id           String           @id @default(uuid())
+  action       String
+  entityType   String
+  entityId     String
+  userId       String?
+  metadata     Json?
+  previousHash String?
+  entryHash    String
+  createdAt    DateTime         @default(now())
+  snapshots    EntitySnapshot[]
+}
+
+model EntitySnapshot {
+  id             String       @id @default(uuid())
+  journalEntryId String
+  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  entityType     String
+  entityId       String
+  state          Json
+  version        Int          @default(1)
+  isActive       Boolean      @default(true)
+  validFrom      DateTime     @default(now())
+  validTo        DateTime?
+  createdAt      DateTime     @default(now())
+}
+
