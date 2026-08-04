@@ -5,6 +5,7 @@ import { PrismaService } from "./database/prisma.service";
 import { HealthService } from "./modules/health/health.service";
 import { RedisService } from "./redis/redis.service";
 import { appRouter } from "@spm/api";
+import { CredentialService } from "./modules/auth/credential.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -18,15 +19,16 @@ async function bootstrap(): Promise<void> {
     redis.connect(),
   ]);
 
+  const credentials = await CredentialService.create(prisma);
+
   const server = createHTTPServer({
     router: appRouter,
     basePath: "/trpc/",
 
     createContext() {
       return {
-        prisma,
-        redis,
         health,
+        credentials,
       };
     },
 
