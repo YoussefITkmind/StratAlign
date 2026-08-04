@@ -6,6 +6,7 @@ import { HealthService } from "./modules/health/health.service";
 import { RedisService } from "./redis/redis.service";
 import { appRouter } from "@spm/api";
 import { CredentialService } from "./modules/auth/credential.service";
+import { LoginRateLimiterService } from "./modules/auth/login-rate-limiter.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -21,14 +22,20 @@ async function bootstrap(): Promise<void> {
 
   const credentials = await CredentialService.create(prisma);
 
+  const loginRateLimiter = new LoginRateLimiterService(
+    redis.getClient(),
+  );
+
   const server = createHTTPServer({
     router: appRouter,
     basePath: "/trpc/",
 
-    createContext() {
+    createContext({ req }) {
       return {
         health,
         credentials,
+        loginRateLimiter,
+        clientIp: req.socket.remoteAddress ?? "unknown",
       };
     },
 

@@ -30,9 +30,29 @@ export interface CredentialServiceContract {
   ): Promise<AuthenticatedUser | null>;
 }
 
+export interface LoginRateLimitResult {
+  allowed: boolean;
+  remainingAttempts: number;
+  retryAfterSeconds: number;
+}
+
+export interface LoginRateLimiterContract {
+  consume(
+    clientIp: string,
+    email: string,
+  ): Promise<LoginRateLimitResult>;
+
+  reset(
+    clientIp: string,
+    email: string,
+  ): Promise<void>;
+}
+
 export interface TrpcContext {
   health: HealthServiceContract;
   credentials: CredentialServiceContract;
+  loginRateLimiter: LoginRateLimiterContract;
+  clientIp: string;
 }
 
 const t = initTRPC.context<TrpcContext>().create();
@@ -57,6 +77,20 @@ export const appRouter = router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
+        const rateLimit =
+          await ctx.loginRateLimiter.consume(
+            ctx.clientIp,
+            input.email,
+          );
+
+        if (!rateLimit.allowed) {
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message:
+              "Too many login attempts. Please try again later.",
+          });
+        }
+
         const user = await ctx.credentials.authenticate(
           input.email,
           input.password,
@@ -68,6 +102,11 @@ export const appRouter = router({
             message: "Invalid email or password",
           });
         }
+
+        await ctx.loginRateLimiter.reset(
+          ctx.clientIp,
+          input.email,
+        );
 
         return user;
       }),
