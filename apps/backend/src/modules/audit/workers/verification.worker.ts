@@ -4,6 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   HashChainVerificationService,
   VerificationJobData,
+  VerificationReport,
 } from '../hash-chain-verification.service';
 
 @Processor('audit-verification-queue')
@@ -17,7 +18,9 @@ export class VerificationWorker extends WorkerHost {
     super();
   }
 
-  async process(job: Job<VerificationJobData, any, string>): Promise<any> {
+  async process(
+    job: Job<VerificationJobData, VerificationReport, string>,
+  ): Promise<VerificationReport> {
     const { id, data } = job;
     this.logger.debug(`Starting audit verification job ${id || ''}...`);
 

@@ -4,7 +4,7 @@ export interface SIEMLogOptions {
   event: string;
   classification: SIEMClassification;
   message: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface SIEMSender {

@@ -12,7 +12,7 @@ export class SnapshotService {
     journalEntryId: string,
     entityType: string,
     entityId: string,
-    state: Record<string, any>,
+    state: Record<string, unknown>,
   ): Promise<EntitySnapshot> {
     const now = new Date();
 

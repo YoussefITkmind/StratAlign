@@ -166,7 +166,7 @@ describe('Audit Module - Phase 2, 3, 4 & 5', () => {
           userId: 'user-999',
           metadata: { template: 'review-due' },
         },
-      } as unknown as Job<OutboxJobData, any, string>;
+      } as unknown as Job<OutboxJobData, void, string>;
 
       // Assert that there's a certain number of entries before
       const countBefore = await env.prisma.journalEntry.count();
@@ -340,7 +340,6 @@ describe('Audit Module - Phase 2, 3, 4 & 5', () => {
         startDate: new Date().toISOString(),
       };
       const job = await verificationService.triggerVerificationJob(mockParams);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(vi.mocked(mockQueue.add)).toHaveBeenCalledWith(
         'verify-chain',
         mockParams,
@@ -360,11 +359,9 @@ describe('Audit Module - Phase 2, 3, 4 & 5', () => {
         id: 'job-verify-1',
         name: 'verify-chain',
         data: {},
-      } as unknown as Job<VerificationJobData, any, string>;
+      } as unknown as Job<VerificationJobData, VerificationReport, string>;
 
-      const report = (await verificationWorker.process(
-        mockJob,
-      )) as VerificationReport;
+      const report = await verificationWorker.process(mockJob);
       expect(report.isValid).toBe(true);
       expect(report.totalVerified).toBe(1);
     });
@@ -1126,9 +1123,7 @@ describe('WithAuditTapMiddleware - Phase 6', () => {
       // Allow the microtask queue to settle
       await new Promise((r) => setTimeout(r, 0));
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(vi.mocked(mockOutboxQueue.add)).toHaveBeenCalledOnce();
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       const firstCall = vi.mocked(mockOutboxQueue.add).mock.calls[0];
       const jobName = firstCall[0];
       const jobData = firstCall[1] as Record<string, string>;
@@ -1147,7 +1142,6 @@ describe('WithAuditTapMiddleware - Phase 6', () => {
       res.emit('finish');
       await new Promise((r) => setTimeout(r, 0));
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(vi.mocked(mockOutboxQueue.add)).not.toHaveBeenCalled();
     });
 
@@ -1160,7 +1154,6 @@ describe('WithAuditTapMiddleware - Phase 6', () => {
       res.emit('finish');
       await new Promise((r) => setTimeout(r, 0));
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(vi.mocked(mockOutboxQueue.add)).toHaveBeenCalledOnce();
     });
 
@@ -1175,7 +1168,6 @@ describe('WithAuditTapMiddleware - Phase 6', () => {
       res.emit('finish');
       await new Promise((r) => setTimeout(r, 0));
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(vi.mocked(mockOutboxQueue.add)).not.toHaveBeenCalled();
     });
 

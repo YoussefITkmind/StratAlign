@@ -26,7 +26,7 @@ export class AuditService {
     entityType: string,
     entityId: string,
     userId?: string | null,
-    metadata?: Record<string, any> | null,
+    metadata?: Record<string, unknown> | null,
   ) {
     return this.journalService.createEntry({
       action,

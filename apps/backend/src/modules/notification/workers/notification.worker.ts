@@ -12,7 +12,7 @@ export class NotificationWorker extends WorkerHost {
     super();
   }
 
-  async process(job: Job<{ deliveryId: string }, any, string>): Promise<any> {
+  async process(job: Job<{ deliveryId: string }, void, string>): Promise<void> {
     if (job.name === 'send-notification') {
       const { deliveryId } = job.data;
       this.logger.debug(`Processing notification delivery ${deliveryId}...`);

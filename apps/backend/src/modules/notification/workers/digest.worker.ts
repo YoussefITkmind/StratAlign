@@ -12,7 +12,7 @@ export class DigestWorker extends WorkerHost {
     super();
   }
 
-  async process(job: Job<any, any, string>): Promise<any> {
+  async process(job: Job<unknown, void, string>): Promise<void> {
     if (job.name === 'compile-digests') {
       this.logger.debug('Running batch digest processing...');
       await this.digestService.processDigests();

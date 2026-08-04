@@ -15,7 +15,7 @@ export class JournalService {
     entityType: string;
     entityId: string;
     userId?: string | null;
-    metadata?: Record<string, any> | null;
+    metadata?: Record<string, unknown> | null;
   }): Promise<JournalEntry> {
     return this.prisma.$transaction(async (tx) => {
       // Fetch the last entry to chain the hash

@@ -76,7 +76,7 @@ test.describe('SPM Platform - Playwright E2E API Testing', () => {
     expect(entry.entityId).toBe('POST:/scheduler/cadence');
 
     // Check metadata content
-    const metadata = entry.metadata as Record<string, any>;
+    const metadata = entry.metadata as Record<string, unknown>;
     expect(metadata.method).toBe('POST');
     expect(metadata.path).toBe('/scheduler/cadence');
     expect(metadata.statusCode).toBe(201);

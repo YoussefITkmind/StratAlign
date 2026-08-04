@@ -8,7 +8,7 @@ export interface OutboxJobData {
   entityType: string;
   entityId: string;
   userId?: string | null;
-  metadata?: Record<string, any> | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 @Processor('outbox-queue')
@@ -20,7 +20,7 @@ export class OutboxWorker extends WorkerHost {
     super();
   }
 
-  async process(job: Job<OutboxJobData, any, string>): Promise<void> {
+  async process(job: Job<OutboxJobData, void, string>): Promise<void> {
     const { id, name, data } = job;
     this.logger.debug(`Processing outbox job ${id || ''} (name: ${name})...`);
 

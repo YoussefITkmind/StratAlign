@@ -5,7 +5,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 export class EventBusService {
   constructor(private readonly eventEmitter: EventEmitter2) {}
 
-  emit(event: string, payload: any): boolean {
+  emit<T = unknown>(event: string, payload: T): boolean {
     return this.eventEmitter.emit(event, payload);
   }
 }

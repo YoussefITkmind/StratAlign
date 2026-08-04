@@ -81,7 +81,7 @@ export class HashChainVerificationService {
     for (const record of records) {
       // Parse metadata to match the shape expected by hash calculation
       const metadata = record.metadata
-        ? (record.metadata as Record<string, any>)
+        ? (record.metadata as Record<string, unknown>)
         : null;
 
       // Verify previousHash link

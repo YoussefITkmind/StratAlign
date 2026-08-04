@@ -31,7 +31,7 @@ export class NotificationService {
   async queue(
     templateKey: string,
     recipientUserId: string,
-    variables: Record<string, any>,
+    variables: Record<string, unknown>,
   ): Promise<NotificationDelivery> {
     const user = await this.prisma.user.findUnique({
       where: { id: recipientUserId },

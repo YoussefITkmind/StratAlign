@@ -8,7 +8,7 @@ export class HashChainService {
     entityType: string;
     entityId: string;
     userId: string | null;
-    metadata: Record<string, any> | null;
+    metadata: Record<string, unknown> | null;
     previousHash: string | null;
   }): string {
     const serializedMetadata = data.metadata
