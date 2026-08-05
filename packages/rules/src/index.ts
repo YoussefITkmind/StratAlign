@@ -45,3 +45,16 @@ export {
 } from "./schemas/variance-alert";
 
 export { evaluateVarianceAlert } from "./evaluators/variance-alert";
+
+export {
+  ragAggregationInputSchema,
+  ragAggregationResultSchema,
+  ragAggregationRuleSchema,
+  ragStatusSchema,
+  type RagAggregationInput,
+  type RagAggregationResult,
+  type RagAggregationRule,
+  type RagStatus,
+} from "./schemas/rag-aggregation";
+
+export { evaluateRagAggregation } from "./evaluators/rag-aggregation";
