@@ -262,10 +262,20 @@ describe("OidcTokenValidationService", () => {
     const wrongKeyToken = await signToken(secondaryKey);
     const validToken = await signToken(primaryKey);
     const segments = validToken.split(".");
+    const tamperedPayload = Buffer.from(
+      JSON.stringify({
+        ...JSON.parse(
+          Buffer.from(segments[1] ?? "", "base64url").toString(
+            "utf8",
+          ),
+        ),
+        email: "tampered@example.test",
+      }),
+    ).toString("base64url");
     const tamperedToken = [
       segments[0],
-      segments[1],
-      `${segments[2]?.slice(0, -1)}${segments[2]?.endsWith("A") ? "B" : "A"}`,
+      tamperedPayload,
+      segments[2],
     ].join(".");
 
     await expect(service.validate(wrongKeyToken)).rejects.toEqual(
