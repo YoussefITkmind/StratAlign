@@ -1,19 +1,19 @@
 {
-  "name": "@spm/api",
+  "name": "@spm/domain-iam",
   "version": "1.0.0",
   "private": true,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "lint": "eslint src --max-warnings=0"
+    "lint": "eslint src test --max-warnings=0",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@spm/domain-iam": "workspace:*",
-    "@trpc/server": "^11.18.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "3.2.7"
   }
 }
