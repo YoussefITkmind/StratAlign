@@ -70,7 +70,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       
       - name: Build shared API
-        run: pnpm --filter @spm/api build
+        run: pnpm --filter @spm/api... build
 
       - name: Lint frontend
         run: pnpm --filter @spm/frontend lint

@@ -101,7 +101,7 @@ jobs:
         run: pnpm install --frozen-lockfile
     
       - name: Build shared API
-        run: pnpm --filter @spm/api build
+        run: pnpm --filter @spm/api... build
 
       - name: Generate Prisma Client
         run: pnpm --filter @spm/backend run db:generate
