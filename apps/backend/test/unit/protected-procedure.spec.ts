@@ -1,4 +1,4 @@
-import { appRouter } from "@spm/api";
+import { appRouter, protectedProcedure, router } from "@spm/api";
 import { describe, expect, it, vi } from "vitest";
 
 const baseContext = {
@@ -46,5 +46,21 @@ describe("protectedProcedure", () => {
       code: "UNAUTHORIZED",
       message: "Authentication required",
     });
+  });
+
+  it("runs authentication middleware before the protected resolver", async () => {
+    const resolver = vi.fn(() => "protected result");
+    const orderRouter = router({
+      protectedValue: protectedProcedure.query(resolver),
+    });
+    const caller = orderRouter.createCaller({
+      ...baseContext,
+      session: null,
+    });
+
+    await expect(caller.protectedValue()).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+    expect(resolver).not.toHaveBeenCalled();
   });
 });
