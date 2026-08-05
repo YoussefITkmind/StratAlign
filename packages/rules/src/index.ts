@@ -18,3 +18,16 @@ export {
 } from "./schemas/threshold-status";
 
 export { evaluateThresholdStatus } from "./evaluators/threshold-status";
+
+export {
+  rollupInputSchema,
+  rollupMethodSchema,
+  rollupResultSchema,
+  rollupRuleSchema,
+  type RollupInput,
+  type RollupMethod,
+  type RollupResult,
+  type RollupRule,
+} from "./schemas/rollup";
+
+export { evaluateRollup } from "./evaluators/rollup";
