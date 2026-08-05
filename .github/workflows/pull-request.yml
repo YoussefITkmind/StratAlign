@@ -54,6 +54,12 @@ jobs:
       - name: Check peer dependencies
         run: pnpm peers check
 
+      - name: Build shared API
+        run: pnpm --filter @spm/api build
+
+      - name: Generate Prisma Client
+        run: pnpm --filter @spm/backend run db:generate
+
       - name: Lint monorepo
         run: pnpm lint
 
