@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam"]
+  schemas  = ["public", "iam", "rules"]
 }
 
 model SystemSetting {
@@ -32,6 +32,7 @@ model User {
   scopeGrants     ScopeGrant[]       @relation("ScopeGrantUser")
   grantsGiven     ScopeGrant[]       @relation("ScopeGrantGrantor")
   mappingsCreated GroupRoleMapping[] @relation("MappingCreator")
+  rulesCreated    RuleDefinition[]   @relation("RuleDefinitionCreator")
 
   @@map("users")
   @@schema("iam")
@@ -142,4 +143,50 @@ model LocalCredential {
 
   @@map("local_credentials")
   @@schema("iam")
+}
+
+enum RuleType {
+  THRESHOLD_STATUS @map("threshold_status")
+  ROLLUP           @map("rollup")
+  VARIANCE_ALERT   @map("variance_alert")
+  RAG_AGGREGATION  @map("rag_aggregation")
+  GATE_CRITERIA    @map("gate_criteria")
+
+  @@schema("rules")
+}
+
+enum RuleDefinitionStatus {
+  DRAFT      @map("draft")
+  PUBLISHED  @map("published")
+  SUPERSEDED @map("superseded")
+
+  @@schema("rules")
+}
+
+model RuleDefinition {
+  id           String               @id @default(uuid())
+  ruleKey      String               @map("rule_key")
+  ruleType     RuleType             @map("rule_type")
+  name         String
+  documentJson Json                 @map("document_json")
+  version      Int
+  status       RuleDefinitionStatus @default(DRAFT)
+  isCurrent    Boolean              @default(true) @map("is_current")
+  publishedAt  DateTime?            @map("published_at")
+  supersedesId String?              @unique @map("supersedes_id")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  createdById  String               @map("created_by")
+
+  createdBy    User            @relation("RuleDefinitionCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  supersedes   RuleDefinition? @relation("RuleDefinitionVersions", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy RuleDefinition? @relation("RuleDefinitionVersions")
+
+  @@unique([ruleKey, version])
+  @@index([ruleKey, isCurrent])
+  @@index([ruleType])
+  @@index([status])
+  @@index([publishedAt])
+  @@index([createdById])
+  @@map("rule_definitions")
+  @@schema("rules")
 }
