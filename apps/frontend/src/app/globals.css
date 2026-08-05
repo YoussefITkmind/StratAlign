@@ -1,3 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Overridden per-tenant by Phase 0's white-label theming engine. */
+  --brand-accent: #4fb6c9;
+}
+
 * {
   box-sizing: border-box;
 }
