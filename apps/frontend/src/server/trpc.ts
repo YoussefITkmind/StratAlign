@@ -1,15 +1,15 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { auth } from "@/lib/auth/auth";
-import { findUserByEmail, stepUpVerifications } from "@/server/mock-db";
-
-/** Step-up re-auth is considered fresh for this long. */
-const STEP_UP_TTL_MS = 5 * 60 * 1000;
+import { findUserByEmail } from "@/server/mock-db";
+import { headers } from "next/headers";
+import { StepUpRequiredError } from "@spm/domain-iam";
 
 export async function createTRPCContext() {
   const session = await auth();
   const user = session?.user?.email ? findUserByEmail(session.user.email) : undefined;
-  return { session, user };
+  const requestHeaders = await headers();
+  return { session, user, cookieHeader: requestHeaders.get("cookie") };
 }
 
 type Context = Awaited<ReturnType<typeof createTRPCContext>>;
@@ -26,18 +26,30 @@ const t = initTRPC.context<Context>().create({
         // "step up required" value, so we carry it as extra error data
         // instead of overloading FORBIDDEN's meaning silently.
         stepUpRequired: error.cause instanceof StepUpRequiredError,
+        actionClass: error.cause instanceof StepUpRequiredError
+          ? error.cause.actionClass
+          : undefined,
         ownSubmission: error.cause instanceof OwnSubmissionError,
       },
     };
   },
 });
 
-export class StepUpRequiredError extends Error {}
 /** Separation-of-duties: submitter tried to decide their own governance case. */
 export class OwnSubmissionError extends Error {}
 
 export const router = t.router;
 export const publicProcedure = t.procedure;
+
+// Track A procedures authorize against the canonical Auth.js session and then
+// delegate role/scope enforcement to the backend IAM router. Track D's legacy
+// mock-backed procedures continue to use `protectedProcedure` below.
+export const authenticatedProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.session?.user?.id) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in required." });
+  }
+  return next({ ctx: { ...ctx, session: ctx.session } });
+});
 
 export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.user) {
@@ -56,22 +68,3 @@ export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
   }
   return next({ ctx });
 });
-
-/**
- * Wrap a sensitive admin mutation so it requires a fresh step-up re-auth
- * (verified via `iam.verifyStepUp`) within the last 5 minutes. Mirrors the
- * intended `withStepUpCheck` contract from Prompt 1.2: throws a
- * distinguishable error the client can catch and respond to by opening the
- * step-up modal, without forcing a full logout.
- */
-export function requireStepUp<T extends { user: { id: string } }>(ctx: T) {
-  const verifiedAt = stepUpVerifications.get(ctx.user.id);
-  const fresh = verifiedAt && Date.now() - new Date(verifiedAt).getTime() < STEP_UP_TTL_MS;
-  if (!fresh) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "Re-authentication required to complete this action.",
-      cause: new StepUpRequiredError(),
-    });
-  }
-}
