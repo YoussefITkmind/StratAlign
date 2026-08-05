@@ -19,16 +19,40 @@ export async function loginWithCredentials(
   }
 }
 
+export async function loginAs(
+  page: Page,
+  role: "platform_administrator" | "member",
+) {
+  const emailVariable = role === "platform_administrator"
+    ? "E2E_ADMIN_EMAIL"
+    : "E2E_MEMBER_EMAIL";
+  const email = process.env[emailVariable];
+  const password = process.env.E2E_CREDENTIAL_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error("Real E2E credential fixtures are not configured");
+  }
+
+  await loginWithCredentials(page, email, password);
+}
+
 /**
  * Drives the real "Continue with SSO" button through the mock IdP
- * (app/api/mock-idp/*) — a genuine authorization-code + PKCE redirect chain,
+ * — a genuine authorization-code + PKCE redirect chain against the configured
+ * local provider,
  * not a stubbed session. `subject` picks which mock IdP-side identity to
  * authenticate as.
  */
 export async function loginWithSso(page: Page, subject: "member" | "admin", from = "/login") {
   await page.goto(from);
   await page.getByRole("button", { name: "Continue with SSO" }).click();
-  await page.getByTestId(`mock-idp-${subject}`).click();
+  await page.waitForURL((url) => url.port === "8092");
+  const authorizationUrl = new URL(page.url());
+  expect(authorizationUrl.searchParams.get("state")).toBeTruthy();
+  expect(authorizationUrl.searchParams.get("code_challenge")).toBeTruthy();
+  expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
+  await page.locator("select[name=sub]").selectOption({ index: subject === "admin" ? 1 : 0 });
+  await page.getByRole("button", { name: "Authorize" }).click();
 }
 
 /**
