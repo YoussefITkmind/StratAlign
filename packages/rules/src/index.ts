@@ -31,3 +31,17 @@ export {
 } from "./schemas/rollup";
 
 export { evaluateRollup } from "./evaluators/rollup";
+export {
+  varianceAlertInputSchema,
+  varianceAlertResultSchema,
+  varianceAlertRuleSchema,
+  varianceDeltaTypeSchema,
+  varianceDirectionSchema,
+  type VarianceAlertInput,
+  type VarianceAlertResult,
+  type VarianceAlertRule,
+  type VarianceDeltaType,
+  type VarianceDirection,
+} from "./schemas/variance-alert";
+
+export { evaluateVarianceAlert } from "./evaluators/variance-alert";
