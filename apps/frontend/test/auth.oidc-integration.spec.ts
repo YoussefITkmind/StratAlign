@@ -8,13 +8,15 @@ import {
   vi,
 } from "vitest";
 
-const { reconcileOidc } = vi.hoisted(() => {
+const { reconcileOidc, stepUpCookie } = vi.hoisted(() => {
   process.env.AUTH_OIDC_ISSUER = "https://identity.example.test/";
   process.env.AUTH_OIDC_CLIENT_ID = "test-client";
   process.env.AUTH_OIDC_CLIENT_SECRET = "test-client-secret";
+  process.env.AUTH_SECRET = "test-auth-secret-at-least-32-characters-long";
 
   return {
     reconcileOidc: vi.fn(),
+    stepUpCookie: { value: null as string | null },
   };
 });
 
@@ -26,6 +28,13 @@ vi.mock("../src/services/api-client", () => ({
       },
     },
   },
+}));
+
+vi.mock("next/headers", () => ({
+  cookies: vi.fn(async () => ({
+    get: () => stepUpCookie.value ? { value: stepUpCookie.value } : undefined,
+    delete: vi.fn(() => { stepUpCookie.value = null; }),
+  })),
 }));
 
 vi.mock("next-auth", () => ({
@@ -55,6 +64,7 @@ import {
   refreshOidcToken,
   safePostLogoutUrl,
 } from "../src/auth";
+import { createOidcStepUpState } from "../src/lib/auth/oidc-step-up-state";
 
 type SignInCallback = (parameters: {
   user: User;
@@ -94,6 +104,7 @@ describe("canonical Auth.js OIDC reconciliation", () => {
     reconcileOidc.mockReset();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    stepUpCookie.value = null;
   });
 
   it("uses the canonical generic-oidc provider ID", () => {
@@ -142,6 +153,8 @@ describe("canonical Auth.js OIDC reconciliation", () => {
     });
 
     expect(jwt).toMatchObject({ sub: platformUser.id });
+    expect(jwt).toHaveProperty("authenticationTime", expect.any(Number));
+    expect(jwt).toHaveProperty("sessionId", expect.stringMatching(/^[0-9a-f-]{36}$/i));
     expect(jwt).not.toHaveProperty("id_token");
     expect(jwt).not.toHaveProperty("access_token");
     expect(jwt).not.toHaveProperty("refresh_token");
@@ -168,6 +181,8 @@ describe("canonical Auth.js OIDC reconciliation", () => {
     expect(session).not.toHaveProperty("id_token");
     expect(session).not.toHaveProperty("access_token");
     expect(session).not.toHaveProperty("refresh_token");
+    expect(session).not.toHaveProperty("authenticationTime");
+    expect(session).not.toHaveProperty("sessionId");
   });
 
   it("leaves the credentials flow unchanged", async () => {
@@ -202,9 +217,29 @@ describe("canonical Auth.js OIDC reconciliation", () => {
       },
     });
     expect(jwt).toMatchObject({ sub: user.id });
+    expect(jwt).toHaveProperty("authenticationTime", expect.any(Number));
+    expect(jwt).toHaveProperty("sessionId", expect.stringMatching(/^[0-9a-f-]{36}$/i));
     expect(jwt).not.toHaveProperty("oidcAccessToken");
     expect(jwt).not.toHaveProperty("oidcRefreshToken");
     expect(reconcileOidc).not.toHaveBeenCalled();
+  });
+
+  it("preserves a stable private session ID on reads and rotates it for every new login", async () => {
+    const first = await callJwt({
+      token: {},
+      user: { id: "platform-user" },
+      account: { provider: "credentials", type: "credentials", providerAccountId: "platform-user" },
+    }) as JWT;
+    const read = await callJwt({ token: first }) as JWT;
+    const second = await callJwt({
+      token: {},
+      user: { id: "platform-user" },
+      account: { provider: "credentials", type: "credentials", providerAccountId: "platform-user" },
+    }) as JWT;
+
+    expect(read.sessionId).toBe(first.sessionId);
+    expect(read.authenticationTime).toBe(first.authenticationTime);
+    expect(second.sessionId).not.toBe(first.sessionId);
   });
 
   it("rejects OIDC sign-in safely when the ID token is missing or empty", async () => {
@@ -239,6 +274,22 @@ describe("canonical Auth.js OIDC reconciliation", () => {
     ).resolves.toBe(false);
 
     expect(user.id).toBe("provider-subject");
+  });
+
+  it("rejects OIDC step-up when the provider authenticates a different platform user", async () => {
+    const expectedUserId = "4d2b619c-246a-4dde-a479-31179ed049ad";
+    stepUpCookie.value = createOidcStepUpState(
+      expectedUserId,
+      process.env.AUTH_SECRET ?? "test-auth-secret-at-least-32-characters-long",
+    );
+    reconcileOidc.mockResolvedValue({
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      email: "different@example.test",
+      displayName: null,
+    });
+    await expect(callSignIn({
+      user: { id: "provider-subject" }, account: oidcAccount(),
+    })).resolves.toBe(false);
   });
 
   it("does not reconcile again during ordinary JWT and session reads", async () => {

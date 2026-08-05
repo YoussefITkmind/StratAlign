@@ -4,6 +4,7 @@ type AppRole = "platform_administrator" | "member";
 
 declare module "next-auth" {
   interface Session {
+    authenticationMethod?: "credentials" | "oidc";
     user: {
       id: string;
       role: AppRole;
@@ -18,5 +19,8 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     role?: AppRole;
+    sessionId?: string;
+    authenticationTime?: number;
+    authenticationMethod?: "credentials" | "oidc";
   }
 }
