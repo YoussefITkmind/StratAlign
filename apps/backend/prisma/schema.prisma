@@ -21,14 +21,17 @@ model SystemSetting {
 }
 
 model User {
-  id              String           @id @default(uuid())
-  email           String           @unique
-  displayName     String?          @map("display_name")
-  emailVerifiedAt DateTime?        @map("email_verified_at")
-  createdAt       DateTime         @default(now()) @map("created_at")
-  updatedAt       DateTime         @updatedAt @map("updated_at")
+  id              String             @id @default(uuid())
+  email           String             @unique
+  displayName     String?            @map("display_name")
+  emailVerifiedAt DateTime?          @map("email_verified_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
   localCredential LocalCredential?
   oidcIdentities  OidcIdentity[]
+  scopeGrants     ScopeGrant[]       @relation("ScopeGrantUser")
+  grantsGiven     ScopeGrant[]       @relation("ScopeGrantGrantor")
+  mappingsCreated GroupRoleMapping[] @relation("MappingCreator")
 
   @@map("users")
   @@schema("iam")
@@ -43,11 +46,89 @@ model OidcIdentity {
   emailVerifiedAt DateTime? @map("email_verified_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
+  groups          String[]  @default([])
+  lastValidatedAt DateTime? @map("last_validated_at")
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([issuer, subject])
   @@index([userId])
   @@map("oidc_identities")
+  @@schema("iam")
+}
+
+enum OrgScopeType {
+  GROUP    @map("group")
+  SECTOR   @map("sector")
+  FUNCTION @map("function")
+
+  @@schema("iam")
+}
+
+model Role {
+  id          String             @id @default(uuid())
+  name        String             @unique
+  description String
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+  mappings    GroupRoleMapping[]
+  scopeGrants ScopeGrant[]
+
+  @@map("roles")
+  @@schema("iam")
+}
+
+model GroupRoleMapping {
+  id           String            @id @default(uuid())
+  groupClaim   String            @map("group_claim")
+  roleId       String            @map("role_id")
+  orgScopeType OrgScopeType      @map("org_scope_type")
+  orgScopeId   String            @map("org_scope_id")
+  version      Int
+  isCurrent    Boolean           @default(true) @map("is_current")
+  supersedesId String?           @unique @map("supersedes_id")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  createdById  String            @map("created_by")
+  role         Role              @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  createdBy    User              @relation("MappingCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  supersedes   GroupRoleMapping? @relation("MappingVersions", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy GroupRoleMapping? @relation("MappingVersions")
+
+  @@unique([groupClaim, version])
+  @@index([groupClaim, isCurrent])
+  @@index([roleId])
+  @@index([createdById])
+  @@map("group_role_mappings")
+  @@schema("iam")
+}
+
+model ScopeGrant {
+  id           String       @id @default(uuid())
+  userId       String       @map("user_id")
+  roleId       String       @map("role_id")
+  orgScopeType OrgScopeType @map("org_scope_type")
+  orgScopeId   String       @map("org_scope_id")
+  grantedAt    DateTime     @default(now()) @map("granted_at")
+  grantedById  String       @map("granted_by")
+  user         User         @relation("ScopeGrantUser", fields: [userId], references: [id], onDelete: Restrict)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  grantedBy    User         @relation("ScopeGrantGrantor", fields: [grantedById], references: [id], onDelete: Restrict)
+
+  @@unique([userId, roleId, orgScopeType, orgScopeId])
+  @@index([userId])
+  @@index([roleId])
+  @@index([grantedById])
+  @@map("scope_grants")
+  @@schema("iam")
+}
+
+model StepUpPolicy {
+  actionClass          String   @id @map("action_class")
+  requiresStepUp       Boolean  @map("requires_step_up")
+  maxSessionAgeSeconds Int      @map("max_session_age_seconds")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@map("step_up_policies")
   @@schema("iam")
 }
 

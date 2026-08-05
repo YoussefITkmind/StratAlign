@@ -51,7 +51,7 @@ export async function loginWithSso(page: Page, subject: "member" | "admin", from
   expect(authorizationUrl.searchParams.get("state")).toBeTruthy();
   expect(authorizationUrl.searchParams.get("code_challenge")).toBeTruthy();
   expect(authorizationUrl.searchParams.get("code_challenge_method")).toBe("S256");
-  await page.locator("select[name=sub]").selectOption({ index: subject === "admin" ? 1 : 0 });
+  await page.locator("select[name=sub]").selectOption(subject === "admin" ? "foo" : "bar");
   await page.getByRole("button", { name: "Authorize" }).click();
 }
 

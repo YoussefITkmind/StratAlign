@@ -1,117 +1,129 @@
 import { z } from "zod";
-import { adminProcedure, requireStepUp, router } from "@/server/trpc";
-import {
-  MOCK_USERS,
-  findUserById,
-  genId,
-  groupRoleMappings,
-  recordAudit,
-  stepUpVerifications,
-  userRoleGrants,
-} from "@/server/mock-db";
+import { orgScopeTypeSchema, platformRoleSchema, type PlatformRole } from "@spm/domain-iam";
+import { authenticatedProcedure, router } from "@/server/trpc";
+import { createBackendIamClient, translateBackendIamError } from "@/server/backend-iam-client";
 
-const roleSchema = z.enum(["platform_administrator", "member"]);
+const orgScopeSchema = z.string().trim().min(3).max(220);
+
+function splitScope(value: string) {
+  const separator = value.indexOf(":");
+  const type = orgScopeTypeSchema.safeParse(value.slice(0, separator));
+  const id = value.slice(separator + 1).trim();
+  if (separator < 1 || !type.success || !id) {
+    throw new Error("Use group:, sector:, or function: followed by a scope identifier.");
+  }
+  return { orgScopeType: type.data, orgScopeId: id };
+}
+
+function backend(ctx: { cookieHeader: string | null }) {
+  return createBackendIamClient(ctx.cookieHeader);
+}
 
 export const iamRouter = router({
-  listGroupRoleMappings: adminProcedure.query(() => {
-    return [...groupRoleMappings].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  listGroupRoleMappings: authenticatedProcedure.query(async ({ ctx }) => {
+    try {
+      const mappings = await backend(ctx).iam.listGroupMappings.query();
+      return mappings.map((mapping) => ({
+        id: mapping.id,
+        groupName: mapping.groupClaim,
+        role: mapping.roleName,
+        orgScope: `${mapping.orgScopeType}:${mapping.orgScopeId}`,
+        createdAt: String(mapping.createdAt),
+        updatedAt: String(mapping.createdAt),
+      }));
+    } catch (error) { translateBackendIamError(error); }
   }),
 
-  createGroupRoleMapping: adminProcedure
-    .input(
-      z.object({
-        groupName: z.string().min(1),
-        role: roleSchema,
-        orgScope: z.string().min(1),
-      })
-    )
-    .mutation(({ ctx, input }) => {
-      requireStepUp(ctx);
-      const now = new Date().toISOString();
-      const mapping = { id: genId("grm"), createdAt: now, updatedAt: now, ...input };
-      groupRoleMappings.push(mapping);
-      recordAudit("iam.group_role_mapping.created", ctx.user.email, JSON.stringify(mapping));
-      return mapping;
-    }),
-
-  updateGroupRoleMapping: adminProcedure
-    .input(
-      z.object({
-        id: z.string(),
-        role: roleSchema,
-        orgScope: z.string().min(1),
-      })
-    )
-    .mutation(({ ctx, input }) => {
-      requireStepUp(ctx);
-      const mapping = groupRoleMappings.find((m) => m.id === input.id);
-      if (!mapping) throw new Error("Mapping not found.");
-      mapping.role = input.role;
-      mapping.orgScope = input.orgScope;
-      mapping.updatedAt = new Date().toISOString();
-      recordAudit("iam.group_role_mapping.updated", ctx.user.email, JSON.stringify(mapping));
-      return mapping;
-    }),
-
-  listCredentialUsers: adminProcedure.query(() => {
-    return MOCK_USERS.filter((u) => u.authMethod === "credentials").map((u) => ({
-      id: u.id,
-      email: u.email,
-      name: u.name,
-      role: u.role,
-    }));
-  }),
-
-  listUserRoleGrants: adminProcedure.query(() => {
-    return [...userRoleGrants].sort((a, b) => b.grantedAt.localeCompare(a.grantedAt));
-  }),
-
-  grantUserRoleScope: adminProcedure
-    .input(
-      z.object({
-        userId: z.string(),
-        role: roleSchema,
-        orgScope: z.string().min(1),
-      })
-    )
-    .mutation(({ ctx, input }) => {
-      requireStepUp(ctx);
-      const targetUser = findUserById(input.userId);
-      if (!targetUser || targetUser.authMethod !== "credentials") {
-        throw new Error("Target must be an existing credentials-based user.");
-      }
-      const grant = {
-        id: genId("grant"),
-        userId: input.userId,
-        role: input.role,
-        orgScope: input.orgScope,
-        grantedBy: ctx.user.email,
-        grantedAt: new Date().toISOString(),
+  createGroupRoleMapping: authenticatedProcedure.input(z.object({
+    groupName: z.string().trim().min(1).max(200),
+    role: platformRoleSchema,
+    orgScope: orgScopeSchema,
+  }).strict()).mutation(async ({ ctx, input }) => {
+    try {
+      const mapping = await backend(ctx).iam.upsertGroupMapping.mutate({
+        groupClaim: input.groupName,
+        roleName: input.role,
+        ...splitScope(input.orgScope),
+      });
+      return {
+        id: mapping.id, groupName: mapping.groupClaim, role: mapping.roleName,
+        orgScope: `${mapping.orgScopeType}:${mapping.orgScopeId}`,
+        createdAt: String(mapping.createdAt), updatedAt: String(mapping.createdAt),
       };
-      userRoleGrants.push(grant);
-      targetUser.role = input.role;
-      recordAudit(
-        "iam.user_role_grant.created",
-        ctx.user.email,
-        `Granted ${input.role} @ ${input.orgScope} to ${targetUser.email}`
-      );
-      return grant;
-    }),
+    } catch (error) { translateBackendIamError(error); }
+  }),
 
-  verifyStepUp: adminProcedure
-    .input(z.object({ password: z.string() }))
-    .mutation(({ ctx, input }) => {
-      // Mirrors the credentials provider's demo check (lib/auth/auth.ts) —
-      // real Prompt 1.2 should re-verify against iam.local_credential.
-      const validPasswords: Record<string, string> = {
-        "demo@stratalign.dev": "password123",
-        "admin@stratalign.dev": "admin123",
+  updateGroupRoleMapping: authenticatedProcedure.input(z.object({
+    id: z.string().uuid(), role: platformRoleSchema, orgScope: orgScopeSchema,
+  }).strict()).mutation(async ({ ctx, input }) => {
+    try {
+      const current = await backend(ctx).iam.listGroupMappings.query();
+      const existing = current.find((mapping) => mapping.id === input.id);
+      if (!existing) throw new Error("Mapping not found");
+      const mapping = await backend(ctx).iam.upsertGroupMapping.mutate({
+        groupClaim: existing.groupClaim,
+        roleName: input.role,
+        ...splitScope(input.orgScope),
+      });
+      return {
+        id: mapping.id, groupName: mapping.groupClaim, role: mapping.roleName,
+        orgScope: `${mapping.orgScopeType}:${mapping.orgScopeId}`,
+        createdAt: String(mapping.createdAt), updatedAt: String(mapping.createdAt),
       };
-      if (validPasswords[ctx.user.email] !== input.password) {
-        throw new Error("That password isn't right.");
-      }
-      stepUpVerifications.set(ctx.user.id, new Date().toISOString());
-      recordAudit("iam.step_up.verified", ctx.user.email);
-      return { verifiedAt: new Date().toISOString() };
-    }),
+    } catch (error) { translateBackendIamError(error); }
+  }),
+
+  listCredentialUsers: authenticatedProcedure.query(async ({ ctx }) => {
+    try {
+      const users = await backend(ctx).iam.listCredentialUsers.query() as Array<{
+        id: string; email: string; displayName: string | null;
+      }>;
+      return users.map((user) => ({
+        id: user.id, email: user.email, name: user.displayName ?? user.email,
+      }));
+    } catch (error) { translateBackendIamError(error); }
+  }),
+
+  listUserRoleGrants: authenticatedProcedure.query(async ({ ctx }) => {
+    try {
+      const grants = await backend(ctx).iam.listScopeGrants.query() as Array<{
+        id: string; userId: string; roleName: PlatformRole; orgScopeType: string;
+        orgScopeId: string; grantedBy: string; grantedAt: string | Date;
+      }>;
+      return grants.map((grant) => ({
+        id: grant.id, userId: grant.userId, role: grant.roleName,
+        orgScope: `${grant.orgScopeType}:${grant.orgScopeId}`,
+        grantedBy: grant.grantedBy, grantedAt: String(grant.grantedAt),
+      }));
+    } catch (error) { translateBackendIamError(error); }
+  }),
+
+  grantUserRoleScope: authenticatedProcedure.input(z.object({
+    userId: z.string().uuid(), role: platformRoleSchema, orgScope: orgScopeSchema,
+  }).strict()).mutation(async ({ ctx, input }) => {
+    try {
+      const users = await backend(ctx).iam.listCredentialUsers.query() as Array<{
+        id: string; email: string;
+      }>;
+      const user = users.find((candidate) => candidate.id === input.userId);
+      if (!user) throw new Error("User not found");
+      const grant = await backend(ctx).iam.grantScope.mutate({
+        userEmail: user.email, roleName: input.role, ...splitScope(input.orgScope),
+      });
+      return {
+        id: grant.id, userId: grant.userId, role: grant.roleName,
+        orgScope: `${grant.orgScopeType}:${grant.orgScopeId}`,
+        grantedBy: grant.grantedBy, grantedAt: String(grant.grantedAt),
+      };
+    } catch (error) { translateBackendIamError(error); }
+  }),
+
+  verifyStepUp: authenticatedProcedure.input(z.object({
+    password: z.string().min(1).max(256),
+  }).strict()).mutation(async ({ ctx, input }) => {
+    try {
+      const result = await backend(ctx).iam.verifyStepUp.mutate(input);
+      return { verifiedAt: String(result.verifiedAt) };
+    } catch (error) { translateBackendIamError(error); }
+  }),
 });

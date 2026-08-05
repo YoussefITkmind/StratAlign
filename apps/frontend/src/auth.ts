@@ -1,7 +1,9 @@
 import NextAuth, { type Account, type NextAuthConfig } from "next-auth";
 import type { JWT } from "next-auth/jwt";
 import Credentials from "next-auth/providers/credentials";
+import { cookies } from "next/headers";
 import { trpcClient } from "./services/api-client";
+import { OIDC_STEP_UP_COOKIE, verifyOidcStepUpState } from "./lib/auth/oidc-step-up-state";
 
 const oidcIssuer = process.env.AUTH_OIDC_ISSUER;
 const oidcClientId = process.env.AUTH_OIDC_CLIENT_ID;
@@ -23,6 +25,8 @@ type OidcJwt = JWT & {
   oidcAccessTokenExpiresAt?: number;
   oidcRefreshError?: typeof OIDC_REFRESH_ERROR;
   authenticationMethod?: "credentials" | "oidc";
+  authenticationTime?: number;
+  sessionId?: string;
 };
 
 type OidcDiscovery = {
@@ -31,6 +35,18 @@ type OidcDiscovery = {
 };
 
 let oidcDiscoveryPromise: Promise<OidcDiscovery> | null = null;
+
+async function consumeOidcStepUpMarker(): Promise<string | null> {
+  try {
+    const cookieStore = await cookies();
+    const marker = cookieStore.get(OIDC_STEP_UP_COOKIE)?.value ?? null;
+    if (marker) cookieStore.delete(OIDC_STEP_UP_COOKIE);
+    return marker;
+  } catch {
+    // Pure callback tests and non-request invocation have no cookie store.
+    return null;
+  }
+}
 
 async function getOidcDiscovery(): Promise<OidcDiscovery> {
   oidcDiscoveryPromise ??= fetch(
@@ -210,6 +226,15 @@ export const authCallbacks = {
       const platformUser =
         await trpcClient.auth.reconcileOidc.mutate({ idToken });
 
+      const stepUpMarker = await consumeOidcStepUpMarker();
+      if (stepUpMarker) {
+        const expectedUserId = verifyOidcStepUpState(
+          stepUpMarker,
+          process.env.AUTH_SECRET ?? "",
+        );
+        if (!expectedUserId || expectedUserId !== platformUser.id) return false;
+      }
+
       user.id = platformUser.id;
       user.email = platformUser.email;
       user.name = platformUser.displayName;
@@ -226,6 +251,11 @@ export const authCallbacks = {
 
     if (user) {
       oidcToken.sub = user.id;
+    }
+
+    if (user && account) {
+      oidcToken.authenticationTime = Date.now();
+      oidcToken.sessionId = crypto.randomUUID();
     }
 
     if (account?.provider === GENERIC_OIDC_PROVIDER_ID) {

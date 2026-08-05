@@ -3,9 +3,13 @@
   email: foo@example.com
   email_verified: true
   aud: spm-web
+  groups:
+    - stratalign-admins
 
 - sub: bar
   name: Bar
   email: bar@example.com
   email_verified: true
   aud: spm-web
+  groups:
+    - stratalign-users

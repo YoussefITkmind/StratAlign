@@ -6,19 +6,22 @@ import { useI18n } from "@/lib/i18n/locale-context";
 
 /**
  * Opens when a sensitive admin mutation fails with the `stepUpRequired`
- * error data set by `requireStepUp` (server/trpc.ts) — i.e. the mock
- * equivalent of the real `withStepUpCheck` TRPCError contract from Prompt
- * 1.2. Re-verifies the current user's password via `iam.verifyStepUp` and,
+ * error data set by the backend's real `withStepUpCheck` contract.
+ * Re-verifies the current user's password via `iam.verifyStepUp` and,
  * on success, re-runs whatever mutation triggered the modal — no logout.
  */
 export function StepUpModal({
   open,
+  authenticationMethod,
   onClose,
   onVerified,
+  onOidcStart,
 }: {
   open: boolean;
+  authenticationMethod: "credentials" | "oidc";
   onClose: () => void;
   onVerified: () => void;
+  onOidcStart: () => void;
 }) {
   const { t } = useI18n();
   const [password, setPassword] = useState("");
@@ -74,16 +77,23 @@ export function StepUpModal({
         <h2 id="step-up-title" className="text-[16px] font-bold text-slate-900">
           {t("admin.stepUpTitle")}
         </h2>
-        <p className="mt-1.5 text-[13px] text-slate-500">{t("admin.stepUpBody")}</p>
+        <p className="mt-1.5 text-[13px] text-slate-500">
+          {t(authenticationMethod === "oidc" ? "admin.stepUpSsoBody" : "admin.stepUpBody")}
+        </p>
 
         <form
           className="mt-5 flex flex-col gap-3"
           onSubmit={(e) => {
             e.preventDefault();
-            verify.mutate({ password });
+            if (authenticationMethod === "oidc") {
+              onOidcStart();
+              window.location.assign("/api/auth/oidc-step-up");
+            } else {
+              verify.mutate({ password });
+            }
           }}
         >
-          <div>
+          {authenticationMethod === "credentials" && <div>
             <label htmlFor="step-up-password" className="mb-1.5 block text-[13px] font-medium text-slate-700">
               {t("admin.stepUpPasswordLabel")}
             </label>
@@ -95,7 +105,7 @@ export function StepUpModal({
               onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] outline-none transition focus:border-[var(--brand-accent,#4FB6C9)] focus:ring-2 focus:ring-[var(--brand-accent,#4FB6C9)]/25"
             />
-          </div>
+          </div>}
 
           {error && (
             <p role="alert" className="text-[12.5px] text-red-600">
@@ -113,11 +123,13 @@ export function StepUpModal({
             </button>
             <button
               type="submit"
-              disabled={verify.isPending}
+              disabled={authenticationMethod === "credentials" && verify.isPending}
               data-testid="step-up-verify"
               className="rounded-lg bg-gradient-to-r from-[#0E2338] to-[#2E8FA3] px-3.5 py-2 text-[13px] font-semibold text-white transition hover:opacity-95 disabled:opacity-60"
             >
-              {verify.isPending ? t("admin.stepUpVerifying") : t("admin.stepUpVerify")}
+              {authenticationMethod === "oidc"
+                ? t("admin.stepUpSsoVerify")
+                : verify.isPending ? t("admin.stepUpVerifying") : t("admin.stepUpVerify")}
             </button>
           </div>
         </form>
