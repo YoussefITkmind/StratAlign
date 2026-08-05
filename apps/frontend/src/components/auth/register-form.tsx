@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ROUTES } from "@/lib/auth/constants";
 import { useI18n } from "@/lib/i18n/locale-context";
@@ -254,13 +255,13 @@ export function RegisterForm() {
             />
             <span>
               {t("register.termsPrefix")}{" "}
-              <a href="/terms" className="font-medium text-[var(--brand-accent,#2E8FA3)] hover:underline">
+              <Link href="/terms" className="font-medium text-[var(--brand-accent,#2E8FA3)] hover:underline">
                 {t("register.termsOfService")}
-              </a>{" "}
+              </Link>{" "}
               {t("register.and")}{" "}
-              <a href="/privacy" className="font-medium text-[var(--brand-accent,#2E8FA3)] hover:underline">
+              <Link href="/privacy" className="font-medium text-[var(--brand-accent,#2E8FA3)] hover:underline">
                 {t("register.privacyPolicy")}
-              </a>
+              </Link>
             </span>
           </label>
           {fieldErrors.terms && (

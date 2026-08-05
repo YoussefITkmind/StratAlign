@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth/auth";
 import { AppNav } from "@/components/app-nav";
+import Sidebar from "@/components/layout/Sidebar";
 import { getCurrentAuthorization } from "@/services/iam.service";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
@@ -15,9 +16,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     : "member";
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <AppNav role={navigationRole} email={session.user.email ?? ""} />
-      <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+    <div className="flex h-screen overflow-hidden">
+      <Sidebar />
+      <div className="flex h-screen w-full flex-col overflow-y-auto bg-slate-50">
+        <AppNav role={navigationRole} email={session.user.email ?? ""} />
+        <main className="w-full max-w-none flex-1 mx-0 px-0 py-0">{children}</main>
+      </div>
     </div>
   );
 }
