@@ -40,6 +40,7 @@ export interface ValidatedOidcToken {
   email: string | null;
   emailVerified: boolean | null;
   expiresAt: Date;
+  groups: string[];
 }
 
 export class InvalidOidcTokenError extends Error {
@@ -132,12 +133,28 @@ export class OidcTokenValidationService {
         emailVerified = payload.email_verified;
       }
 
+      let groups: string[] = [];
+      if (payload.groups !== undefined) {
+        if (!Array.isArray(payload.groups) || payload.groups.length > 100) {
+          throw new InvalidOidcTokenError();
+        }
+        groups = [...new Set(payload.groups.map((group) => {
+          if (typeof group !== "string") throw new InvalidOidcTokenError();
+          const normalized = group.trim();
+          if (!normalized || normalized.length > 200) {
+            throw new InvalidOidcTokenError();
+          }
+          return normalized;
+        }))];
+      }
+
       return {
         issuer: this.configuration.issuer,
         subject,
         email,
         emailVerified,
         expiresAt: new Date(payload.exp * 1_000),
+        groups,
       };
     } catch {
       throw new InvalidOidcTokenError();

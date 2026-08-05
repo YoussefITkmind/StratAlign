@@ -9,6 +9,8 @@ describe("SessionService", () => {
   const sessions = new SessionService(secret);
 
   it("returns a session for a valid Auth.js JWT", async () => {
+    const authenticationTime = Date.now() - 1_000;
+    const sessionId = "11111111-1111-4111-8111-111111111111";
     const token = await encode({
       secret,
       salt: cookieName,
@@ -17,6 +19,9 @@ describe("SessionService", () => {
         sub: "user-1",
         email: "alice@example.test",
         name: "Alice Test User",
+        authenticationTime,
+        sessionId,
+        authenticationMethod: "credentials",
       },
     });
 
@@ -26,13 +31,32 @@ describe("SessionService", () => {
           cookie: `${cookieName}=${token}`,
         },
       }),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       user: {
         id: "user-1",
         email: "alice@example.test",
         name: "Alice Test User",
       },
+      authenticatedAt: new Date(authenticationTime),
+      sessionId,
+      expiresAt: expect.any(Date),
+      authenticationMethod: "credentials",
     });
+  });
+
+  it("fails closed when private session claims are missing or malformed", async () => {
+    for (const privateClaims of [
+      { authenticationTime: Date.now() },
+      { authenticationTime: Date.now(), sessionId: "browser-controlled" },
+    ]) {
+      const token = await encode({
+        secret, salt: cookieName, maxAge: 900,
+        token: { sub: "user-1", ...privateClaims },
+      });
+      await expect(sessions.getSession({
+        headers: { cookie: `${cookieName}=${token}` },
+      })).resolves.toBeNull();
+    }
   });
 
   it("returns null when the session token is missing", async () => {

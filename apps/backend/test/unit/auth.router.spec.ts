@@ -12,6 +12,7 @@ describe("auth router", () => {
   const consume = vi.fn();
   const reset = vi.fn();
   const reconcile = vi.fn();
+  const recordFreshness = vi.fn();
 
   const caller = appRouter.createCaller({
     health: {
@@ -29,6 +30,13 @@ describe("auth router", () => {
     oidcIdentities: {
       reconcile,
     },
+    authenticationFreshness: { record: recordFreshness },
+    authorization: { resolve: vi.fn() },
+    iam: {
+      listRoles: vi.fn(), listGroupMappings: vi.fn(), upsertGroupMapping: vi.fn(),
+      grantScope: vi.fn(), listCredentialUsers: vi.fn(), listScopeGrants: vi.fn(),
+      getStepUpPolicy: vi.fn(),
+    },
   });
 
   beforeEach(() => {
@@ -36,6 +44,8 @@ describe("auth router", () => {
     consume.mockReset();
     reset.mockReset();
     reconcile.mockReset();
+    recordFreshness.mockReset();
+    recordFreshness.mockResolvedValue(undefined);
 
     consume.mockResolvedValue({
       allowed: true,
@@ -71,6 +81,7 @@ describe("auth router", () => {
       "127.0.0.1",
       "alice@example.test",
     );
+    expect(recordFreshness).not.toHaveBeenCalled();
   });
 
   it("returns UNAUTHORIZED for a wrong password", async () => {
@@ -154,6 +165,7 @@ describe("auth router", () => {
     ).resolves.toEqual(user);
 
     expect(reconcile).toHaveBeenCalledWith("signed-id-token");
+    expect(recordFreshness).not.toHaveBeenCalled();
   });
 
   it("accepts only an ID token for OIDC reconciliation", async () => {

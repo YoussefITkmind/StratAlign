@@ -62,13 +62,22 @@ export class OidcIdentityService {
     }
 
     try {
-      const existingUser = await this.findUserByIdentity(
-        identity.issuer,
-        identity.subject,
-      );
+      const existingIdentity = await this.prisma.oidcIdentity.findUnique({
+        where: {
+          issuer_subject: {
+            issuer: identity.issuer,
+            subject: identity.subject,
+          },
+        },
+        include: { user: true },
+      });
 
-      if (existingUser) {
-        return this.toSafeUser(existingUser);
+      if (existingIdentity) {
+        await this.prisma.oidcIdentity.update({
+          where: { id: existingIdentity.id },
+          data: { groups: identity.groups, lastValidatedAt: new Date() },
+        });
+        return this.toSafeUser(existingIdentity.user);
       }
 
       const email = this.requireVerifiedEmail(identity);
@@ -129,6 +138,8 @@ export class OidcIdentityService {
                 userId: existingUser.id,
                 emailAtLink: email,
                 emailVerifiedAt: verifiedAt,
+                groups: identity.groups,
+                lastValidatedAt: verifiedAt,
               },
             });
 
@@ -149,6 +160,8 @@ export class OidcIdentityService {
               userId: user.id,
               emailAtLink: email,
               emailVerifiedAt: verifiedAt,
+              groups: identity.groups,
+              lastValidatedAt: verifiedAt,
             },
           });
 

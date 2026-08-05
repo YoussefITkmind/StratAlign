@@ -1,15 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { z } from "zod";
 import { trpc } from "@/lib/trpc/client";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { StepUpModal } from "@/components/admin/step-up-modal";
+import { PLATFORM_ROLES, type PlatformRole } from "@spm/domain-iam";
 
-type Role = "platform_administrator" | "member";
+type Role = PlatformRole;
 
 type TRPCErrorLike = { message?: string; data?: { stepUpRequired?: boolean } | null };
+const pendingOperationSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("createMapping"), input: z.object({
+    groupName: z.string(), role: z.enum(PLATFORM_ROLES), orgScope: z.string(),
+  }) }),
+  z.object({ kind: z.literal("updateMapping"), input: z.object({
+    id: z.string(), role: z.enum(PLATFORM_ROLES), orgScope: z.string(),
+  }) }),
+  z.object({ kind: z.literal("grantScope"), input: z.object({
+    userId: z.string(), role: z.enum(PLATFORM_ROLES), orgScope: z.string(),
+  }) }),
+]);
+type PendingOperation = z.infer<typeof pendingOperationSchema>;
+const OIDC_PENDING_OPERATION_KEY = "stratalign.oidc-step-up-operation";
 
-export function AdminClient() {
+export function AdminClient({
+  authenticationMethod,
+}: {
+  authenticationMethod: "credentials" | "oidc";
+}) {
   const { t } = useI18n();
   const utils = trpc.useUtils();
 
@@ -20,20 +39,22 @@ export function AdminClient() {
   const [tab, setTab] = useState<"mappings" | "grant">("mappings");
   const [stepUpOpen, setStepUpOpen] = useState(false);
   const [pendingRetry, setPendingRetry] = useState<(() => void) | null>(null);
+  const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [groupName, setGroupName] = useState("");
-  const [mappingRole, setMappingRole] = useState<Role>("member");
+  const [mappingRole, setMappingRole] = useState<Role | "">("");
   const [mappingScope, setMappingScope] = useState("");
 
   const [grantUserId, setGrantUserId] = useState("");
-  const [grantRole, setGrantRole] = useState<Role>("member");
+  const [grantRole, setGrantRole] = useState<Role | "">("");
   const [grantScope, setGrantScope] = useState("");
 
-  function handleError(err: TRPCErrorLike, retry: () => void) {
+  function handleError(err: TRPCErrorLike, retry: () => void, operation: PendingOperation) {
     if (err?.data?.stepUpRequired) {
       setPendingRetry(() => retry);
+      setPendingOperation(operation);
       setStepUpOpen(true);
       return;
     }
@@ -44,12 +65,16 @@ export function AdminClient() {
     onSuccess: () => {
       utils.iam.listGroupRoleMappings.invalidate();
       setGroupName("");
-      setMappingRole("member");
+      setMappingRole("");
       setMappingScope("");
       setError(null);
     },
     onError: (err) =>
-      handleError(err, () => createMapping.mutate({ groupName, role: mappingRole, orgScope: mappingScope })),
+      mappingRole && handleError(
+        err,
+        () => createMapping.mutate({ groupName, role: mappingRole, orgScope: mappingScope }),
+        { kind: "createMapping", input: { groupName, role: mappingRole, orgScope: mappingScope } },
+      ),
   });
 
   const updateMapping = trpc.iam.updateGroupRoleMapping.useMutation({
@@ -61,7 +86,11 @@ export function AdminClient() {
     onError: (err) => {
       const id = editingId;
       if (!id) return;
-      handleError(err, () => updateMapping.mutate({ id, role: mappingRole, orgScope: mappingScope }));
+      if (mappingRole) handleError(
+        err,
+        () => updateMapping.mutate({ id, role: mappingRole, orgScope: mappingScope }),
+        { kind: "updateMapping", input: { id, role: mappingRole, orgScope: mappingScope } },
+      );
     },
   });
 
@@ -70,15 +99,38 @@ export function AdminClient() {
       utils.iam.listUserRoleGrants.invalidate();
       utils.iam.listCredentialUsers.invalidate();
       setGrantUserId("");
-      setGrantRole("member");
+      setGrantRole("");
       setGrantScope("");
       setError(null);
     },
     onError: (err) =>
-      handleError(err, () =>
-        grantMutation.mutate({ userId: grantUserId, role: grantRole, orgScope: grantScope })
+      grantRole && handleError(
+        err,
+        () => grantMutation.mutate({ userId: grantUserId, role: grantRole, orgScope: grantScope }),
+        { kind: "grantScope", input: { userId: grantUserId, role: grantRole, orgScope: grantScope } },
       ),
   });
+
+  const resumedOidcStepUp = useRef(false);
+  useEffect(() => {
+    if (resumedOidcStepUp.current || new URLSearchParams(window.location.search).get("stepUp") !== "complete") {
+      return;
+    }
+    resumedOidcStepUp.current = true;
+    const encoded = window.sessionStorage.getItem(OIDC_PENDING_OPERATION_KEY);
+    window.sessionStorage.removeItem(OIDC_PENDING_OPERATION_KEY);
+    window.history.replaceState({}, "", window.location.pathname);
+    if (!encoded) return;
+    try {
+      const operation = pendingOperationSchema.safeParse(JSON.parse(encoded));
+      if (!operation.success) return;
+      if (operation.data.kind === "createMapping") createMapping.mutate(operation.data.input);
+      else if (operation.data.kind === "updateMapping") updateMapping.mutate(operation.data.input);
+      else grantMutation.mutate(operation.data.input);
+    } catch {
+      // Invalid browser state is ignored; backend validation remains authoritative.
+    }
+  }, [createMapping, grantMutation, updateMapping]);
 
   function startEdit(mapping: { id: string; role: Role; orgScope: string; groupName: string }) {
     setEditingId(mapping.id);
@@ -89,6 +141,7 @@ export function AdminClient() {
 
   function submitMappingForm(e: React.FormEvent) {
     e.preventDefault();
+    if (!mappingRole) return;
     if (editingId) {
       updateMapping.mutate({ id: editingId, role: mappingRole, orgScope: mappingScope });
     } else {
@@ -98,7 +151,7 @@ export function AdminClient() {
 
   function submitGrantForm(e: React.FormEvent) {
     e.preventDefault();
-    if (!grantUserId || !grantScope) return;
+    if (!grantUserId || !grantRole || !grantScope) return;
     grantMutation.mutate({ userId: grantUserId, role: grantRole, orgScope: grantScope });
   }
 
@@ -106,10 +159,21 @@ export function AdminClient() {
     "rounded-full px-4 py-2 text-[13px] font-medium transition " +
     (isActive ? "bg-white shadow-sm" : "text-slate-500 hover:text-slate-700");
 
+  const roleLabel = (role: Role) => t(`common.role_${role}`);
+
   return (
     <div>
       <StepUpModal
         open={stepUpOpen}
+        authenticationMethod={authenticationMethod}
+        onOidcStart={() => {
+          if (pendingOperation) {
+            window.sessionStorage.setItem(
+              OIDC_PENDING_OPERATION_KEY,
+              JSON.stringify(pendingOperation),
+            );
+          }
+        }}
         onClose={() => setStepUpOpen(false)}
         onVerified={() => {
           setStepUpOpen(false);
@@ -161,7 +225,7 @@ export function AdminClient() {
                 {mappingsQuery.data?.map((m) => (
                   <tr key={m.id} className="border-t border-slate-100">
                     <td className="px-4 py-2.5 font-medium text-slate-900">{m.groupName}</td>
-                    <td className="px-4 py-2.5 text-slate-600">{t(`common.role_${m.role}`)}</td>
+                    <td className="px-4 py-2.5 text-slate-600">{roleLabel(m.role)}</td>
                     <td className="px-4 py-2.5 text-slate-600">{m.orgScope}</td>
                     <td className="px-4 py-2.5 text-slate-500">
                       {new Date(m.updatedAt).toLocaleString()}
@@ -199,6 +263,7 @@ export function AdminClient() {
                 <label htmlFor="mapping-group-name" className="mb-1.5 block text-[13px] font-medium text-slate-700">
                   {t("admin.groupNameLabel")}
                 </label>
+                {/* `org:global` is not canonical; the translated example uses type:id. */}
                 <input
                   id="mapping-group-name"
                   value={groupName}
@@ -216,10 +281,13 @@ export function AdminClient() {
                   id="mapping-role"
                   value={mappingRole}
                   onChange={(e) => setMappingRole(e.target.value as Role)}
+                  required
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] outline-none transition focus:border-[var(--brand-accent,#4FB6C9)] focus:ring-2 focus:ring-[var(--brand-accent,#4FB6C9)]/25"
                 >
-                  <option value="member">{t("common.role_member")}</option>
-                  <option value="platform_administrator">{t("common.role_platform_administrator")}</option>
+                  <option value="">—</option>
+                  {PLATFORM_ROLES.map((role) => (
+                    <option key={role} value={role}>{roleLabel(role)}</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -230,7 +298,7 @@ export function AdminClient() {
                   id="mapping-org-scope"
                   value={mappingScope}
                   onChange={(e) => setMappingScope(e.target.value)}
-                  placeholder="org:global"
+                  placeholder={t("admin.scopePlaceholder")}
                   required
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] outline-none transition focus:border-[var(--brand-accent,#4FB6C9)] focus:ring-2 focus:ring-[var(--brand-accent,#4FB6C9)]/25"
                 />
@@ -242,7 +310,7 @@ export function AdminClient() {
                     onClick={() => {
                       setEditingId(null);
                       setGroupName("");
-                      setMappingRole("member");
+                      setMappingRole("");
                       setMappingScope("");
                     }}
                     className="rounded-xl px-3.5 py-2.5 text-[13px] font-medium text-slate-600 transition hover:bg-slate-100"
@@ -296,10 +364,13 @@ export function AdminClient() {
                   id="grant-role"
                   value={grantRole}
                   onChange={(e) => setGrantRole(e.target.value as Role)}
+                  required
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] outline-none transition focus:border-[var(--brand-accent,#4FB6C9)] focus:ring-2 focus:ring-[var(--brand-accent,#4FB6C9)]/25"
                 >
-                  <option value="member">{t("common.role_member")}</option>
-                  <option value="platform_administrator">{t("common.role_platform_administrator")}</option>
+                  <option value="">—</option>
+                  {PLATFORM_ROLES.map((role) => (
+                    <option key={role} value={role}>{roleLabel(role)}</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -310,7 +381,7 @@ export function AdminClient() {
                   id="grant-org-scope"
                   value={grantScope}
                   onChange={(e) => setGrantScope(e.target.value)}
-                  placeholder="org:global"
+                  placeholder={t("admin.scopePlaceholder")}
                   required
                   className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] outline-none transition focus:border-[var(--brand-accent,#4FB6C9)] focus:ring-2 focus:ring-[var(--brand-accent,#4FB6C9)]/25"
                 />
@@ -342,7 +413,7 @@ export function AdminClient() {
               <tbody>
                 {grantsQuery.data?.map((g) => (
                   <tr key={g.id} className="border-t border-slate-100">
-                    <td className="px-4 py-2.5 text-slate-600">{t(`common.role_${g.role}`)}</td>
+                    <td className="px-4 py-2.5 text-slate-600">{roleLabel(g.role)}</td>
                     <td className="px-4 py-2.5 text-slate-600">{g.orgScope}</td>
                     <td className="px-4 py-2.5 text-slate-600">{g.grantedBy}</td>
                     <td className="px-4 py-2.5 text-slate-500">

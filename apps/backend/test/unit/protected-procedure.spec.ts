@@ -26,6 +26,10 @@ describe("protectedProcedure", () => {
         email: "alice@example.test",
         name: "Alice Test User",
       },
+      authenticatedAt: new Date(),
+      sessionId: "11111111-1111-4111-8111-111111111111",
+      expiresAt: new Date(Date.now() + 900_000),
+      authenticationMethod: "credentials" as const,
     };
 
     const caller = appRouter.createCaller({
@@ -33,7 +37,10 @@ describe("protectedProcedure", () => {
       session,
     });
 
-    await expect(caller.auth.session()).resolves.toEqual(session);
+    await expect(caller.auth.session()).resolves.toEqual({
+      user: session.user,
+      authenticationMethod: "credentials",
+    });
   });
 
   it("rejects access without an authenticated session", async () => {

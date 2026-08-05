@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth/auth";
 import { AdminClient } from "@/components/admin/admin-client";
 import { getDictionary, locales, type Locale } from "@/lib/i18n/dictionaries";
 import { LOCALE_COOKIE } from "@/lib/i18n/locale-context";
+import { getCurrentAuthorization } from "@/services/iam.service";
 
 export const metadata: Metadata = {
   title: "Admin · StratAlign",
@@ -15,8 +16,9 @@ function resolveLocale(raw: string | undefined): Locale {
 
 export default async function AdminPage() {
   const session = await auth();
+  const authorization = session?.user ? await getCurrentAuthorization() : null;
 
-  if (session?.user?.role !== "platform_administrator") {
+  if (!authorization?.roles.includes("platform_administrator")) {
     const cookieStore = await cookies();
     const dict = getDictionary(resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value));
     return (
@@ -27,5 +29,5 @@ export default async function AdminPage() {
     );
   }
 
-  return <AdminClient />;
+  return <AdminClient authenticationMethod={session?.authenticationMethod ?? "credentials"} />;
 }

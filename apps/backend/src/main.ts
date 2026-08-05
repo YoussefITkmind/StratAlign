@@ -10,6 +10,9 @@ import { LoginRateLimiterService } from "./modules/auth/login-rate-limiter.servi
 import { SessionService } from "./modules/auth/session.service";
 import { OidcTokenValidationService } from "./modules/auth/oidc-token-validation.service";
 import { OidcIdentityService } from "./modules/auth/oidc-identity.service";
+import { AuthenticationFreshnessService } from "./modules/iam/authentication-freshness.service";
+import { IamAuthorizationService } from "./modules/iam/iam-authorization.service";
+import { IamAdminService } from "./modules/iam/iam-admin.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -39,6 +42,11 @@ async function bootstrap(): Promise<void> {
     oidcTokenValidator,
     environment.AUTH_OIDC_ALLOW_VERIFIED_EMAIL_LINKING,
   );
+  const authenticationFreshness = new AuthenticationFreshnessService(
+    redis.getClient(), environment.AUTH_SECRET,
+  );
+  const authorization = new IamAuthorizationService(prisma, authenticationFreshness);
+  const iam = new IamAdminService(prisma);
 
   const server = createHTTPServer({
     router: appRouter,
@@ -62,6 +70,9 @@ async function bootstrap(): Promise<void> {
         clientIp: req.socket.remoteAddress ?? "unknown",
         session: await sessions.getSession({ headers }),
         oidcIdentities,
+        authenticationFreshness,
+        authorization,
+        iam,
       };
     },
 

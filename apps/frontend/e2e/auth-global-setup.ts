@@ -16,6 +16,11 @@ export default async function authGlobalSetup(): Promise<void> {
     { cwd: workspaceRoot },
   );
   await execFileAsync(
+    "docker",
+    ["compose", "up", "-d", "--force-recreate", "mock-oidc"],
+    { cwd: workspaceRoot },
+  );
+  await execFileAsync(
     "pnpm",
     ["--filter", "@spm/backend", "exec", "prisma", "migrate", "deploy"],
     { cwd: workspaceRoot },
@@ -30,5 +35,13 @@ export default async function authGlobalSetup(): Promise<void> {
         SEED_TEST_USER_PASSWORD: process.env.E2E_CREDENTIAL_PASSWORD,
       },
     },
+  );
+  await execFileAsync(
+    "docker",
+    [
+      "compose", "exec", "-T", "postgres", "psql", "-U", "spm", "-d", "spm_platform",
+      "-c", "UPDATE iam.step_up_policies SET max_session_age_seconds = 1 WHERE action_class IN ('mapping_change', 'role_grant')",
+    ],
+    { cwd: workspaceRoot },
   );
 }

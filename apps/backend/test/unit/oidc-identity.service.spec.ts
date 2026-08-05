@@ -15,6 +15,7 @@ const validatedIdentity: ValidatedOidcToken = {
   email: " Alice@Example.Test ",
   emailVerified: true,
   expiresAt: new Date("2026-08-05T12:00:00.000Z"),
+  groups: [],
 };
 
 const platformUser = {
@@ -33,6 +34,8 @@ function identityWithUser(user = platformUser) {
     emailVerifiedAt: new Date(),
     createdAt: new Date(),
     updatedAt: new Date(),
+    groups: [],
+    lastValidatedAt: new Date(),
     user,
   };
 }
@@ -55,6 +58,7 @@ function createHarness(allowVerifiedEmailLinking = false) {
 
   const createIdentity = vi.fn();
   createIdentity.mockResolvedValue(identityWithUser());
+  const updateIdentity = vi.fn().mockResolvedValue(undefined);
 
   const transactionClient = {
     oidcIdentity: {
@@ -78,6 +82,7 @@ function createHarness(allowVerifiedEmailLinking = false) {
   const prisma = {
     oidcIdentity: {
       findUnique: outerFindIdentity,
+      update: updateIdentity,
     },
     $transaction: runTransaction,
   } as unknown as PrismaService;
@@ -97,6 +102,7 @@ function createHarness(allowVerifiedEmailLinking = false) {
     findUser,
     createUser,
     createIdentity,
+    updateIdentity,
     runTransaction,
   };
 }
@@ -158,6 +164,8 @@ describe("OidcIdentityService", () => {
         userId: platformUser.id,
         emailAtLink: "alice@example.test",
         emailVerifiedAt: expect.any(Date),
+        groups: [],
+        lastValidatedAt: expect.any(Date),
       },
     });
 
@@ -221,6 +229,8 @@ describe("OidcIdentityService", () => {
         userId: platformUser.id,
         emailAtLink: "alice@example.test",
         emailVerifiedAt: expect.any(Date),
+        groups: [],
+        lastValidatedAt: expect.any(Date),
       },
     });
   });

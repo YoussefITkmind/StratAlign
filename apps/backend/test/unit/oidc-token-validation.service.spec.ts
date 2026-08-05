@@ -149,6 +149,7 @@ describe("OidcTokenValidationService", () => {
       email: "alice@example.test",
       emailVerified: true,
       expiresAt: new Date(expiration * 1_000),
+      groups: [],
     });
   });
 
@@ -172,6 +173,18 @@ describe("OidcTokenValidationService", () => {
     await expect(service.validate(token)).resolves.toMatchObject({
       emailVerified: false,
     });
+  });
+
+  it("accepts only bounded string group claims from the signed token", async () => {
+    const token = await signToken(primaryKey, {
+      groups: ["group-a", " group-b ", "group-a"],
+    });
+    await expect(service.validate(token)).resolves.toMatchObject({
+      groups: ["group-a", "group-b"],
+    });
+
+    const invalid = await signToken(primaryKey, { groups: ["valid", 42] });
+    await expect(service.validate(invalid)).rejects.toEqual(new InvalidOidcTokenError());
   });
 
   it.each([
