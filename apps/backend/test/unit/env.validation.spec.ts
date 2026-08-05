@@ -19,6 +19,36 @@ describe("validateEnvironment", () => {
     expect(() => validateEnvironment(validEnvironment)).not.toThrow();
   });
 
+  it("defaults verified-email linking to false", () => {
+    const environment = validateEnvironment(validEnvironment);
+
+    expect(environment.AUTH_OIDC_ALLOW_VERIFIED_EMAIL_LINKING).toBe(false);
+  });
+
+  it.each([
+    ["true", true],
+    ["false", false],
+  ] as const)("parses verified-email linking value %s", (value, expected) => {
+    const environment = validateEnvironment({
+      ...validEnvironment,
+      AUTH_OIDC_ALLOW_VERIFIED_EMAIL_LINKING: value,
+    });
+
+    expect(environment.AUTH_OIDC_ALLOW_VERIFIED_EMAIL_LINKING).toBe(expected);
+  });
+
+  it.each(["1", "yes", "TRUE", "", " false "])(
+    "rejects unsupported verified-email linking value %s",
+    (value) => {
+      expect(() =>
+        validateEnvironment({
+          ...validEnvironment,
+          AUTH_OIDC_ALLOW_VERIFIED_EMAIL_LINKING: value,
+        }),
+      ).toThrow("Environment validation failed");
+    },
+  );
+
   it("rejects a port outside the valid range", () => {
     expect(() =>
       validateEnvironment({

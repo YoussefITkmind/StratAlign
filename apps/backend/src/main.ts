@@ -8,6 +8,8 @@ import { appRouter } from "@spm/api";
 import { CredentialService } from "./modules/auth/credential.service";
 import { LoginRateLimiterService } from "./modules/auth/login-rate-limiter.service";
 import { SessionService } from "./modules/auth/session.service";
+import { OidcTokenValidationService } from "./modules/auth/oidc-token-validation.service";
+import { OidcIdentityService } from "./modules/auth/oidc-identity.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -27,6 +29,16 @@ async function bootstrap(): Promise<void> {
     redis.getClient(),
   );
   const sessions = new SessionService(environment.AUTH_SECRET);
+  const oidcTokenValidator = new OidcTokenValidationService({
+    issuer: environment.AUTH_OIDC_ISSUER,
+    clientId: environment.AUTH_OIDC_CLIENT_ID,
+    jwksUri: environment.AUTH_OIDC_JWKS_URI,
+  });
+  const oidcIdentities = new OidcIdentityService(
+    prisma,
+    oidcTokenValidator,
+    environment.AUTH_OIDC_ALLOW_VERIFIED_EMAIL_LINKING,
+  );
 
   const server = createHTTPServer({
     router: appRouter,
@@ -49,6 +61,7 @@ async function bootstrap(): Promise<void> {
         loginRateLimiter,
         clientIp: req.socket.remoteAddress ?? "unknown",
         session: await sessions.getSession({ headers }),
+        oidcIdentities,
       };
     },
 

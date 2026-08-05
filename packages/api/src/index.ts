@@ -56,12 +56,43 @@ export interface AuthenticatedSession {
   };
 }
 
+export interface OidcReconciliationServiceContract {
+  reconcile(idToken: string): Promise<AuthenticatedUser>;
+}
+
 export interface TrpcContext {
   health: HealthServiceContract;
   credentials: CredentialServiceContract;
   loginRateLimiter: LoginRateLimiterContract;
   clientIp: string;
   session: AuthenticatedSession | null;
+  oidcIdentities: OidcReconciliationServiceContract;
+}
+
+const oidcIdTokenInput = z.object({
+  idToken: z.string().trim().min(1).max(16 * 1024),
+}).strict();
+
+const reconciledOidcUserOutput = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  displayName: z.string().nullable(),
+}).strict();
+
+const expectedOidcReconciliationErrorCodes = new Set([
+  "INVALID_IDENTITY_TOKEN",
+  "IDENTITY_CANNOT_BE_PROVISIONED",
+  "ACCOUNT_LINKING_NOT_ALLOWED",
+]);
+
+function isExpectedOidcReconciliationError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string" &&
+    expectedOidcReconciliationErrorCodes.has(error.code)
+  );
 }
 
 const t = initTRPC.context<TrpcContext>().create();
@@ -99,6 +130,27 @@ export const appRouter = router({
     session: protectedProcedure.query(({ ctx }) => {
       return ctx.session;
     }),
+
+    reconcileOidc: publicProcedure
+      .input(oidcIdTokenInput)
+      .output(reconciledOidcUserOutput)
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await ctx.oidcIdentities.reconcile(input.idToken);
+        } catch (error) {
+          if (isExpectedOidcReconciliationError(error)) {
+            throw new TRPCError({
+              code: "UNAUTHORIZED",
+              message: "Unable to sign in",
+            });
+          }
+
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Unable to sign in",
+          });
+        }
+      }),
 
     login: publicProcedure
       .input(

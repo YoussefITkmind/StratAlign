@@ -7,10 +7,11 @@ import {
   vi,
 } from "vitest";
 
-describe("auth.login", () => {
+describe("auth router", () => {
   const authenticate = vi.fn();
   const consume = vi.fn();
   const reset = vi.fn();
+  const reconcile = vi.fn();
 
   const caller = appRouter.createCaller({
     health: {
@@ -25,12 +26,16 @@ describe("auth.login", () => {
     },
     clientIp: "127.0.0.1",
     session: null,
+    oidcIdentities: {
+      reconcile,
+    },
   });
 
   beforeEach(() => {
     authenticate.mockReset();
     consume.mockReset();
     reset.mockReset();
+    reconcile.mockReset();
 
     consume.mockResolvedValue({
       allowed: true,
@@ -134,5 +139,83 @@ describe("auth.login", () => {
 
     expect(consume).not.toHaveBeenCalled();
     expect(authenticate).not.toHaveBeenCalled();
+  });
+
+  it("reconciles an OIDC token to safe platform user data", async () => {
+    const user = {
+      id: "4d2b619c-246a-4dde-a479-31179ed049ad",
+      email: "alice@example.test",
+      displayName: "Alice Test User",
+    };
+    reconcile.mockResolvedValue(user);
+
+    await expect(
+      caller.auth.reconcileOidc({ idToken: "signed-id-token" }),
+    ).resolves.toEqual(user);
+
+    expect(reconcile).toHaveBeenCalledWith("signed-id-token");
+  });
+
+  it("accepts only an ID token for OIDC reconciliation", async () => {
+    await expect(
+      caller.auth.reconcileOidc({
+        idToken: "signed-id-token",
+        issuer: "https://attacker.example.test",
+      } as { idToken: string }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing", {}],
+    ["empty", { idToken: "   " }],
+    ["oversized", { idToken: "x".repeat(16 * 1024 + 1) }],
+  ])("rejects %s OIDC token input", async (_case, input) => {
+    await expect(
+      caller.auth.reconcileOidc(input as { idToken: string }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "INVALID_IDENTITY_TOKEN",
+    "IDENTITY_CANNOT_BE_PROVISIONED",
+    "ACCOUNT_LINKING_NOT_ALLOWED",
+  ])("maps %s to the same safe authorization error", async (code) => {
+    const sensitiveValue = "sensitive-token-and-identity";
+    reconcile.mockRejectedValue({ code, message: sensitiveValue });
+
+    let caught: unknown;
+    try {
+      await caller.auth.reconcileOidc({ idToken: "signed-id-token" });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      code: "UNAUTHORIZED",
+      message: "Unable to sign in",
+    });
+    expect(JSON.stringify(caught)).not.toContain(sensitiveValue);
+  });
+
+  it("maps unexpected reconciliation failures to a safe internal error", async () => {
+    const sensitiveValue = "database-and-identity-details";
+    reconcile.mockRejectedValue(new Error(sensitiveValue));
+
+    let caught: unknown;
+    try {
+      await caller.auth.reconcileOidc({ idToken: "signed-id-token" });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Unable to sign in",
+    });
+    expect(JSON.stringify(caught)).not.toContain(sensitiveValue);
   });
 });

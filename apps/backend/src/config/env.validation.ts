@@ -6,6 +6,11 @@ const LOOPBACK_HOSTNAMES = new Set([
   "[::1]",
 ]);
 
+const strictEnvironmentBoolean = z
+  .enum(["true", "false"])
+  .transform((value) => value === "true")
+  .default(false);
+
 function validateOidcUrl(
   value: string,
   field: "AUTH_OIDC_ISSUER" | "AUTH_OIDC_JWKS_URI",
@@ -96,6 +101,7 @@ const environmentSchema = z.object({
   AUTH_OIDC_ISSUER: z.string().min(1),
   AUTH_OIDC_CLIENT_ID: z.string().trim().min(1),
   AUTH_OIDC_JWKS_URI: z.string().min(1),
+  AUTH_OIDC_ALLOW_VERIFIED_EMAIL_LINKING: strictEnvironmentBoolean,
 }).superRefine((environment, context) => {
   validateOidcUrl(
     environment.AUTH_OIDC_ISSUER,

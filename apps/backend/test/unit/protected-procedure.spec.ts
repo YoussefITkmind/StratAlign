@@ -13,6 +13,9 @@ const baseContext = {
     reset: vi.fn(),
   },
   clientIp: "127.0.0.1",
+  oidcIdentities: {
+    reconcile: vi.fn(),
+  },
 };
 
 describe("protectedProcedure", () => {

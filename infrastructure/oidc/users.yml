@@ -1,9 +1,11 @@
 - sub: foo
   name: Foo
   email: foo@example.com
+  email_verified: true
   aud: spm-web
 
 - sub: bar
   name: Bar
   email: bar@example.com
+  email_verified: true
   aud: spm-web
