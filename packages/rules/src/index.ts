@@ -58,3 +58,22 @@ export {
 } from "./schemas/rag-aggregation";
 
 export { evaluateRagAggregation } from "./evaluators/rag-aggregation";
+
+export {
+  gateCriteriaInputSchema,
+  gateCriteriaResultSchema,
+  gateCriteriaRuleSchema,
+  gateCriterionResultSchema,
+  gateCriterionSchema,
+  gateFactValueSchema,
+  gateOperatorSchema,
+  type GateCriteriaInput,
+  type GateCriteriaResult,
+  type GateCriteriaRule,
+  type GateCriterion,
+  type GateCriterionResult,
+  type GateFactValue,
+  type GateOperator,
+} from "./schemas/gate-criteria";
+
+export { evaluateGateCriteria } from "./evaluators/gate-criteria";
