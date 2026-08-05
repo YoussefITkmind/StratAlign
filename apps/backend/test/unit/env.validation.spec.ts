@@ -8,6 +8,7 @@ const validEnvironment = {
   DATABASE_URL:
     "postgresql://spm:spm_dev_password@localhost:5432/spm_platform",
   REDIS_URL: "redis://localhost:6379",
+  AUTH_SECRET: "test-auth-secret-at-least-32-characters-long",
 };
 
 describe("validateEnvironment", () => {
@@ -42,5 +43,14 @@ describe("validateEnvironment", () => {
         REDIS_URL: "http://localhost:6379",
       }),
     ).toThrow("REDIS_URL must be a Redis connection URL");
+  });
+
+  it("rejects a missing authentication secret", () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        AUTH_SECRET: undefined,
+      }),
+    ).toThrow("Environment validation failed");
   });
 });

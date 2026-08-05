@@ -24,6 +24,7 @@ describe("auth.login", () => {
       reset,
     },
     clientIp: "127.0.0.1",
+    session: null,
   });
 
   beforeEach(() => {

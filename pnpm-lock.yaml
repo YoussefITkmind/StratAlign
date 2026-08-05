@@ -35,6 +35,9 @@ importers:
 
   apps/backend:
     dependencies:
+      '@auth/core':
+        specifier: ^0.41.3
+        version: 0.41.3
       '@prisma/adapter-pg':
         specifier: ^7.9.1
         version: 7.9.1

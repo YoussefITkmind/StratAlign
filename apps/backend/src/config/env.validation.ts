@@ -28,6 +28,10 @@ const environmentSchema = z.object({
     .regex(/^rediss?:\/\//, {
       message: "REDIS_URL must be a Redis connection URL",
     }),
+
+  AUTH_SECRET: z
+    .string()
+    .min(32, "AUTH_SECRET must be at least 32 characters"),
 });
 
 export type Environment = z.infer<typeof environmentSchema>;

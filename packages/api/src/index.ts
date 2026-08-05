@@ -48,11 +48,20 @@ export interface LoginRateLimiterContract {
   ): Promise<void>;
 }
 
+export interface AuthenticatedSession {
+  user: {
+    id: string;
+    email: string | null;
+    name: string | null;
+  };
+}
+
 export interface TrpcContext {
   health: HealthServiceContract;
   credentials: CredentialServiceContract;
   loginRateLimiter: LoginRateLimiterContract;
   clientIp: string;
+  session: AuthenticatedSession | null;
 }
 
 const t = initTRPC.context<TrpcContext>().create();
@@ -60,6 +69,24 @@ const t = initTRPC.context<TrpcContext>().create();
 export const router = t.router;
 export const publicProcedure = t.procedure;
 export const middleware = t.middleware;
+
+export const withAuthn = middleware(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Authentication required",
+    });
+  }
+
+  return next({
+    ctx: {
+      ...ctx,
+      session: ctx.session,
+    },
+  });
+});
+
+export const protectedProcedure = publicProcedure.use(withAuthn);
 
 export const appRouter = router({
   health: router({
@@ -69,6 +96,10 @@ export const appRouter = router({
   }),
 
   auth: router({
+    session: protectedProcedure.query(({ ctx }) => {
+      return ctx.session;
+    }),
+
     login: publicProcedure
       .input(
         z.object({

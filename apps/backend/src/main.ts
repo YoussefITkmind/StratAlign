@@ -7,6 +7,7 @@ import { RedisService } from "./redis/redis.service";
 import { appRouter } from "@spm/api";
 import { CredentialService } from "./modules/auth/credential.service";
 import { LoginRateLimiterService } from "./modules/auth/login-rate-limiter.service";
+import { SessionService } from "./modules/auth/session.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -25,17 +26,29 @@ async function bootstrap(): Promise<void> {
   const loginRateLimiter = new LoginRateLimiterService(
     redis.getClient(),
   );
+  const sessions = new SessionService(environment.AUTH_SECRET);
 
   const server = createHTTPServer({
     router: appRouter,
     basePath: "/trpc/",
 
-    createContext({ req }) {
+    async createContext({ req }) {
+      const headers = new Headers();
+
+      if (typeof req.headers.cookie === "string") {
+        headers.set("cookie", req.headers.cookie);
+      }
+
+      if (typeof req.headers.authorization === "string") {
+        headers.set("authorization", req.headers.authorization);
+      }
+
       return {
         health,
         credentials,
         loginRateLimiter,
         clientIp: req.socket.remoteAddress ?? "unknown",
+        session: await sessions.getSession({ headers }),
       };
     },
 
