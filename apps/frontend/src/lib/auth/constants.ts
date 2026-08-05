@@ -5,7 +5,7 @@
  * on the generic OIDC provider in the Auth.js config (Prompt 1.1, step 1a).
  * Confirm the exact string as soon as 1.1 is stable — do not guess in prod.
  */
-export const SSO_PROVIDER_ID = "oidc" as const;
+export const SSO_PROVIDER_ID = "generic-oidc" as const;
 export const CREDENTIALS_PROVIDER_ID = "credentials" as const;
 
 export const ROUTES = {
