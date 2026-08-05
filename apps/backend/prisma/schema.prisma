@@ -6,6 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  schemas  = ["public", "iam"]
 }
 
 model SystemSetting {
@@ -16,4 +17,48 @@ model SystemSetting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("system_settings")
+  @@schema("public")
+}
+
+model User {
+  id              String           @id @default(uuid())
+  email           String           @unique
+  displayName     String?          @map("display_name")
+  emailVerifiedAt DateTime?        @map("email_verified_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  localCredential LocalCredential?
+  oidcIdentities  OidcIdentity[]
+
+  @@map("users")
+  @@schema("iam")
+}
+
+model OidcIdentity {
+  id              String    @id @default(uuid())
+  issuer          String
+  subject         String
+  userId          String    @map("user_id")
+  emailAtLink     String?   @map("email_at_link")
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([issuer, subject])
+  @@index([userId])
+  @@map("oidc_identities")
+  @@schema("iam")
+}
+
+model LocalCredential {
+  userId       String   @id @map("user_id")
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("local_credentials")
+  @@schema("iam")
 }

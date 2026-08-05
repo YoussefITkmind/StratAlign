@@ -9,7 +9,8 @@
     "lint": "eslint src --max-warnings=0"
   },
   "dependencies": {
-    "@trpc/server": "^11.18.0"
+    "@trpc/server": "^11.18.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

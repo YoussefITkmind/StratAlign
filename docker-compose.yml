@@ -36,6 +36,18 @@ services:
       retries: 10
     restart: unless-stopped
 
+  mock-oidc:
+    image: ghcr.io/bluecatengineering/mock-oidc-provider:latest
+    environment:
+      PORT: 80
+      TTL: 300
+      USERS_FILE: /config/users.yml
+    ports:
+      - "${OIDC_PORT:-8092}:80"
+    volumes:
+      - ./infrastructure/oidc/users.yml:/config/users.yml:ro
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
