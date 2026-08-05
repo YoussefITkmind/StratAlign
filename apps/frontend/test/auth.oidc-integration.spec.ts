@@ -46,8 +46,14 @@ vi.mock("next-auth/providers/credentials", () => ({
 }));
 
 import {
+  authConfig,
   authCallbacks,
+  buildProviderLogoutUrl,
   GENERIC_OIDC_PROVIDER_ID,
+  OIDC_REFRESH_ERROR,
+  oidcLogoutUrl,
+  refreshOidcToken,
+  safePostLogoutUrl,
 } from "../src/auth";
 
 type SignInCallback = (parameters: {
@@ -58,6 +64,7 @@ type SignInCallback = (parameters: {
 type JwtCallback = (parameters: {
   token: JWT;
   user?: User;
+  account?: Account | null;
 }) => JWT | Promise<JWT | null> | null;
 
 type SessionCallback = (parameters: {
@@ -77,6 +84,7 @@ function oidcAccount(overrides: Partial<Account> = {}): Account {
     id_token: "signed-id-token",
     access_token: "provider-access-token",
     refresh_token: "provider-refresh-token",
+    expires_at: 2_000_000_000,
     ...overrides,
   };
 }
@@ -84,10 +92,20 @@ function oidcAccount(overrides: Partial<Account> = {}): Account {
 describe("canonical Auth.js OIDC reconciliation", () => {
   beforeEach(() => {
     reconcileOidc.mockReset();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("uses the canonical generic-oidc provider ID", () => {
     expect(GENERIC_OIDC_PROVIDER_ID).toBe("generic-oidc");
+    expect(authConfig.session).toEqual({ strategy: "jwt", maxAge: 900 });
+    const provider = authConfig.providers.find(
+      (candidate) => typeof candidate !== "function" && candidate.id === GENERIC_OIDC_PROVIDER_ID,
+    );
+    expect(provider).toMatchObject({
+      checks: ["pkce", "state"],
+      authorization: { params: { scope: "openid profile email" } },
+    });
   });
 
   it("reconciles the ID token and propagates only safe platform identity data", async () => {
@@ -118,18 +136,20 @@ describe("canonical Auth.js OIDC reconciliation", () => {
     });
 
     const jwt = await callJwt({
-      token: {
-        id_token: account.id_token,
-        access_token: account.access_token,
-        refresh_token: account.refresh_token,
-      },
+      token: {},
       user,
+      account,
     });
 
     expect(jwt).toMatchObject({ sub: platformUser.id });
     expect(jwt).not.toHaveProperty("id_token");
     expect(jwt).not.toHaveProperty("access_token");
     expect(jwt).not.toHaveProperty("refresh_token");
+    expect(jwt).toMatchObject({
+      oidcAccessToken: account.access_token,
+      oidcRefreshToken: account.refresh_token,
+      oidcAccessTokenExpiresAt: account.expires_at! * 1_000,
+    });
 
     const session = await callSession({
       session: {
@@ -168,8 +188,22 @@ describe("canonical Auth.js OIDC reconciliation", () => {
       }),
     ).resolves.toBe(true);
 
-    const jwt = await callJwt({ token: {}, user });
+    const jwt = await callJwt({
+      token: {
+        oidcAccessToken: "stale-access-token",
+        oidcRefreshToken: "stale-refresh-token",
+        oidcAccessTokenExpiresAt: 0,
+      },
+      user,
+      account: {
+        provider: "credentials",
+        type: "credentials",
+        providerAccountId: user.id!,
+      },
+    });
     expect(jwt).toMatchObject({ sub: user.id });
+    expect(jwt).not.toHaveProperty("oidcAccessToken");
+    expect(jwt).not.toHaveProperty("oidcRefreshToken");
     expect(reconcileOidc).not.toHaveBeenCalled();
   });
 
@@ -224,5 +258,90 @@ describe("canonical Auth.js OIDC reconciliation", () => {
     expect(jwt).toMatchObject({ sub: platformUserId });
     expect(session.user.id).toBe(platformUserId);
     expect(reconcileOidc).not.toHaveBeenCalled();
+  });
+
+  it("does not refresh an OIDC access token before expiry", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const jwt = await callJwt({
+      token: {
+        sub: "platform-user",
+        oidcAccessToken: "current-access-token",
+        oidcRefreshToken: "current-refresh-token",
+        oidcAccessTokenExpiresAt: Date.now() + 60_000,
+      },
+    });
+
+    expect(jwt).toMatchObject({ oidcAccessToken: "current-access-token" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["rotates", "rotated-refresh-token", "rotated-refresh-token"],
+    ["retains", undefined, "current-refresh-token"],
+  ])("%s the refresh token according to the provider response", async (_case, replacement, expected) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        token_endpoint: "https://identity.example.test/token",
+        end_session_endpoint: "https://identity.example.test/logout",
+      }),
+    }));
+    const tokenFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        access_token: "new-access-token",
+        expires_in: 300,
+        refresh_token: replacement,
+      }),
+    });
+
+    const refreshed = await refreshOidcToken({
+      sub: "platform-user",
+      oidcAccessToken: "expired-access-token",
+      oidcRefreshToken: "current-refresh-token",
+      oidcAccessTokenExpiresAt: Date.now() - 1,
+    }, tokenFetch as typeof fetch);
+
+    expect(refreshed).toMatchObject({
+      oidcAccessToken: "new-access-token",
+      oidcRefreshToken: expected,
+    });
+    expect(refreshed).not.toHaveProperty("oidcRefreshError");
+  });
+
+  it("fails refresh safely and removes the browser session", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("sensitive provider failure")));
+    const failed = await refreshOidcToken({
+      sub: "platform-user",
+      oidcAccessToken: "expired-access-token",
+      oidcRefreshToken: "current-refresh-token",
+      oidcAccessTokenExpiresAt: Date.now() - 1,
+    });
+
+    expect(failed).toMatchObject({ oidcRefreshError: OIDC_REFRESH_ERROR });
+    expect(failed).not.toHaveProperty("oidcAccessToken");
+
+    const session = await callSession({
+      session: {
+        expires: new Date(Date.now() + 60_000).toISOString(),
+        user: { id: "platform-user", role: "member" },
+      },
+      token: failed,
+    });
+    expect(session).toBeNull();
+    expect(JSON.stringify(session)).not.toContain("sensitive provider failure");
+  });
+
+  it("builds safe provider logout URLs and rejects open redirects", async () => {
+    expect(safePostLogoutUrl("https://attacker.example.test/callback"))
+      .toBe("http://localhost:3000/login");
+    expect(safePostLogoutUrl("/dashboard"))
+      .toBe("http://localhost:3000/dashboard");
+
+    const logout = await oidcLogoutUrl("/login");
+    expect(logout).toBe(
+      "https://identity.example.test/logout?post_logout_redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Flogin",
+    );
+    expect(buildProviderLogoutUrl(undefined, "/login")).toBeNull();
   });
 });
