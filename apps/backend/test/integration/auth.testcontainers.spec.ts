@@ -90,6 +90,13 @@ describe.sequential("authentication with PostgreSQL and Redis Testcontainers", (
       clientIp,
       session: null,
       oidcIdentities: { reconcile: vi.fn() },
+      authenticationFreshness: { record: vi.fn() },
+      authorization: { resolve: vi.fn() },
+      iam: {
+        listRoles: vi.fn(), listGroupMappings: vi.fn(), upsertGroupMapping: vi.fn(),
+        grantScope: vi.fn(), listCredentialUsers: vi.fn(), listScopeGrants: vi.fn(),
+        getStepUpPolicy: vi.fn(),
+      },
     });
   }
 
