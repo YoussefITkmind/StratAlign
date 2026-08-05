@@ -1,4 +1,4 @@
-import NextAuth from "next-auth";
+import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { trpcClient } from "./services/api-client";
 
@@ -10,6 +10,8 @@ const oidcScopes =
 const oidcTokenEndpointAuthMethod =
   process.env.AUTH_OIDC_TOKEN_ENDPOINT_AUTH_METHOD ??
   "client_secret_basic";
+
+export const GENERIC_OIDC_PROVIDER_ID = "generic-oidc";
 
 if (
   oidcTokenEndpointAuthMethod !== "client_secret_basic" &&
@@ -25,6 +27,54 @@ if (!oidcIssuer || !oidcClientId || !oidcClientSecret) {
     "AUTH_OIDC_ISSUER, AUTH_OIDC_CLIENT_ID, and AUTH_OIDC_CLIENT_SECRET are required",
   );
 }
+
+export const authCallbacks = {
+  async signIn({ user, account }) {
+    if (account?.provider !== GENERIC_OIDC_PROVIDER_ID) {
+      return true;
+    }
+
+    const idToken = account.id_token;
+
+    if (typeof idToken !== "string" || idToken.trim().length === 0) {
+      return false;
+    }
+
+    try {
+      const platformUser =
+        await trpcClient.auth.reconcileOidc.mutate({ idToken });
+
+      user.id = platformUser.id;
+      user.email = platformUser.email;
+      user.name = platformUser.displayName;
+      user.image = null;
+
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  jwt({ token, user }) {
+    if (user) {
+      token.sub = user.id;
+    }
+
+    delete token.id_token;
+    delete token.access_token;
+    delete token.refresh_token;
+
+    return token;
+  },
+
+  session({ session, token }) {
+    if (session.user && token.sub) {
+      session.user.id = token.sub;
+    }
+
+    return session;
+  },
+} satisfies NonNullable<NextAuthConfig["callbacks"]>;
 
 export const {
   handlers,
@@ -43,7 +93,7 @@ export const {
 
   providers: [
     {
-      id: "generic-oidc",
+      id: GENERIC_OIDC_PROVIDER_ID,
       name: "Continue with SSO",
       type: "oidc",
       issuer: oidcIssuer,
@@ -123,21 +173,5 @@ export const {
     }),
   ],
 
-  callbacks: {
-    jwt({ token, user }) {
-      if (user) {
-        token.sub = user.id;
-      }
-
-      return token;
-    },
-
-    session({ session, token }) {
-      if (session.user && token.sub) {
-        session.user.id = token.sub;
-      }
-
-      return session;
-    },
-  },
+  callbacks: authCallbacks,
 });
