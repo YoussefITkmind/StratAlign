@@ -77,3 +77,15 @@ export {
 } from "./schemas/gate-criteria";
 
 export { evaluateGateCriteria } from "./evaluators/gate-criteria";
+
+export {
+  ruleDocumentSchema,
+  type RuleDocument,
+  type RuleType,
+} from "./schemas/rule-document";
+
+export {
+  evaluateRule,
+  type RuleInput,
+  type RuleResult,
+} from "./evaluators/evaluate-rule";
