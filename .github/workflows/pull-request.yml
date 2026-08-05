@@ -31,6 +31,15 @@ jobs:
       NEXT_PUBLIC_TRPC_URL: http://localhost:4000/trpc
       DATABASE_URL: postgresql://spm:spm_test_password@localhost:5432/spm_platform
       REDIS_URL: redis://localhost:6379
+      AUTH_SECRET: ci-only-auth-secret-not-for-production-000000000000
+      AUTH_TRUST_HOST: true
+      AUTH_OIDC_ISSUER: https://oidc.ci.invalid/
+      AUTH_OIDC_CLIENT_ID: ci-only-oidc-client
+      AUTH_OIDC_CLIENT_SECRET: ci-only-oidc-client-secret-not-real
+      AUTH_OIDC_JWKS_URI: https://oidc.ci.invalid/jwks
+      AUTH_OIDC_SCOPES: openid profile email
+      AUTH_OIDC_TOKEN_ENDPOINT_AUTH_METHOD: client_secret_post
+      AUTH_OIDC_ALLOW_VERIFIED_EMAIL_LINKING: false
 
     steps:
       - name: Check out repository
