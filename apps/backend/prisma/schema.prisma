@@ -24,15 +24,30 @@ model User {
   id              String           @id @default(uuid())
   email           String           @unique
   displayName     String?          @map("display_name")
-  oidcIssuer      String?          @map("oidc_issuer")
-  oidcSubject     String?          @map("oidc_subject")
   emailVerifiedAt DateTime?        @map("email_verified_at")
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
   localCredential LocalCredential?
+  oidcIdentities  OidcIdentity[]
 
-  @@unique([oidcIssuer, oidcSubject])
   @@map("users")
+  @@schema("iam")
+}
+
+model OidcIdentity {
+  id              String    @id @default(uuid())
+  issuer          String
+  subject         String
+  userId          String    @map("user_id")
+  emailAtLink     String?   @map("email_at_link")
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([issuer, subject])
+  @@index([userId])
+  @@map("oidc_identities")
   @@schema("iam")
 }
 
