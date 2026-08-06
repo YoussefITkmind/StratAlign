@@ -17,3 +17,352 @@ model SystemSetting {
 
   @@map("system_settings")
 }
+
+// ---------------------------------------------------------------------------
+// Scheduler
+//
+// These models are deliberately domain-agnostic. `subjectType`, `subjectId`
+// and `payload` on CadenceDefinition are opaque: the scheduler stores, indexes
+// and copies them into emitted events, but never interprets them. That is what
+// keeps KPI, OKR, performance data and strategy concerns out of this module.
+// ---------------------------------------------------------------------------
+
+enum PeriodType {
+  WEEK
+  MONTH
+  QUARTER
+  YEAR
+}
+
+/// A named calendar that divides time into recurring, labelled periods.
+/// Purely structural: it knows about weeks, months, quarters and years, and a
+/// configurable fiscal year start. It knows nothing about what is reported in
+/// a period.
+model PeriodCalendar {
+  id                   String     @id @default(uuid())
+  key                  String     @unique
+  name                 String
+  description          String?
+  periodType           PeriodType @map("period_type")
+  /// 1 = January. Shifts quarter and year boundaries for fiscal calendars.
+  fiscalYearStartMonth Int        @default(1) @map("fiscal_year_start_month")
+  timezone             String     @default("UTC")
+  isActive             Boolean    @default(true) @map("is_active")
+  createdAt            DateTime   @default(now()) @map("created_at")
+  updatedAt            DateTime   @updatedAt @map("updated_at")
+
+  cadenceDefinitions CadenceDefinition[]
+
+  @@map("period_calendars")
+}
+
+enum CadenceType {
+  ONCE
+  INTERVAL
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  CRON
+}
+
+enum CadenceStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum CatchUpPolicy {
+  FIRE_ALL
+  FIRE_LATEST_ONLY
+  SKIP_MISSED
+}
+
+/// The definition of a recurring window. Owns cadence configuration and the
+/// offsets that derive each instance's window and review milestones.
+model CadenceDefinition {
+  id          String  @id @default(uuid())
+  key         String
+  name        String
+  description String?
+
+  /// Opaque correlation fields. Never interpreted by the scheduler.
+  subjectType String @map("subject_type")
+  subjectId   String @map("subject_id")
+  payload     Json   @default("{}")
+
+  cadenceType   CadenceType @map("cadence_type")
+  cadenceConfig Json        @map("cadence_config")
+
+  periodCalendarId String?         @map("period_calendar_id")
+  periodCalendar   PeriodCalendar? @relation(fields: [periodCalendarId], references: [id], onDelete: SetNull)
+
+  timezone String    @default("UTC")
+  anchorAt DateTime  @map("anchor_at")
+  startsAt DateTime  @map("starts_at")
+  endsAt   DateTime? @map("ends_at")
+
+  status        CadenceStatus @default(ACTIVE)
+  catchUpPolicy CatchUpPolicy @default(FIRE_LATEST_ONLY) @map("catch_up_policy")
+
+  /// How far ahead of now instances are materialised, in seconds.
+  lookaheadSeconds Int @default(300) @map("lookahead_seconds")
+
+  /// Milestone offsets, all relative to the occurrence instant.
+  windowOpenOffsetMinutes Int @default(0) @map("window_open_offset_minutes")
+  windowDurationMinutes   Int @default(1440) @map("window_duration_minutes")
+  closingWarningMinutes   Int @default(60) @map("closing_warning_minutes")
+  reviewDueOffsetMinutes  Int @default(0) @map("review_due_offset_minutes")
+
+  nextOccurrenceAt   DateTime? @map("next_occurrence_at")
+  lastMaterializedAt DateTime? @map("last_materialized_at")
+
+  /// Optimistic concurrency guard for concurrent materialisation.
+  version   Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  instances CadenceInstance[]
+
+  @@unique([subjectType, subjectId, key])
+  @@index([status, nextOccurrenceAt])
+  @@index([periodCalendarId])
+  @@map("cadence_definitions")
+}
+
+enum CadenceInstanceStatus {
+  PENDING
+  OPEN
+  CLOSING
+  CLOSED
+  REVIEW_DUE
+  COMPLETED
+  SKIPPED
+  FAILED
+}
+
+/// A single materialised occurrence of a CadenceDefinition, with a concrete
+/// window and review deadline. Advances through its milestones one transition
+/// at a time, emitting one generic event per transition.
+model CadenceInstance {
+  id                  String            @id @default(uuid())
+  cadenceDefinitionId String            @map("cadence_definition_id")
+  cadenceDefinition   CadenceDefinition @relation(fields: [cadenceDefinitionId], references: [id], onDelete: Cascade)
+
+  /// Ordinal of this occurrence within its definition, counted from the anchor.
+  sequence     Int
+  occurrenceAt DateTime @map("occurrence_at")
+
+  /// Resolved from the definition's PeriodCalendar, when one is attached.
+  periodKey      String?   @map("period_key")
+  periodStartsAt DateTime? @map("period_starts_at")
+  periodEndsAt   DateTime? @map("period_ends_at")
+
+  windowOpensAt   DateTime @map("window_opens_at")
+  windowClosingAt DateTime @map("window_closing_at")
+  windowClosesAt  DateTime @map("window_closes_at")
+  reviewDueAt     DateTime @map("review_due_at")
+
+  status CadenceInstanceStatus @default(PENDING)
+  /// Timestamp of the next milestone to publish. Drives the transition sweep.
+  nextTransitionAt DateTime? @map("next_transition_at")
+
+  openedAt          DateTime? @map("opened_at")
+  closingNotifiedAt DateTime? @map("closing_notified_at")
+  closedAt          DateTime? @map("closed_at")
+  reviewNotifiedAt  DateTime? @map("review_notified_at")
+
+  /// Frozen copy of the definition payload, so later edits never rewrite history.
+  payloadSnapshot Json    @map("payload_snapshot")
+  skipReason      String? @map("skip_reason")
+  attempts        Int     @default(0)
+  lastError       String? @map("last_error")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([cadenceDefinitionId, occurrenceAt])
+  @@index([status, nextTransitionAt])
+  @@map("cadence_instances")
+}
+
+// ---------------------------------------------------------------------------
+// Event outbox
+// ---------------------------------------------------------------------------
+
+enum DomainEventStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+/// Transactional outbox. Producers insert events in the same transaction as
+/// the state change that caused them; the relay moves them onto the queue.
+model DomainEvent {
+  id            String            @id @default(uuid())
+  eventType     String            @map("event_type")
+  eventVersion  Int               @default(1) @map("event_version")
+  aggregateType String            @map("aggregate_type")
+  aggregateId   String            @map("aggregate_id")
+  payload       Json
+  dedupeKey     String            @unique @map("dedupe_key")
+  status        DomainEventStatus @default(PENDING)
+  occurredAt    DateTime          @default(now()) @map("occurred_at")
+  publishedAt   DateTime?         @map("published_at")
+  attempts      Int               @default(0)
+  lastError     String?           @map("last_error")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  @@index([status, occurredAt])
+  @@map("domain_events")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+//
+// `recipientRef` is an opaque identifier. There is no User model in this
+// repository yet, so notifications deliberately do not carry a foreign key.
+// When IAM lands, a nullable FK can be added alongside without a rewrite.
+// ---------------------------------------------------------------------------
+
+enum NotificationChannel {
+  EMAIL
+  TEAMS
+  IN_APP
+}
+
+enum NotificationPriority {
+  URGENT
+  NORMAL
+  LOW
+}
+
+enum NotificationDeliveryMode {
+  IMMEDIATE
+  DIGEST
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  DEFERRED
+  DIGESTED
+  SENT
+  FAILED
+  SUPPRESSED
+}
+
+enum NotificationDigestStatus {
+  OPEN
+  SENT
+  SKIPPED
+  FAILED
+}
+
+/// One row per (template, locale, channel). Locale fallback is resolved at
+/// render time by walking a candidate list, so a missing AR row transparently
+/// falls back to EN.
+model NotificationTemplate {
+  id              String              @id @default(uuid())
+  key             String
+  locale          String
+  channel         NotificationChannel
+  subjectTemplate String              @map("subject_template")
+  bodyTemplate    String              @map("body_template")
+  isActive        Boolean             @default(true) @map("is_active")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  @@unique([key, locale, channel])
+  @@map("notification_templates")
+}
+
+model NotificationPreference {
+  id                    String                   @id @default(uuid())
+  recipientRef          String                   @map("recipient_ref")
+  channel               NotificationChannel
+  deliveryMode          NotificationDeliveryMode @default(IMMEDIATE) @map("delivery_mode")
+  /// Digest window length. Only meaningful when deliveryMode is DIGEST.
+  digestIntervalMinutes Int                      @default(1440) @map("digest_interval_minutes")
+  locale                String                   @default("en")
+  timezone              String                   @default("UTC")
+  /// Channel address (email address, Teams webhook URL, ...).
+  address               String?
+  mutedTemplateKeys     String[]                 @map("muted_template_keys")
+  isEnabled             Boolean                  @default(true) @map("is_enabled")
+  createdAt             DateTime                 @default(now()) @map("created_at")
+  updatedAt             DateTime                 @updatedAt @map("updated_at")
+
+  @@unique([recipientRef, channel])
+  @@map("notification_preferences")
+}
+
+model NotificationDigest {
+  id             String                   @id @default(uuid())
+  recipientRef   String                   @map("recipient_ref")
+  channel        NotificationChannel
+  windowStartsAt DateTime                 @map("window_starts_at")
+  windowEndsAt   DateTime                 @map("window_ends_at")
+  status         NotificationDigestStatus @default(OPEN)
+  itemCount      Int                      @default(0) @map("item_count")
+  sentAt         DateTime?                @map("sent_at")
+  createdAt      DateTime                 @default(now()) @map("created_at")
+  updatedAt      DateTime                 @updatedAt @map("updated_at")
+
+  deliveries NotificationDelivery[]
+
+  @@unique([recipientRef, channel, windowStartsAt])
+  @@index([status, windowEndsAt])
+  @@map("notification_digests")
+}
+
+/// A single outbound message attempt record. Rendered content is frozen onto
+/// the row at dispatch time so a later template edit cannot rewrite what was
+/// actually sent.
+model NotificationDelivery {
+  id               String              @id @default(uuid())
+  recipientRef     String              @map("recipient_ref")
+  recipientAddress String?             @map("recipient_address")
+  channel          NotificationChannel
+
+  templateKey  String @map("template_key")
+  templateData Json   @default("{}") @map("template_data")
+
+  /// Locale requested by the caller; resolvedLocale is what the template
+  /// registry actually matched after fallback.
+  locale         String
+  resolvedLocale String? @map("resolved_locale")
+  subject        String?
+  body           String?
+
+  priority     NotificationPriority       @default(NORMAL)
+  deliveryMode NotificationDeliveryMode   @default(IMMEDIATE) @map("delivery_mode")
+  status       NotificationDeliveryStatus @default(PENDING)
+
+  dedupeKey   String   @unique @map("dedupe_key")
+  availableAt DateTime @default(now()) @map("available_at")
+
+  isDigestSummary Boolean             @default(false) @map("is_digest_summary")
+  digestId        String?             @map("digest_id")
+  digest          NotificationDigest? @relation(fields: [digestId], references: [id], onDelete: SetNull)
+
+  /// DomainEvent.id that produced this delivery, when applicable.
+  sourceEventId String? @map("source_event_id")
+
+  attempts          Int       @default(0)
+  maxAttempts       Int       @default(5) @map("max_attempts")
+  providerMessageId String?   @map("provider_message_id")
+  lastError         String?   @map("last_error")
+  sentAt            DateTime? @map("sent_at")
+  failedAt          DateTime? @map("failed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status, availableAt])
+  @@index([recipientRef, channel, status])
+  @@index([digestId])
+  @@map("notification_deliveries")
+}

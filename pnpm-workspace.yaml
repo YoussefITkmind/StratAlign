@@ -3,7 +3,17 @@ packages:
   - "packages/*"
 allowBuilds:
   '@prisma/engines': true
+  # Optional native helpers pulled in by testcontainers (via docker-modem and
+  # ssh2). None are needed to talk to a local Docker socket, and declining them
+  # keeps CI and Docker images free of a native build toolchain.
+  cpu-features: false
   esbuild: true
+  # Optional native accelerator for msgpackr (pulled in by bullmq). msgpackr
+  # falls back to its pure-JS codec without it, so we decline the native build
+  # rather than widen the toolchain requirements for CI and Docker images.
+  msgpackr-extract: false
   prisma: true
+  protobufjs: false
   sharp: true
+  ssh2: false
   unrs-resolver: true

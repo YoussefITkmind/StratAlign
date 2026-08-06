@@ -1,22 +1,18 @@
 import "dotenv/config";
 import { createHTTPServer } from "@trpc/server/adapters/standalone";
 import { validateEnvironment } from "./config/env.validation";
-import { PrismaService } from "./database/prisma.service";
-import { HealthService } from "./modules/health/health.service";
-import { RedisService } from "./redis/redis.service";
+import { createServiceGraph } from "./bootstrap";
 import { appRouter } from "@spm/api";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
 
-  const prisma = new PrismaService(environment.DATABASE_URL);
-  const redis = new RedisService(environment.REDIS_URL);
-  const health = new HealthService(prisma, redis);
+  // The API process builds the same graph as the worker process but starts no
+  // workers. It still needs the queue and notification services so that a
+  // request can enqueue work; consuming that work is the worker's job.
+  const services = createServiceGraph(environment);
 
-  await Promise.all([
-    prisma.connect(),
-    redis.connect(),
-  ]);
+  await services.connect();
 
   const server = createHTTPServer({
     router: appRouter,
@@ -24,9 +20,11 @@ async function bootstrap(): Promise<void> {
 
     createContext() {
       return {
-        prisma,
-        redis,
-        health,
+        prisma: services.prisma,
+        redis: services.redis,
+        health: services.health,
+        scheduler: services.schedulerService,
+        notifications: services.notificationService,
       };
     },
 
@@ -69,10 +67,7 @@ async function bootstrap(): Promise<void> {
 
     server.close();
 
-    await Promise.all([
-      prisma.disconnect(),
-      redis.disconnect(),
-    ]);
+    await services.shutdown();
   }
 
   process.once("SIGINT", () => {
