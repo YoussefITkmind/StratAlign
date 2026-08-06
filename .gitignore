@@ -45,3 +45,6 @@ Thumbs.db
 
 # Generated Prisma client
 apps/backend/src/generated/
+
+# Vercel
+.vercel
