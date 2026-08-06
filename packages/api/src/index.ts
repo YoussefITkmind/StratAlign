@@ -10,9 +10,12 @@ import {
   type ScopePredicate,
   type StepUpActionClass,
 } from "@spm/domain-iam";
+
 import {
+  evaluateRule,
+  parseRuleInput,
+  ruleDocumentSchema,
   type RuleDocument,
-  type RuleInput,
   type RuleResult,
   type RuleType,
 } from "@spm/rules";
@@ -26,6 +29,7 @@ export interface HealthStatus {
   timestamp: string;
   uptimeSeconds: number;
 }
+
 export interface HealthServiceContract { check(): Promise<HealthStatus>; }
 
 export interface AuthenticatedUser { id: string; email: string; displayName: string | null; }
@@ -119,9 +123,9 @@ export interface RulesServiceContract {
   ): Promise<RuleDefinitionOutput | null>;
 
   evaluate(
-    ruleKey: string,
-    input: RuleInput,
-  ): Promise<RuleResult>;
+  ruleId: string,
+  input: unknown,
+): Promise<RuleResult>;
 }
 
 export interface TrpcContext {
@@ -238,9 +242,140 @@ const grantOutput = z.object({
 }).strict();
 const admin = () => requireRole("platform_administrator");
 
+const rulesPreviewInputSchema = z.object({
+  draftDocument: ruleDocumentSchema,
+  sampleData: z.unknown(),
+}).strict();
+
+const ruleDefinitionOutputSchema = z.object({
+  id: z.string().uuid(),
+  ruleKey: z.string(),
+  ruleType: z.enum([
+    "threshold_status",
+    "rollup",
+    "variance_alert",
+    "rag_aggregation",
+    "gate_criteria",
+  ]),
+  name: z.string(),
+  document: ruleDocumentSchema,
+  version: z.number().int().positive(),
+  status: z.enum([
+    "draft",
+    "published",
+    "superseded",
+  ]),
+  isCurrent: z.boolean(),
+  publishedAt: z.date().nullable(),
+  supersedesId: z.string().uuid().nullable(),
+  createdAt: z.date(),
+  createdBy: z.string().uuid(),
+}).strict();
+
+const rulesCreateInputSchema = z.object({
+  ruleKey: z.string().trim().min(1).max(150),
+  name: z.string().trim().min(1).max(200),
+  document: ruleDocumentSchema,
+}).strict();
+
+const rulesPublishInputSchema = z.object({
+  ruleId: z.string().uuid(),
+}).strict();
+
+const rulesEvaluateInputSchema = z.object({
+  ruleId: z.string().uuid(),
+  input: z.unknown(),
+}).strict();
+
+const rulesGetVersionInputSchema = z.object({
+  ruleKey: z.string().trim().min(1).max(150),
+  version: z.number().int().positive(),
+}).strict();
+
 export const appRouter = router({
   health: router({
     check: publicProcedure.query(({ ctx }) => ctx.health.check()),
+  }),
+  rules: router({
+    create: protectedProcedure
+      .input(rulesCreateInputSchema)
+      .output(ruleDefinitionOutputSchema)
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await ctx.rules.createDraft({
+            ...input,
+            createdBy: ctx.session.user.id,
+          });
+        } catch {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Unable to create rule draft",
+          });
+        }
+      }),
+
+    preview: protectedProcedure
+      .input(rulesPreviewInputSchema)
+      .mutation(({ input }) => {
+        const validatedInput = parseRuleInput(
+          input.draftDocument,
+          input.sampleData,
+        );
+
+        return evaluateRule(
+          input.draftDocument,
+          validatedInput,
+        );
+      }),
+
+    publish: requireRole(
+      "seo_administrator",
+      "strategy_analyst",
+    )
+      .input(rulesPublishInputSchema)
+      .output(ruleDefinitionOutputSchema)
+      .mutation(async ({ ctx, input }) => {
+        try {
+          // TODO(1.5): Replace role gating with
+          // workflow-case-gated publication.
+          return await ctx.rules.publish(input.ruleId);
+        } catch {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Unable to publish rule",
+          });
+        }
+      }),
+
+    evaluate: protectedProcedure
+      .input(rulesEvaluateInputSchema)
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await ctx.rules.evaluate(
+            input.ruleId,
+            input.input,
+          );
+        } catch {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Unable to evaluate rule",
+          });
+        }
+      }),
+
+    list: protectedProcedure
+      .output(z.array(ruleDefinitionOutputSchema))
+      .query(({ ctx }) => ctx.rules.list()),
+
+    getVersion: protectedProcedure
+      .input(rulesGetVersionInputSchema)
+      .output(ruleDefinitionOutputSchema.nullable())
+      .query(({ ctx, input }) =>
+        ctx.rules.getVersion(
+          input.ruleKey,
+          input.version,
+        ),
+      ),
   }),
   auth: router({
     session: protectedProcedure.query(({ ctx }) => ({

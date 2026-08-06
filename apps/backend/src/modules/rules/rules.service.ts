@@ -3,7 +3,6 @@ import {
   parseRuleInput,
   ruleDocumentSchema,
   type RuleDocument,
-  type RuleInput,
   type RuleResult,
   type RuleType,
 } from "@spm/rules";
@@ -277,16 +276,26 @@ export class RulesService {
   }
 
   async evaluate(
-    ruleKey: string,
-    input: RuleInput,
+    ruleId: string,
+    input: unknown,
   ): Promise<RuleResult> {
-    const rule = await this.getPublished(ruleKey);
+    const storedRule =
+      await this.prisma.ruleDefinition.findUnique({
+        where: {
+          id: ruleId,
+        },
+      });
 
-    if (!rule) {
+    if (
+      !storedRule ||
+      storedRule.status !== "PUBLISHED"
+    ) {
       throw new RulesOperationError(
         "Published rule was not found",
       );
     }
+
+    const rule = this.toView(storedRule);
 
     const validatedInput = parseRuleInput(
       rule.document,
