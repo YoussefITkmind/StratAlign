@@ -1,5 +1,6 @@
 import {
   evaluateRule,
+  parseRuleInput,
   ruleDocumentSchema,
   type RuleDocument,
   type RuleInput,
@@ -266,7 +267,9 @@ export class RulesService {
       where: {
         ruleKey,
         status: "PUBLISHED",
-        isCurrent: true,
+      },
+      orderBy: {
+        version: "desc",
       },
     });
 
@@ -285,9 +288,14 @@ export class RulesService {
       );
     }
 
-    return evaluateRule(
+    const validatedInput = parseRuleInput(
       rule.document,
       input,
+    );
+
+    return evaluateRule(
+      rule.document,
+      validatedInput,
     );
   }
 

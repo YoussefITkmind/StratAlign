@@ -89,3 +89,5 @@ export {
   type RuleInput,
   type RuleResult,
 } from "./evaluators/evaluate-rule";
+
+export { parseRuleInput } from "./schemas/parse-rule-input";

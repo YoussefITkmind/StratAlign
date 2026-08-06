@@ -10,6 +10,12 @@ import {
   type ScopePredicate,
   type StepUpActionClass,
 } from "@spm/domain-iam";
+import {
+  type RuleDocument,
+  type RuleInput,
+  type RuleResult,
+  type RuleType,
+} from "@spm/rules";
 import { z } from "zod";
 
 export interface HealthStatus {
@@ -80,6 +86,44 @@ export interface IamAdminServiceContract {
   } | null>;
 }
 
+export interface RuleDefinitionOutput {
+  id: string;
+  ruleKey: string;
+  ruleType: RuleType;
+  name: string;
+  document: RuleDocument;
+  version: number;
+  status: "draft" | "published" | "superseded";
+  isCurrent: boolean;
+  publishedAt: Date | null;
+  supersedesId: string | null;
+  createdAt: Date;
+  createdBy: string;
+}
+
+export interface RulesServiceContract {
+  createDraft(input: {
+    ruleKey: string;
+    name: string;
+    document: RuleDocument;
+    createdBy: string;
+  }): Promise<RuleDefinitionOutput>;
+
+  publish(ruleId: string): Promise<RuleDefinitionOutput>;
+
+  list(): Promise<RuleDefinitionOutput[]>;
+
+  getVersion(
+    ruleKey: string,
+    version: number,
+  ): Promise<RuleDefinitionOutput | null>;
+
+  evaluate(
+    ruleKey: string,
+    input: RuleInput,
+  ): Promise<RuleResult>;
+}
+
 export interface TrpcContext {
   health: HealthServiceContract;
   credentials: CredentialServiceContract;
@@ -90,6 +134,7 @@ export interface TrpcContext {
   authenticationFreshness: AuthenticationFreshnessContract;
   authorization: IamAuthorizationServiceContract;
   iam: IamAdminServiceContract;
+  rules: RulesServiceContract;
 }
 
 type ProcedureMeta = { actionClass?: StepUpActionClass };
