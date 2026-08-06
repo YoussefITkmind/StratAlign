@@ -73,6 +73,11 @@ export function evaluateRule(
 export function evaluateRule(
   rule: RuleDocument,
   input: RuleInput,
+): RuleResult;
+
+export function evaluateRule(
+  rule: RuleDocument,
+  input: RuleInput,
 ): RuleResult {
   switch (rule.ruleType) {
     case "threshold_status":
