@@ -8,13 +8,10 @@ CREATE TYPE "rules"."RuleType" AS ENUM ('threshold_status', 'rollup', 'variance_
 CREATE TYPE "rules"."RuleDefinitionStatus" AS ENUM ('draft', 'published', 'superseded');
 
 -- AlterTable
-ALTER TABLE "iam"."group_role_mappings" ALTER COLUMN "id" DROP DEFAULT;
 
 -- AlterTable
-ALTER TABLE "iam"."roles" ALTER COLUMN "id" DROP DEFAULT;
 
--- AlterTable
-ALTER TABLE "iam"."scope_grants" ALTER COLUMN "id" DROP DEFAULT;
+
 
 -- CreateTable
 CREATE TABLE "rules"."rule_definitions" (
@@ -61,5 +58,3 @@ ALTER TABLE "rules"."rule_definitions" ADD CONSTRAINT "rule_definitions_created_
 -- AddForeignKey
 ALTER TABLE "rules"."rule_definitions" ADD CONSTRAINT "rule_definitions_supersedes_id_fkey" FOREIGN KEY ("supersedes_id") REFERENCES "rules"."rule_definitions"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- RenameIndex
-ALTER INDEX "iam"."scope_grants_user_role_scope_key" RENAME TO "scope_grants_user_id_role_id_org_scope_type_org_scope_id_key";
