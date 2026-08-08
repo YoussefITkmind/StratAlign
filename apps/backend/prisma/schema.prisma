@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules"]
+  schemas  = ["public", "iam", "rules", "audit"]
 }
 
 model SystemSetting {
@@ -66,7 +66,7 @@ enum OrgScopeType {
 }
 
 model Role {
-  id          String             @id @default(uuid())
+  id          String             @id @default(dbgenerated("gen_random_uuid()"))
   name        String             @unique
   description String
   createdAt   DateTime           @default(now()) @map("created_at")
@@ -79,7 +79,7 @@ model Role {
 }
 
 model GroupRoleMapping {
-  id           String            @id @default(uuid())
+  id           String            @id @default(dbgenerated("gen_random_uuid()"))
   groupClaim   String            @map("group_claim")
   roleId       String            @map("role_id")
   orgScopeType OrgScopeType      @map("org_scope_type")
@@ -103,7 +103,7 @@ model GroupRoleMapping {
 }
 
 model ScopeGrant {
-  id           String       @id @default(uuid())
+  id           String       @id @default(dbgenerated("gen_random_uuid()"))
   userId       String       @map("user_id")
   roleId       String       @map("role_id")
   orgScopeType OrgScopeType @map("org_scope_type")
@@ -114,7 +114,7 @@ model ScopeGrant {
   role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
   grantedBy    User         @relation("ScopeGrantGrantor", fields: [grantedById], references: [id], onDelete: Restrict)
 
-  @@unique([userId, roleId, orgScopeType, orgScopeId])
+  @@unique([userId, roleId, orgScopeType, orgScopeId], map: "scope_grants_user_role_scope_key")
   @@index([userId])
   @@index([roleId])
   @@index([grantedById])
@@ -189,4 +189,70 @@ model RuleDefinition {
   @@index([createdById])
   @@map("rule_definitions")
   @@schema("rules")
+}
+
+enum DomainEventStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+
+  @@schema("public")
+}
+
+model DomainEvent {
+  id            String            @id @default(uuid())
+  eventType     String            @map("event_type")
+  eventVersion  Int               @default(1) @map("event_version")
+  aggregateType String            @map("aggregate_type")
+  aggregateId   String            @map("aggregate_id")
+  payload       Json
+  dedupeKey     String            @unique @map("dedupe_key")
+  status        DomainEventStatus @default(PENDING)
+  occurredAt    DateTime          @default(now()) @map("occurred_at")
+  publishedAt   DateTime?         @map("published_at")
+  attempts      Int               @default(0)
+  lastError     String?           @map("last_error")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  @@index([status, occurredAt])
+  @@map("domain_events")
+  @@schema("public")
+}
+
+model JournalEntry {
+  id             String   @id @default(uuid())
+  sourceEventId  String?  @unique @map("source_event_id")
+  sequenceNumber BigInt   @unique @map("sequence_number")
+  eventType      String   @map("event_type")
+  aggregateType  String   @map("aggregate_type")
+  aggregateId    String   @map("aggregate_id")
+  payload        Json
+  correlationId  String?  @map("correlation_id")
+  actorUserId    String?  @map("actor_user_id")
+  occurredAt     DateTime @map("occurred_at")
+  previousHash   String?  @map("previous_hash")
+  entryHash      String   @unique @map("entry_hash")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([aggregateType, aggregateId, occurredAt])
+  @@index([occurredAt])
+  @@map("journal_entries")
+  @@schema("audit")
+}
+
+model EntitySnapshot {
+  id            String    @id @default(uuid())
+  aggregateType String    @map("aggregate_type")
+  aggregateId   String    @map("aggregate_id")
+  version       Int
+  snapshotData  Json      @map("snapshot_data")
+  validFrom     DateTime  @map("valid_from")
+  validTo       DateTime? @map("valid_to")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@unique([aggregateType, aggregateId, version])
+  @@index([aggregateType, aggregateId, validFrom, validTo])
+  @@map("entity_snapshots")
+  @@schema("audit")
 }

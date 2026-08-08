@@ -94,6 +94,27 @@ const environmentSchema = z.object({
       message: "REDIS_URL must be a Redis connection URL",
     }),
 
+  LOG_LEVEL: z
+    .enum(["debug", "info", "warn", "error"])
+    .default("info"),
+
+  QUEUE_PREFIX: z
+    .string()
+    .min(1)
+    .default("spm"),
+
+  EVENT_RELAY_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1000, "EVENT_RELAY_INTERVAL_MS must be at least 1000")
+    .default(5_000),
+
+  EVENT_RELAY_BATCH_SIZE: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(200),
+
   AUTH_SECRET: z
     .string()
     .min(32, "AUTH_SECRET must be at least 32 characters"),
