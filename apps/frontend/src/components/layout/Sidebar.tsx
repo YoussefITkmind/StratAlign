@@ -113,7 +113,7 @@ export default function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 pb-4">
+      <nav className="sidebar-scroll flex-1 overflow-y-auto px-3 pb-4">
         {NAV_SECTIONS.map((section) => {
           const isCollapsed = collapsedSections[section.label];
 

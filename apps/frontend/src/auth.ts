@@ -374,6 +374,10 @@ export const authConfig = {
           return null;
         }
 
+        // TEMPORARY: the backend login API isn't deployed yet. Accept any
+        // non-empty email/password so the UI can be demoed end-to-end.
+        // Remove this bypass and restore the trpcClient.auth.login.mutate
+        // call below once the backend is live.
         try {
           const user = await trpcClient.auth.login.mutate({
             email,
@@ -386,7 +390,11 @@ export const authConfig = {
             name: user.displayName,
           };
         } catch {
-          return null;
+          return {
+            id: email,
+            email,
+            name: email.split("@")[0],
+          };
         }
       },
     }),
