@@ -16,7 +16,7 @@ describe("BullMQ queue integration", () => {
 
   beforeAll(async () => {
     harness = await createTestHarness({ label: "queue" });
-  });
+  }, 120_000);
 
   afterAll(async () => {
     await harness?.teardown();

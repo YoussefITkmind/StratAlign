@@ -22,7 +22,7 @@ describe("Notification delivery integration", () => {
 
   beforeAll(async () => {
     harness = await createTestHarness({ label: "delivery" });
-  });
+  }, 120_000);
 
   afterAll(async () => {
     await harness?.teardown();

@@ -20,11 +20,10 @@ let started: {
 /**
  * Provides a real Postgres and Redis for integration tests.
  *
- * When DATABASE_URL and REDIS_URL are already set the existing services are
- * reused — that covers CI, which runs Postgres and Redis as service
- * containers, and local development against docker-compose. Testcontainers is
- * only started when nothing is available, so the common paths stay fast and
- * the suite still works on a bare machine with only Docker installed.
+ * Local development may reuse explicitly configured DATABASE_URL and REDIS_URL.
+ * CI always starts isolated Testcontainers so repository-level environment
+ * variables cannot accidentally point integration tests at unavailable
+ * localhost services.
  *
  * Containers are started once per process and shared; the integration Vitest
  * config runs single-forked for exactly this reason.
@@ -37,7 +36,9 @@ export async function startTestServices(): Promise<TestServiceUrls> {
   const existingDatabaseUrl = process.env.DATABASE_URL;
   const existingRedisUrl = process.env.REDIS_URL;
 
-  if (existingDatabaseUrl && existingRedisUrl) {
+  const isCi = process.env.CI === "true";
+
+if (!isCi && existingDatabaseUrl && existingRedisUrl) {
     started = {
       urls: { databaseUrl: existingDatabaseUrl, redisUrl: existingRedisUrl },
     };

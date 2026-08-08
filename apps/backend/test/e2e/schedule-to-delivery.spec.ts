@@ -49,7 +49,7 @@ describe("End to end: compressed schedule through to delivery", () => {
         EVENT_RELAY_INTERVAL_MS: "1000",
       },
     });
-  });
+  }, 120_000);
 
   afterAll(async () => {
     await harness?.teardown();
