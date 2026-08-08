@@ -13,6 +13,7 @@ import { OidcIdentityService } from "./modules/auth/oidc-identity.service";
 import { AuthenticationFreshnessService } from "./modules/iam/authentication-freshness.service";
 import { IamAuthorizationService } from "./modules/iam/iam-authorization.service";
 import { IamAdminService } from "./modules/iam/iam-admin.service";
+import { RulesService } from "./modules/rules/rules.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -47,6 +48,7 @@ async function bootstrap(): Promise<void> {
   );
   const authorization = new IamAuthorizationService(prisma, authenticationFreshness);
   const iam = new IamAdminService(prisma);
+  const rules = new RulesService(prisma);
 
   const server = createHTTPServer({
     router: appRouter,
@@ -73,6 +75,7 @@ async function bootstrap(): Promise<void> {
         authenticationFreshness,
         authorization,
         iam,
+        rules,
       };
     },
 
