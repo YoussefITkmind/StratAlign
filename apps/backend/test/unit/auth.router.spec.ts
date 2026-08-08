@@ -30,6 +30,7 @@ describe("auth router", () => {
     oidcIdentities: {
       reconcile,
     },
+    auditTap: { recordCompletedCall: vi.fn().mockResolvedValue(undefined) },
     authenticationFreshness: { record: recordFreshness },
     authorization: { resolve: vi.fn() },
     iam: {

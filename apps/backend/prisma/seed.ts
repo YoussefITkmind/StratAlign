@@ -1,6 +1,8 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
+import { NotificationChannel } from "../src/generated/prisma/enums";
+import { DIGEST_SUMMARY_TEMPLATE_KEY } from "../src/modules/notifications/digest/digest.service";
 import { hashPassword } from "../src/modules/auth/password.service";
 import { PLATFORM_ROLES, STEP_UP_ACTION_CLASSES } from "@spm/domain-iam";
 
@@ -195,10 +197,73 @@ async function seedTestUsers(): Promise<void> {
   }
 }
 
+async function seedNotificationTemplates(): Promise<void> {
+  const channels = [
+    NotificationChannel.EMAIL,
+    NotificationChannel.TEAMS,
+  ];
+
+  const scheduleKeys = [
+    "schedule.window-opened",
+    "schedule.window-closing",
+    "schedule.window-closed",
+    "schedule.review-due",
+  ];
+
+  for (const channel of channels) {
+    for (const key of scheduleKeys) {
+      await prisma.notificationTemplate.upsert({
+        where: {
+          key_locale_channel: {
+            key,
+            locale: "en",
+            channel,
+          },
+        },
+        update: {
+          subjectTemplate: "Review due — {{periodKey}}",
+          bodyTemplate: "A review is due for {{subjectType}} {{subjectId}}.",
+          isActive: true,
+        },
+        create: {
+          key,
+          locale: "en",
+          channel,
+          subjectTemplate: "Review due — {{periodKey}}",
+          bodyTemplate: "A review is due for {{subjectType}} {{subjectId}}.",
+        },
+      });
+    }
+
+    await prisma.notificationTemplate.upsert({
+      where: {
+        key_locale_channel: {
+          key: DIGEST_SUMMARY_TEMPLATE_KEY,
+          locale: "en",
+          channel,
+        },
+      },
+      update: {
+        subjectTemplate: "You have {{count}} pending notifications",
+        bodyTemplate: "{{items}}",
+        isActive: true,
+      },
+      create: {
+        key: DIGEST_SUMMARY_TEMPLATE_KEY,
+        locale: "en",
+        channel,
+        subjectTemplate: "You have {{count}} pending notifications",
+        bodyTemplate: "{{items}}",
+      },
+    });
+  }
+}
+
 async function main(): Promise<void> {
   await seedSystemSettings();
   await seedRolesAndPolicies();
   await seedTestUsers();
+  await seedNotificationTemplates();
 
   console.log("Database seed completed successfully");
 }

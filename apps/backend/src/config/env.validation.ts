@@ -11,6 +11,14 @@ const strictEnvironmentBoolean = z
   .transform((value) => value === "true")
   .default(false);
 
+
+function booleanFlag(defaultValue: boolean) {
+  return z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .default(defaultValue);
+}
+
 function validateOidcUrl(
   value: string,
   field: "AUTH_OIDC_ISSUER" | "AUTH_OIDC_JWKS_URI",
@@ -93,6 +101,130 @@ const environmentSchema = z.object({
     .regex(/^rediss?:\/\//, {
       message: "REDIS_URL must be a Redis connection URL",
     }),
+
+  LOG_LEVEL: z
+    .enum(["debug", "info", "warn", "error"])
+    .default("info"),
+
+  QUEUE_PREFIX: z
+    .string()
+    .min(1)
+    .default("spm"),
+
+  EVENT_RELAY_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1000, "EVENT_RELAY_INTERVAL_MS must be at least 1000")
+    .default(5_000),
+
+  EVENT_RELAY_BATCH_SIZE: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(200),
+
+  WORKER_CONCURRENCY: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(5),
+
+  SCHEDULER_ENABLED: booleanFlag(true),
+
+  SCHEDULER_TICK_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .default(60_000),
+
+  SCHEDULER_LOOKAHEAD_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(300),
+
+  SCHEDULER_TICK_BATCH_SIZE: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(500),
+
+  SCHEDULER_MAX_CATCHUP_OCCURRENCES: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(50),
+
+  SCHEDULER_DEFAULT_TIMEZONE: z
+    .string()
+    .min(1)
+    .default("UTC"),
+
+  NOTIFICATION_ENABLED: booleanFlag(true),
+
+  NOTIFICATION_DEFAULT_LOCALE: z
+    .literal("en")
+    .default("en"),
+
+  NOTIFICATION_FALLBACK_LOCALE: z
+    .literal("en")
+    .default("en"),
+
+  NOTIFICATION_MAX_ATTEMPTS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(5),
+
+  NOTIFICATION_SENDER_MODE: z
+    .enum(["live", "fake"])
+    .default("fake"),
+
+  EMAIL_API_URL: z
+    .string()
+    .url()
+    .optional(),
+
+  EMAIL_API_KEY: z
+    .string()
+    .min(1)
+    .optional(),
+
+  EMAIL_FROM_ADDRESS: z
+    .string()
+    .email()
+    .optional(),
+
+  EMAIL_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(10_000),
+
+  TEAMS_WEBHOOK_URL: z
+    .string()
+    .url()
+    .optional(),
+
+  TEAMS_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(10_000),
+
+  DIGEST_ENABLED: booleanFlag(true),
+
+  DIGEST_SWEEP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .default(300_000),
+
+  DIGEST_MAX_ITEMS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(50),
 
   AUTH_SECRET: z
     .string()

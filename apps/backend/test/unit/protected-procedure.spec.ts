@@ -16,6 +16,9 @@ const baseContext = {
   oidcIdentities: {
     reconcile: vi.fn(),
   },
+auditTap: {
+  recordCompletedCall: vi.fn().mockResolvedValue(undefined),
+},
 };
 
 describe("protectedProcedure", () => {

@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules"]
+  schemas  = ["public", "iam", "rules", "audit", "scheduling"]
 }
 
 model SystemSetting {
@@ -21,18 +21,22 @@ model SystemSetting {
 }
 
 model User {
-  id              String             @id @default(uuid())
-  email           String             @unique
-  displayName     String?            @map("display_name")
-  emailVerifiedAt DateTime?          @map("email_verified_at")
-  createdAt       DateTime           @default(now()) @map("created_at")
-  updatedAt       DateTime           @updatedAt @map("updated_at")
-  localCredential LocalCredential?
-  oidcIdentities  OidcIdentity[]
-  scopeGrants     ScopeGrant[]       @relation("ScopeGrantUser")
-  grantsGiven     ScopeGrant[]       @relation("ScopeGrantGrantor")
-  mappingsCreated GroupRoleMapping[] @relation("MappingCreator")
-  rulesCreated    RuleDefinition[]   @relation("RuleDefinitionCreator")
+  id                      String                   @id @default(uuid())
+  email                   String                   @unique
+  displayName             String?                  @map("display_name")
+  emailVerifiedAt         DateTime?                @map("email_verified_at")
+  preferredLocale         String                   @default("en") @map("preferred_locale")
+  createdAt               DateTime                 @default(now()) @map("created_at")
+  updatedAt               DateTime                 @updatedAt @map("updated_at")
+  localCredential         LocalCredential?
+  oidcIdentities          OidcIdentity[]
+  scopeGrants             ScopeGrant[]             @relation("ScopeGrantUser")
+  grantsGiven             ScopeGrant[]             @relation("ScopeGrantGrantor")
+  mappingsCreated         GroupRoleMapping[]       @relation("MappingCreator")
+  rulesCreated            RuleDefinition[]         @relation("RuleDefinitionCreator")
+  notificationPreferences NotificationPreference[] @relation("NotificationPreferenceRecipient")
+  notificationDeliveries  NotificationDelivery[]   @relation("NotificationDeliveryRecipient")
+  notificationDigests     NotificationDigest[]     @relation("NotificationDigestRecipient")
 
   @@map("users")
   @@schema("iam")
@@ -66,7 +70,7 @@ enum OrgScopeType {
 }
 
 model Role {
-  id          String             @id @default(uuid())
+  id          String             @id @default(dbgenerated("(gen_random_uuid())::text"))
   name        String             @unique
   description String
   createdAt   DateTime           @default(now()) @map("created_at")
@@ -79,7 +83,7 @@ model Role {
 }
 
 model GroupRoleMapping {
-  id           String            @id @default(uuid())
+  id           String            @id @default(dbgenerated("(gen_random_uuid())::text"))
   groupClaim   String            @map("group_claim")
   roleId       String            @map("role_id")
   orgScopeType OrgScopeType      @map("org_scope_type")
@@ -103,7 +107,7 @@ model GroupRoleMapping {
 }
 
 model ScopeGrant {
-  id           String       @id @default(uuid())
+  id           String       @id @default(dbgenerated("(gen_random_uuid())::text"))
   userId       String       @map("user_id")
   roleId       String       @map("role_id")
   orgScopeType OrgScopeType @map("org_scope_type")
@@ -114,7 +118,7 @@ model ScopeGrant {
   role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
   grantedBy    User         @relation("ScopeGrantGrantor", fields: [grantedById], references: [id], onDelete: Restrict)
 
-  @@unique([userId, roleId, orgScopeType, orgScopeId])
+  @@unique([userId, roleId, orgScopeType, orgScopeId], map: "scope_grants_user_role_scope_key")
   @@index([userId])
   @@index([roleId])
   @@index([grantedById])
@@ -189,4 +193,374 @@ model RuleDefinition {
   @@index([createdById])
   @@map("rule_definitions")
   @@schema("rules")
+}
+
+enum DomainEventStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+
+  @@schema("public")
+}
+
+model DomainEvent {
+  id            String            @id @default(uuid())
+  eventType     String            @map("event_type")
+  eventVersion  Int               @default(1) @map("event_version")
+  aggregateType String            @map("aggregate_type")
+  aggregateId   String            @map("aggregate_id")
+  payload       Json
+  dedupeKey     String            @unique @map("dedupe_key")
+  status        DomainEventStatus @default(PENDING)
+  occurredAt    DateTime          @default(now()) @map("occurred_at")
+  publishedAt   DateTime?         @map("published_at")
+  attempts      Int               @default(0)
+  lastError     String?           @map("last_error")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  @@index([status, occurredAt])
+  @@map("domain_events")
+  @@schema("public")
+}
+
+model JournalEntry {
+  id             String   @id @default(uuid())
+  sourceEventId  String?  @unique @map("source_event_id")
+  sequenceNumber BigInt   @unique @map("sequence_number")
+  eventType      String   @map("event_type")
+  aggregateType  String   @map("aggregate_type")
+  aggregateId    String   @map("aggregate_id")
+  payload        Json
+  correlationId  String?  @map("correlation_id")
+  actorUserId    String?  @map("actor_user_id")
+  occurredAt     DateTime @map("occurred_at")
+  previousHash   String?  @map("previous_hash")
+  entryHash      String   @unique @map("entry_hash")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([aggregateType, aggregateId, occurredAt])
+  @@index([occurredAt])
+  @@map("journal_entries")
+  @@schema("audit")
+}
+
+model EntitySnapshot {
+  id            String    @id @default(uuid())
+  aggregateType String    @map("aggregate_type")
+  aggregateId   String    @map("aggregate_id")
+  version       Int
+  snapshotData  Json      @map("snapshot_data")
+  validFrom     DateTime  @map("valid_from")
+  validTo       DateTime? @map("valid_to")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@unique([aggregateType, aggregateId, version])
+  @@index([aggregateType, aggregateId, validFrom, validTo])
+  @@map("entity_snapshots")
+  @@schema("audit")
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling
+// ---------------------------------------------------------------------------
+
+enum PeriodType {
+  MONTH
+  QUARTER
+  YEAR
+
+  @@schema("scheduling")
+}
+
+enum CadenceType {
+  MONTHLY
+  QUARTERLY
+  ADHOC
+
+  @@schema("scheduling")
+}
+
+enum CadenceStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+
+  @@schema("scheduling")
+}
+
+enum CatchUpPolicy {
+  FIRE_ALL
+  FIRE_LATEST_ONLY
+  SKIP_MISSED
+
+  @@schema("scheduling")
+}
+
+enum CadenceInstanceStatus {
+  PENDING
+  OPEN
+  CLOSING
+  CLOSED
+  REVIEW_DUE
+  COMPLETED
+  SKIPPED
+  FAILED
+
+  @@schema("scheduling")
+}
+
+model PeriodCalendar {
+  id                   String     @id @default(uuid())
+  key                  String     @unique
+  name                 String
+  description          String?
+  periodType           PeriodType @map("period_type")
+  fiscalYearStartMonth Int        @default(1) @map("fiscal_year_start_month")
+  timezone             String     @default("UTC")
+  isActive             Boolean    @default(true) @map("is_active")
+  createdAt            DateTime   @default(now()) @map("created_at")
+  updatedAt            DateTime   @updatedAt @map("updated_at")
+
+  cadenceDefinitions CadenceDefinition[]
+
+  @@map("period_calendars")
+  @@schema("scheduling")
+}
+
+model CadenceDefinition {
+  id          String  @id @default(uuid())
+  key         String
+  name        String
+  description String?
+
+  subjectType String @map("subject_type")
+  subjectId   String @map("subject_id")
+  payload     Json   @default("{}")
+
+  cadenceType   CadenceType @map("cadence_type")
+  cadenceConfig Json        @map("cadence_config")
+
+  periodCalendarId String?         @map("period_calendar_id")
+  periodCalendar   PeriodCalendar? @relation(fields: [periodCalendarId], references: [id], onDelete: SetNull)
+
+  timezone String    @default("UTC")
+  anchorAt DateTime  @map("anchor_at")
+  startsAt DateTime  @map("starts_at")
+  endsAt   DateTime? @map("ends_at")
+
+  status        CadenceStatus @default(ACTIVE)
+  catchUpPolicy CatchUpPolicy @default(FIRE_LATEST_ONLY) @map("catch_up_policy")
+
+  lookaheadSeconds Int @default(300) @map("lookahead_seconds")
+
+  windowOpenOffsetMinutes Int @default(0) @map("window_open_offset_minutes")
+  windowDurationMinutes   Int @default(1440) @map("window_duration_minutes")
+  closingWarningMinutes   Int @default(60) @map("closing_warning_minutes")
+  reviewDueOffsetMinutes  Int @default(0) @map("review_due_offset_minutes")
+
+  nextOccurrenceAt   DateTime? @map("next_occurrence_at")
+  lastMaterializedAt DateTime? @map("last_materialized_at")
+
+  version   Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  instances CadenceInstance[]
+
+  @@unique([subjectType, subjectId, key])
+  @@index([status, nextOccurrenceAt])
+  @@index([periodCalendarId])
+  @@map("cadence_definitions")
+  @@schema("scheduling")
+}
+
+model CadenceInstance {
+  id                  String            @id @default(uuid())
+  cadenceDefinitionId String            @map("cadence_definition_id")
+  cadenceDefinition   CadenceDefinition @relation(fields: [cadenceDefinitionId], references: [id], onDelete: Cascade)
+
+  sequence     Int
+  occurrenceAt DateTime @map("occurrence_at")
+
+  periodKey      String?   @map("period_key")
+  periodStartsAt DateTime? @map("period_starts_at")
+  periodEndsAt   DateTime? @map("period_ends_at")
+
+  windowOpensAt   DateTime @map("window_opens_at")
+  windowClosingAt DateTime @map("window_closing_at")
+  windowClosesAt  DateTime @map("window_closes_at")
+  reviewDueAt     DateTime @map("review_due_at")
+
+  status           CadenceInstanceStatus @default(PENDING)
+  nextTransitionAt DateTime?             @map("next_transition_at")
+
+  openedAt          DateTime? @map("opened_at")
+  closingNotifiedAt DateTime? @map("closing_notified_at")
+  closedAt          DateTime? @map("closed_at")
+  reviewNotifiedAt  DateTime? @map("review_notified_at")
+
+  payloadSnapshot Json    @map("payload_snapshot")
+  skipReason      String? @map("skip_reason")
+  attempts        Int     @default(0)
+  lastError       String? @map("last_error")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([cadenceDefinitionId, occurrenceAt])
+  @@index([status, nextTransitionAt])
+  @@map("cadence_instances")
+  @@schema("scheduling")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+enum NotificationChannel {
+  EMAIL
+  TEAMS
+
+  @@schema("public")
+}
+
+enum NotificationPriority {
+  URGENT
+  NORMAL
+  LOW
+
+  @@schema("public")
+}
+
+enum NotificationDeliveryMode {
+  IMMEDIATE
+  DIGEST
+
+  @@schema("public")
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  DEFERRED
+  DIGESTED
+  SENT
+  FAILED
+  SUPPRESSED
+
+  @@schema("public")
+}
+
+enum NotificationDigestStatus {
+  OPEN
+  SENT
+  SKIPPED
+  FAILED
+
+  @@schema("public")
+}
+
+model NotificationTemplate {
+  id              String              @id @default(uuid())
+  key             String
+  locale          String
+  channel         NotificationChannel
+  subjectTemplate String              @map("subject_template")
+  bodyTemplate    String              @map("body_template")
+  isActive        Boolean             @default(true) @map("is_active")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  @@unique([key, locale, channel])
+  @@map("notification_templates")
+  @@schema("public")
+}
+
+model NotificationPreference {
+  id                    String                   @id @default(uuid())
+  recipientUserId       String                   @map("recipient_user_id")
+  recipientUser         User                     @relation("NotificationPreferenceRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  channel               NotificationChannel
+  deliveryMode          NotificationDeliveryMode @default(IMMEDIATE) @map("delivery_mode")
+  digestIntervalMinutes Int                      @default(1440) @map("digest_interval_minutes")
+  locale                String?
+  timezone              String                   @default("UTC")
+  address               String?
+  mutedTemplateKeys     String[]                 @default([]) @map("muted_template_keys")
+  isEnabled             Boolean                  @default(true) @map("is_enabled")
+  createdAt             DateTime                 @default(now()) @map("created_at")
+  updatedAt             DateTime                 @updatedAt @map("updated_at")
+
+  @@unique([recipientUserId, channel])
+  @@index([recipientUserId])
+  @@map("notification_preferences")
+  @@schema("public")
+}
+
+model NotificationDigest {
+  id              String                   @id @default(uuid())
+  recipientUserId String                   @map("recipient_user_id")
+  recipientUser   User                     @relation("NotificationDigestRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  channel         NotificationChannel
+  windowStartsAt  DateTime                 @map("window_starts_at")
+  windowEndsAt    DateTime                 @map("window_ends_at")
+  status          NotificationDigestStatus @default(OPEN)
+  itemCount       Int                      @default(0) @map("item_count")
+  sentAt          DateTime?                @map("sent_at")
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  updatedAt       DateTime                 @updatedAt @map("updated_at")
+
+  deliveries NotificationDelivery[]
+
+  @@unique([recipientUserId, channel, windowStartsAt])
+  @@index([status, windowEndsAt])
+  @@index([recipientUserId])
+  @@map("notification_digests")
+  @@schema("public")
+}
+
+model NotificationDelivery {
+  id               String              @id @default(uuid())
+  recipientUserId  String              @map("recipient_user_id")
+  recipientUser    User                @relation("NotificationDeliveryRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  recipientAddress String?             @map("recipient_address")
+  channel          NotificationChannel
+
+  templateKey  String @map("template_key")
+  templateData Json   @default("{}") @map("template_data")
+
+  locale         String
+  resolvedLocale String? @map("resolved_locale")
+  subject        String?
+  body           String?
+
+  priority     NotificationPriority       @default(NORMAL)
+  deliveryMode NotificationDeliveryMode   @default(IMMEDIATE) @map("delivery_mode")
+  status       NotificationDeliveryStatus @default(PENDING)
+
+  dedupeKey   String   @unique @map("dedupe_key")
+  availableAt DateTime @default(now()) @map("available_at")
+
+  isDigestSummary Boolean             @default(false) @map("is_digest_summary")
+  digestId        String?             @map("digest_id")
+  digest          NotificationDigest? @relation(fields: [digestId], references: [id], onDelete: SetNull)
+
+  sourceEventId String? @map("source_event_id")
+
+  attempts          Int       @default(0)
+  maxAttempts       Int       @default(5) @map("max_attempts")
+  providerMessageId String?   @map("provider_message_id")
+  lastError         String?   @map("last_error")
+  sentAt            DateTime? @map("sent_at")
+  failedAt          DateTime? @map("failed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status, availableAt])
+  @@index([recipientUserId, channel, status])
+  @@index([digestId])
+  @@map("notification_deliveries")
+  @@schema("public")
 }

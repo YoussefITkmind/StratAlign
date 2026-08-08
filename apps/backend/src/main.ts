@@ -4,6 +4,10 @@ import { validateEnvironment } from "./config/env.validation";
 import { PrismaService } from "./database/prisma.service";
 import { HealthService } from "./modules/health/health.service";
 import { RedisService } from "./redis/redis.service";
+import { createLogger } from "./logging/logger";
+import { QueueConnectionProvider } from "./queue/queue-connection";
+import { QueueService } from "./queue/queue.service";
+import { EventBusService } from "./events/event-bus.service";
 import { appRouter } from "@spm/api";
 import { CredentialService } from "./modules/auth/credential.service";
 import { LoginRateLimiterService } from "./modules/auth/login-rate-limiter.service";
@@ -14,6 +18,8 @@ import { AuthenticationFreshnessService } from "./modules/iam/authentication-fre
 import { IamAuthorizationService } from "./modules/iam/iam-authorization.service";
 import { IamAdminService } from "./modules/iam/iam-admin.service";
 import { RulesService } from "./modules/rules/rules.service";
+import { SnapshotService } from "./modules/audit/snapshot.service";
+import { ApiAuditTapService } from "./modules/audit/api-audit-tap.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -21,6 +27,22 @@ async function bootstrap(): Promise<void> {
   const prisma = new PrismaService(environment.DATABASE_URL);
   const redis = new RedisService(environment.REDIS_URL);
   const health = new HealthService(prisma, redis);
+const logger = createLogger(environment.LOG_LEVEL);
+
+const queueConnectionProvider = new QueueConnectionProvider(
+  environment.REDIS_URL,
+);
+
+const queueService = new QueueService(
+  queueConnectionProvider,
+  environment.QUEUE_PREFIX,
+  logger.child("queue"),
+);
+
+const eventBus = new EventBusService(
+  queueService,
+  logger.child("event-bus"),
+);
 
   await Promise.all([
     prisma.connect(),
@@ -49,6 +71,11 @@ async function bootstrap(): Promise<void> {
   const authorization = new IamAuthorizationService(prisma, authenticationFreshness);
   const iam = new IamAdminService(prisma);
   const rules = new RulesService(prisma);
+const audit = new SnapshotService(prisma);
+const auditTap = new ApiAuditTapService(
+  prisma,
+  eventBus,
+);
 
   const server = createHTTPServer({
     router: appRouter,
@@ -76,6 +103,8 @@ async function bootstrap(): Promise<void> {
         authorization,
         iam,
         rules,
+    audit,
+    auditTap,
       };
     },
 
@@ -118,7 +147,10 @@ async function bootstrap(): Promise<void> {
 
     server.close();
 
-    await Promise.all([
+
+await queueService.close();
+
+await Promise.all([
       prisma.disconnect(),
       redis.disconnect(),
     ]);

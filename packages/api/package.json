@@ -6,7 +6,8 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "lint": "eslint src --max-warnings=0"
+    "lint": "eslint src --max-warnings=0",
+    "test": "vitest run"
   },
   "dependencies": {
     "@spm/domain-iam": "workspace:*",
@@ -15,6 +16,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "3.2.7"
   }
 }

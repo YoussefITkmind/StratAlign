@@ -90,6 +90,7 @@ describe.sequential("authentication with PostgreSQL and Redis Testcontainers", (
       clientIp,
       session: null,
       oidcIdentities: { reconcile: vi.fn() },
+      auditTap: { recordCompletedCall: vi.fn().mockResolvedValue(undefined) },
       authenticationFreshness: { record: vi.fn() },
       authorization: { resolve: vi.fn() },
       iam: {

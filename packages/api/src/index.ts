@@ -105,6 +105,44 @@ export interface RuleDefinitionOutput {
   createdBy: string;
 }
 
+export interface AuditReconstructionOutput {
+  source: "snapshot" | "replay";
+  aggregateType: string;
+  aggregateId: string;
+  asOf: Date;
+  version: number | null;
+  data: unknown;
+}
+
+export interface AuditJournalEntryOutput {
+  id: string;
+  sourceEventId: string | null;
+  sequenceNumber: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  payload: unknown;
+  correlationId: string | null;
+  actorUserId: string | null;
+  occurredAt: Date;
+  previousHash: string | null;
+  entryHash: string;
+}
+
+export interface AuditServiceContract {
+  reconstructAsOf(input: {
+    aggregateType: string;
+    aggregateId: string;
+    asOf: Date;
+  }): Promise<AuditReconstructionOutput | null>;  listEntries(input: {
+    eventType?: string;
+    aggregateType?: string;
+    aggregateId?: string;
+    limit: number;
+  }): Promise<AuditJournalEntryOutput[]>;
+}
+
+
 export interface RulesServiceContract {
   createDraft(input: {
     ruleKey: string;
@@ -128,6 +166,15 @@ export interface RulesServiceContract {
 ): Promise<RuleResult>;
 }
 
+export interface AuditTapServiceContract {
+  recordCompletedCall(input: {
+    procedurePath: string;
+    procedureType: "query" | "mutation" | "subscription";
+    actorUserId: string | null;
+    occurredAt: Date;
+  }): Promise<void>;
+}
+
 export interface TrpcContext {
   health: HealthServiceContract;
   credentials: CredentialServiceContract;
@@ -139,9 +186,14 @@ export interface TrpcContext {
   authorization: IamAuthorizationServiceContract;
   iam: IamAdminServiceContract;
   rules: RulesServiceContract;
+  audit: AuditServiceContract;
+  auditTap: AuditTapServiceContract;
 }
 
-type ProcedureMeta = { actionClass?: StepUpActionClass };
+type ProcedureMeta = {
+  actionClass?: StepUpActionClass;
+  auditRelevant?: boolean;
+};
 const t = initTRPC.context<TrpcContext>().meta<ProcedureMeta>().create({
   errorFormatter({ shape, error }) {
     const cause = error.cause;
@@ -157,7 +209,6 @@ const t = initTRPC.context<TrpcContext>().meta<ProcedureMeta>().create({
 });
 
 export const router = t.router;
-export const publicProcedure = t.procedure;
 export const middleware = t.middleware;
 
 export const withAuthn = middleware(({ ctx, next }) => {
@@ -204,6 +255,34 @@ export const withStepUpCheck = middleware(async ({ ctx, meta, next }) => {
   return next({ ctx: authorized });
 });
 
+export const withAuditTap = middleware(
+  async ({ ctx, meta, path, type, next }) => {
+    const result = await next();
+
+    if (!result.ok) {
+      return result;
+    }
+
+    const auditRelevant =
+      meta?.auditRelevant ??
+      (type === "mutation");
+
+    if (!auditRelevant) {
+      return result;
+    }
+
+    await ctx.auditTap.recordCompletedCall({
+      procedurePath: path,
+      procedureType: type,
+      actorUserId: ctx.session?.user.id ?? null,
+      occurredAt: new Date(),
+    });
+
+    return result;
+  },
+);
+
+export const publicProcedure = t.procedure.use(withAuditTap);
 export const protectedProcedure = publicProcedure.use(withAuthn);
 export const scopedProcedure = protectedProcedure.use(withScopeFilter);
 
@@ -287,6 +366,43 @@ const rulesEvaluateInputSchema = z.object({
   input: z.unknown(),
 }).strict();
 
+const auditListEntriesInputSchema = z.object({
+  eventType: z.string().trim().min(1).max(200).optional(),
+  aggregateType: z.string().trim().min(1).max(150).optional(),
+  aggregateId: z.string().trim().min(1).max(200).optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+}).strict();
+
+const auditJournalEntryOutputSchema = z.object({
+  id: z.string().uuid(),
+  sourceEventId: z.string().nullable(),
+  sequenceNumber: z.string(),
+  eventType: z.string(),
+  aggregateType: z.string(),
+  aggregateId: z.string(),
+  payload: z.unknown(),
+  correlationId: z.string().nullable(),
+  actorUserId: z.string().nullable(),
+  occurredAt: z.date(),
+  previousHash: z.string().nullable(),
+  entryHash: z.string(),
+}).strict();
+
+const auditReconstructAsOfInputSchema = z.object({
+  aggregateType: z.string().trim().min(1).max(150),
+  aggregateId: z.string().trim().min(1).max(200),
+  asOf: z.coerce.date(),
+}).strict();
+
+const auditReconstructionOutputSchema = z.object({
+  source: z.enum(["snapshot", "replay"]),
+  aggregateType: z.string(),
+  aggregateId: z.string(),
+  asOf: z.date(),
+  version: z.number().int().positive().nullable(),
+  data: z.unknown(),
+}).strict().nullable();
+
 const rulesGetVersionInputSchema = z.object({
   ruleKey: z.string().trim().min(1).max(150),
   version: z.number().int().positive(),
@@ -295,6 +411,18 @@ const rulesGetVersionInputSchema = z.object({
 export const appRouter = router({
   health: router({
     check: publicProcedure.query(({ ctx }) => ctx.health.check()),
+  }),
+
+  audit: router({
+    listEntries: requireRole("platform_administrator")
+      .input(auditListEntriesInputSchema)
+      .output(z.array(auditJournalEntryOutputSchema))
+      .query(({ ctx, input }) => ctx.audit.listEntries(input)),
+
+    reconstructAsOf: requireRole("platform_administrator")
+      .input(auditReconstructAsOfInputSchema)
+      .output(auditReconstructionOutputSchema)
+      .query(({ ctx, input }) => ctx.audit.reconstructAsOf(input)),
   }),
   rules: router({
     create: protectedProcedure

@@ -28,6 +28,7 @@ function context(sessionOverride: typeof session | null = session) {
     health: { check: vi.fn() }, credentials: { authenticate },
     loginRateLimiter: { consume, reset }, clientIp: "127.0.0.1",
     session: sessionOverride, oidcIdentities: { reconcile: vi.fn() },
+    auditTap: { recordCompletedCall: vi.fn().mockResolvedValue(undefined) },
     authenticationFreshness: { record }, authorization: { resolve },
     iam: {
       listRoles, listGroupMappings, upsertGroupMapping, grantScope,
