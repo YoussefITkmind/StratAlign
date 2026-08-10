@@ -20,7 +20,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const body = await response.clone().json() as { url?: unknown };
   if (typeof body.url !== "string") return response;
 
-  const logout = new URL("/api/auth/oidc-logout", request.url);
+  const logout = new URL("/api/auth/oidc-logout", process.env.AUTH_URL ?? request.url);
   logout.searchParams.set("callbackUrl", body.url);
   const headers = new Headers(response.headers);
   headers.delete("content-length");

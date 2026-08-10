@@ -124,6 +124,7 @@ export interface AuditJournalEntryOutput {
   payload: unknown;
   correlationId: string | null;
   actorUserId: string | null;
+  actorEmail: string | null;
   occurredAt: Date;
   previousHash: string | null;
   entryHash: string;
@@ -138,6 +139,9 @@ export interface AuditServiceContract {
     eventType?: string;
     aggregateType?: string;
     aggregateId?: string;
+    actor?: string;
+    from?: Date;
+    to?: Date;
     limit: number;
   }): Promise<AuditJournalEntryOutput[]>;
 }
@@ -370,6 +374,9 @@ const auditListEntriesInputSchema = z.object({
   eventType: z.string().trim().min(1).max(200).optional(),
   aggregateType: z.string().trim().min(1).max(150).optional(),
   aggregateId: z.string().trim().min(1).max(200).optional(),
+  actor: z.string().trim().min(1).max(320).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
   limit: z.number().int().min(1).max(200).default(50),
 }).strict();
 
@@ -383,6 +390,7 @@ const auditJournalEntryOutputSchema = z.object({
   payload: z.unknown(),
   correlationId: z.string().nullable(),
   actorUserId: z.string().nullable(),
+  actorEmail: z.string().email().nullable(),
   occurredAt: z.date(),
   previousHash: z.string().nullable(),
   entryHash: z.string(),

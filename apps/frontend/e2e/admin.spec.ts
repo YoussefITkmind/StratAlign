@@ -6,6 +6,7 @@ test.describe("STRAAL-34 — admin UI (role mapping, grants, step-up)", () => {
     await loginAs(page, "platform_administrator");
     await page.goto("/admin");
     await expect(page.getByRole("heading", { name: "Administration" })).toBeVisible();
+    await page.waitForTimeout(5_500);
 
     const groupName = `pw-test-group-${Date.now()}`;
     await page.getByLabel("Group name").fill(groupName);
@@ -50,6 +51,7 @@ test.describe("STRAAL-34 — admin UI (role mapping, grants, step-up)", () => {
     await loginWithSso(page, "admin");
     await page.waitForURL("**/dashboard");
     await page.goto("/admin");
+    await page.waitForTimeout(5_500);
     const groupName = `pw-oidc-step-up-${Date.now()}`;
     await page.getByLabel("Group name").fill(groupName);
     await page.getByLabel("Role").selectOption("strategy_analyst");

@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth/auth";
 import { CaseDetailClient } from "@/components/approvals/case-detail-client";
 import { getDictionary, locales, type Locale } from "@/lib/i18n/dictionaries";
 import { LOCALE_COOKIE } from "@/lib/i18n/locale-context";
+import { getCurrentAuthorization } from "@/services/iam.service";
 
 export const metadata: Metadata = {
   title: "Case detail · StratAlign",
@@ -17,7 +18,9 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   const session = await auth();
   const { id } = await params;
 
-  if (session?.user?.role !== "platform_administrator") {
+  const authorization = session?.user ? await getCurrentAuthorization() : null;
+
+  if (!authorization?.roles.includes("platform_administrator")) {
     const cookieStore = await cookies();
     const dict = getDictionary(resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value));
     return (

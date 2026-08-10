@@ -64,7 +64,12 @@ export async function loginWithSso(page: Page, subject: "member" | "admin", from
  */
 export async function completeStepUpIfPrompted(page: Page, password: string) {
   const modal = page.getByRole("dialog", { name: "Confirm it's you" });
-  if (await modal.isVisible({ timeout: 2000 }).catch(() => false)) {
+  const stepUpRequired = await modal
+    .waitFor({ state: "visible", timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (stepUpRequired) {
     await page.getByLabel("Password", { exact: true }).fill(password);
     await page.getByTestId("step-up-verify").click();
     await expect(modal).not.toBeVisible();
