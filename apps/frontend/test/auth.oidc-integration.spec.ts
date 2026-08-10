@@ -8,7 +8,7 @@ import {
   vi,
 } from "vitest";
 
-const { reconcileOidc, stepUpCookie } = vi.hoisted(() => {
+const { reconcileOidc, login, stepUpCookie } = vi.hoisted(() => {
   process.env.AUTH_OIDC_ISSUER = "https://identity.example.test/";
   process.env.AUTH_OIDC_CLIENT_ID = "test-client";
   process.env.AUTH_OIDC_CLIENT_SECRET = "test-client-secret";
@@ -16,6 +16,7 @@ const { reconcileOidc, stepUpCookie } = vi.hoisted(() => {
 
   return {
     reconcileOidc: vi.fn(),
+    login: vi.fn(),
     stepUpCookie: { value: null as string | null },
   };
 });
@@ -25,6 +26,9 @@ vi.mock("../src/services/api-client", () => ({
     auth: {
       reconcileOidc: {
         mutate: reconcileOidc,
+      },
+      login: {
+        mutate: login,
       },
     },
   },
@@ -102,6 +106,7 @@ function oidcAccount(overrides: Partial<Account> = {}): Account {
 describe("canonical Auth.js OIDC reconciliation", () => {
   beforeEach(() => {
     reconcileOidc.mockReset();
+    login.mockReset();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     stepUpCookie.value = null;
@@ -183,6 +188,39 @@ describe("canonical Auth.js OIDC reconciliation", () => {
     expect(session).not.toHaveProperty("refresh_token");
     expect(session).not.toHaveProperty("authenticationTime");
     expect(session).not.toHaveProperty("sessionId");
+  });
+
+  it("rejects credentials when backend login fails", async () => {
+    const provider = authConfig.providers.find(
+      (candidate) =>
+        typeof candidate !== "function" && candidate.id === "credentials",
+    );
+
+    expect(provider).toBeDefined();
+
+    const authorize = (
+      provider as {
+        authorize?: (
+          credentials: Record<string, unknown>,
+        ) => unknown | Promise<unknown>;
+      }
+    ).authorize;
+
+    expect(authorize).toBeTypeOf("function");
+
+    login.mockRejectedValue(new Error("Invalid credentials"));
+
+    await expect(
+      authorize!({
+        email: "credential-user@example.test",
+        password: "wrong-password",
+      }),
+    ).resolves.toBeNull();
+
+    expect(login).toHaveBeenCalledWith({
+      email: "credential-user@example.test",
+      password: "wrong-password",
+    });
   });
 
   it("leaves the credentials flow unchanged", async () => {
