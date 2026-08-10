@@ -1,9 +1,28 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "@/server/trpc";
-import { auditLog } from "@/server/mock-db";
+import { authenticatedProcedure, router } from "@/server/trpc";
+import {
+  createBackendIamClient,
+  translateBackendIamError,
+} from "@/server/backend-iam-client";
+
+function detailsFromPayload(
+  payload: unknown,
+  aggregateType: string,
+  aggregateId: string,
+): string {
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const value = payload as Record<string, unknown>;
+
+    if (typeof value.procedurePath === "string") {
+      return value.procedurePath;
+    }
+  }
+
+  return `${aggregateType}:${aggregateId}`;
+}
 
 export const auditRouter = router({
-  list: protectedProcedure
+  list: authenticatedProcedure
     .input(
       z
         .object({
@@ -11,19 +30,32 @@ export const auditRouter = router({
           from: z.string().datetime().optional(),
           to: z.string().datetime().optional(),
         })
-        .optional()
+        .optional(),
     )
-    .query(({ input }) => {
-      const actor = input?.actor?.trim().toLowerCase();
-      const from = input?.from ? new Date(input.from).getTime() : undefined;
-      const to = input?.to ? new Date(input.to).getTime() : undefined;
+    .query(async ({ ctx, input }) => {
+      try {
+        const entries = await createBackendIamClient(
+          ctx.cookieHeader,
+        ).audit.listEntries.query({
+          actor: input?.actor?.trim() || undefined,
+          from: input?.from,
+          to: input?.to,
+          limit: 200,
+        });
 
-      return auditLog.filter((entry) => {
-        if (actor && !entry.actor.toLowerCase().includes(actor)) return false;
-        const ts = new Date(entry.timestamp).getTime();
-        if (from !== undefined && ts < from) return false;
-        if (to !== undefined && ts > to) return false;
-        return true;
-      });
+        return entries.map((entry) => ({
+          id: entry.id,
+          eventType: entry.eventType,
+          actor: entry.actorEmail ?? entry.actorUserId ?? "system",
+          timestamp: new Date(entry.occurredAt).toISOString(),
+          details: detailsFromPayload(
+            entry.payload,
+            entry.aggregateType,
+            entry.aggregateId,
+          ),
+        }));
+      } catch (error) {
+        translateBackendIamError(error);
+      }
     }),
 });

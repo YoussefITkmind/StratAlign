@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth/auth";
 import { ApprovalsClient } from "@/components/approvals/approvals-client";
 import { getDictionary, locales, type Locale } from "@/lib/i18n/dictionaries";
 import { LOCALE_COOKIE } from "@/lib/i18n/locale-context";
+import { getCurrentAuthorization } from "@/services/iam.service";
 
 export const metadata: Metadata = {
   title: "Approvals · StratAlign",
@@ -16,7 +17,9 @@ function resolveLocale(raw: string | undefined): Locale {
 export default async function ApprovalsPage() {
   const session = await auth();
 
-  if (session?.user?.role !== "platform_administrator") {
+  const authorization = session?.user ? await getCurrentAuthorization() : null;
+
+  if (!authorization?.roles.includes("platform_administrator")) {
     const cookieStore = await cookies();
     const dict = getDictionary(resolveLocale(cookieStore.get(LOCALE_COOKIE)?.value));
     return (

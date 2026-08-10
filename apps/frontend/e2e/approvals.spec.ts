@@ -1,11 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { loginWithCredentials } from "./utils";
+import { loginAs } from "./utils";
 
 test.describe("STRAAL-36 — approvals inbox", () => {
   test("lists pending approvals, excludes the viewer's own submission, and shows the escalated case", async ({
     page,
   }) => {
-    await loginWithCredentials(page, "admin@stratalign.dev", "admin123");
+    await loginAs(page, "platform_administrator");
     await page.goto("/approvals");
 
     const list = page.getByTestId("approvals-list");
@@ -17,7 +17,7 @@ test.describe("STRAAL-36 — approvals inbox", () => {
   });
 
   test("case detail shows the before/after diff and approving it succeeds", async ({ page }) => {
-    await loginWithCredentials(page, "admin@stratalign.dev", "admin123");
+    await loginAs(page, "platform_administrator");
     await page.goto("/approvals/case-seed-group-mapping");
 
     await expect(page.getByRole("cell", { name: "stratalign-analysts" }).first()).toBeVisible();
@@ -31,7 +31,7 @@ test.describe("STRAAL-36 — approvals inbox", () => {
   test("separation of duties: the submitter cannot approve their own case, even navigating there directly", async ({
     page,
   }) => {
-    await loginWithCredentials(page, "admin@stratalign.dev", "admin123");
+    await loginAs(page, "platform_administrator");
     // case-seed-role-grant was submitted by admin@stratalign.dev (this session) —
     // navigate straight to it, bypassing the list where it's correctly hidden.
     await page.goto("/approvals/case-seed-role-grant");

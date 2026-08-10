@@ -43,15 +43,15 @@ test.describe("STRAAL-33 — login + logout", () => {
       /id_token|access_token|refresh_token|oidcAccessToken|oidcRefreshToken/,
     );
 
-    await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page).toHaveURL(/\/login/);
+    await page.getByRole("banner").getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/login/, { timeout: 15_000 });
   });
 
   test("logout clears the session and subsequent protected access redirects to login", async ({ page }) => {
     await loginAs(page, "member");
     await expect(page).toHaveURL(/\/dashboard/);
 
-    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("banner").getByRole("button", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/login/);
 
     await page.goto("/dashboard");

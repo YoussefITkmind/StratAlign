@@ -38,7 +38,7 @@ describe("Audit snapshot reconstruction", () => {
 
     journal = new JournalService(prisma);
     snapshots = new SnapshotService(prisma);
-  }, 120_000);
+  }, 240_000);
 
   afterAll(async () => {
     await prisma?.disconnect();

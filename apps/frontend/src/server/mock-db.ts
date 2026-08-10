@@ -194,8 +194,19 @@ export function recordAudit(eventType: string, actor: string, details?: string) 
   });
 }
 
+const GOVERNANCE_MOCK_EMAIL_ALIASES: Record<string, string> = {
+  "alice@example.test": "demo@stratalign.dev",
+  "bob@example.test": "admin@stratalign.dev",
+};
+
 export function findUserByEmail(email: string) {
-  return MOCK_USERS.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  const normalizedEmail = email.toLowerCase();
+  const lookupEmail =
+    GOVERNANCE_MOCK_EMAIL_ALIASES[normalizedEmail] ?? normalizedEmail;
+
+  return MOCK_USERS.find(
+    (u) => u.email.toLowerCase() === lookupEmail,
+  );
 }
 
 export function findUserById(userId: string) {
