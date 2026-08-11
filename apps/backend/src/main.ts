@@ -20,6 +20,12 @@ import { IamAdminService } from "./modules/iam/iam-admin.service";
 import { RulesService } from "./modules/rules/rules.service";
 import { SnapshotService } from "./modules/audit/snapshot.service";
 import { ApiAuditTapService } from "./modules/audit/api-audit-tap.service";
+import { KpiRegistryService } from "./modules/registry/kpi-registry.service";
+import { OkrService } from "./modules/registry/okr.service";
+import { AlignmentService } from "./modules/registry/alignment.service";
+import { KpiHierarchyService } from "./modules/registry/kpi-hierarchy.service";
+import { UnavailableApprovalGateway } from "./modules/registry/gateways/approval.gateway";
+import { UnverifiedStrategyNodeGateway } from "./modules/registry/gateways/strategy-node.gateway";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -77,6 +83,35 @@ const auditTap = new ApiAuditTapService(
   eventBus,
 );
 
+// Registry integration seams.
+//
+// Both adapters are placeholders for modules this repository does not contain,
+// and both fail in the direction that is safe for what they guard:
+//
+//   - UnavailableApprovalGateway refuses every publication, because an absent
+//     approval checker must not become an implicit approval. This makes
+//     registry.kpi.publishVersion inert until Prompt 1.5 ships a real adapter.
+//   - UnverifiedStrategyNodeGateway accepts node ids it cannot check, because
+//     alignment is not a security boundary and refusing would disable the
+//     module's own functionality. It reports canVerify: false so callers can
+//     see that nothing confirmed the references.
+//
+// TODO(1.5): swap in a workflow-backed ApprovalGateway.
+// TODO(2.1-2.3): swap in a Strategy-module-backed StrategyNodeGateway.
+const approvalGateway = new UnavailableApprovalGateway();
+const strategyNodeGateway = new UnverifiedStrategyNodeGateway();
+
+const registry = {
+  kpi: new KpiRegistryService(
+    prisma,
+    approvalGateway,
+    strategyNodeGateway,
+  ),
+  okr: new OkrService(prisma, strategyNodeGateway),
+  alignment: new AlignmentService(prisma, strategyNodeGateway),
+  hierarchy: new KpiHierarchyService(prisma),
+};
+
   const server = createHTTPServer({
     router: appRouter,
     basePath: "/trpc/",
@@ -105,6 +140,7 @@ const auditTap = new ApiAuditTapService(
         rules,
     audit,
     auditTap,
+    registry,
       };
     },
 
