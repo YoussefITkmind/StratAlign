@@ -8,6 +8,7 @@ import {
 import {
   appRouter,
   type GovernanceCaseOutput,
+  type GovernanceEscalationOutput,
   type TrpcContext,
 } from "./index";
 
@@ -19,6 +20,9 @@ const CASE_ID =
 
 const WORKFLOW_ID =
   "33333333-3333-4333-8333-333333333333";
+
+const ESCALATION_ID =
+  "55555555-5555-4555-8555-555555555555";
 
 const caseOutput:
   GovernanceCaseOutput = {
@@ -61,6 +65,36 @@ const caseOutput:
       ),
   };
 
+const escalationOutput:
+  GovernanceEscalationOutput = {
+    id:
+      ESCALATION_ID,
+
+    caseId:
+      CASE_ID,
+
+    participant:
+      USER_ID,
+
+    deadline:
+      new Date(
+        "2026-08-11T13:00:00.000Z",
+      ),
+
+    acknowledgedAt:
+      new Date(
+        "2026-08-11T13:05:00.000Z",
+      ),
+
+    acknowledgedBy:
+      USER_ID,
+
+    createdAt:
+      new Date(
+        "2026-08-11T13:00:01.000Z",
+      ),
+  };
+
 function createContext() {
   const myPendingApprovals =
     vi.fn(
@@ -83,6 +117,12 @@ function createContext() {
         currentState:
           "APPROVED" as const,
       }),
+    );
+
+  const acknowledgeEscalation =
+    vi.fn(
+      async () =>
+        escalationOutput,
     );
 
   const auditTap =
@@ -132,6 +172,11 @@ function createContext() {
       transition,
     },
 
+    governanceEscalation: {
+      acknowledge:
+        acknowledgeEscalation,
+    },
+
     auditTap: {
       recordCompletedCall:
         auditTap,
@@ -143,6 +188,7 @@ function createContext() {
     myPendingApprovals,
     getCase,
     transition,
+    acknowledgeEscalation,
     auditTap,
   };
 }
@@ -328,5 +374,108 @@ describe(
         });
       },
     );
+
+    it(
+      "acknowledges an escalation as the authenticated participant",
+      async () => {
+        const {
+          context,
+          acknowledgeEscalation,
+          auditTap,
+        } =
+          createContext();
+
+        const caller =
+          appRouter.createCaller(
+            context,
+          );
+
+        const result =
+          await caller
+            .governance
+            .escalation
+            .acknowledge({
+              escalationId:
+                ESCALATION_ID,
+            });
+
+        expect(
+          result,
+        ).toEqual(
+          escalationOutput,
+        );
+
+        expect(
+          acknowledgeEscalation,
+        ).toHaveBeenCalledWith(
+          ESCALATION_ID,
+          USER_ID,
+        );
+
+        /*
+         * The actor id is injected from
+         * the authenticated session.
+         */
+        expect(
+          result.acknowledgedBy,
+        ).toBe(
+          USER_ID,
+        );
+
+        /*
+         * Acknowledgement is a mutation,
+         * therefore it remains audit-tapped.
+         */
+        expect(
+          auditTap,
+        ).toHaveBeenCalled();
+      },
+    );
+
+    it(
+      "maps an escalation participant mismatch to FORBIDDEN",
+      async () => {
+        const {
+          context,
+          acknowledgeEscalation,
+        } =
+          createContext();
+
+        acknowledgeEscalation
+          .mockRejectedValueOnce({
+            code:
+              "GOVERNANCE_ESCALATION_PARTICIPANT_MISMATCH",
+
+            message:
+              "Only the assigned escalation participant can acknowledge this escalation.",
+          });
+
+        const caller =
+          appRouter.createCaller(
+            context,
+          );
+
+        await expect(
+          caller
+            .governance
+            .escalation
+            .acknowledge({
+              escalationId:
+                ESCALATION_ID,
+            }),
+        ).rejects.toMatchObject({
+          code:
+            "FORBIDDEN",
+        });
+
+        expect(
+          acknowledgeEscalation,
+        ).toHaveBeenCalledWith(
+          ESCALATION_ID,
+          USER_ID,
+        );
+      },
+    );
+
   },
 );

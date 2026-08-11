@@ -549,6 +549,23 @@ export interface GovernanceServiceContract {
   }): Promise<GovernanceCaseOutput>;
 }
 
+export interface GovernanceEscalationOutput {
+  id: string;
+  caseId: string;
+  participant: string;
+  deadline: Date;
+  acknowledgedAt: Date | null;
+  acknowledgedBy: string | null;
+  createdAt: Date;
+}
+
+export interface GovernanceEscalationServiceContract {
+  acknowledge(
+    escalationId: string,
+    actingUserId: string,
+  ): Promise<GovernanceEscalationOutput>;
+}
+
 export interface AuditTapServiceContract {
   recordCompletedCall(input: {
     procedurePath: string;
@@ -570,6 +587,7 @@ export interface TrpcContext {
   iam: IamAdminServiceContract;
   rules: RulesServiceContract;
   governance: GovernanceServiceContract;
+  governanceEscalation: GovernanceEscalationServiceContract;
   audit: AuditServiceContract;
   auditTap: AuditTapServiceContract;
   performance: PerformanceServiceContract;
@@ -840,6 +858,20 @@ const governanceCaseIdInputSchema = z.object({
   caseId: z.string().uuid(),
 }).strict();
 
+const governanceEscalationIdInputSchema = z.object({
+  escalationId: z.string().uuid(),
+}).strict();
+
+const governanceEscalationOutputSchema = z.object({
+  id: z.string().uuid(),
+  caseId: z.string().uuid(),
+  participant: z.string().uuid(),
+  deadline: z.date(),
+  acknowledgedAt: z.date().nullable(),
+  acknowledgedBy: z.string().uuid().nullable(),
+  createdAt: z.date(),
+}).strict();
+
 const governanceDecisionInputSchema = z.object({
   caseId: z.string().uuid(),
 
@@ -874,6 +906,12 @@ const GOVERNANCE_API_ERROR_CODES = {
     "FORBIDDEN",
 
   GOVERNANCE_APPROVAL_REFERENCE_INVALID:
+    "FORBIDDEN",
+
+  GOVERNANCE_ESCALATION_NOT_FOUND:
+    "NOT_FOUND",
+
+  GOVERNANCE_ESCALATION_PARTICIPANT_MISMATCH:
     "FORBIDDEN",
 } as const satisfies Record<
   string,
@@ -1474,6 +1512,27 @@ export const appRouter = router({
                   }),
             ),
         ),
+    escalation: router({
+      acknowledge:
+        protectedProcedure
+          .input(
+            governanceEscalationIdInputSchema,
+          )
+          .output(
+            governanceEscalationOutputSchema,
+          )
+          .mutation(
+            ({ ctx, input }) =>
+              mapGovernanceErrors(
+                () =>
+                  ctx.governanceEscalation
+                    .acknowledge(
+                      input.escalationId,
+                      ctx.session.user.id,
+                    ),
+              ),
+          ),
+    }),
   }),
 
   rules: router({
