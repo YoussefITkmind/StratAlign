@@ -132,7 +132,7 @@ export class StrategyService {
     }
     const rows = await this.prisma.$queryRawUnsafe<PlanRow[]>(
       `INSERT INTO strategy.plan_versions (id, version, name, state, source_plan_version_id, created_by)
-       VALUES ($1::uuid, (SELECT COALESCE(MAX(version), 0) + 1 FROM strategy.plan_versions), $2, 'draft', NULL, $3::uuid)
+       VALUES ($1::uuid, (SELECT COALESCE(MAX(version), 0) + 1 FROM strategy.plan_versions), $2, 'draft', NULL, $3)
        RETURNING *`,
       randomUUID(), input.name.trim(), input.createdBy,
     );
@@ -147,7 +147,7 @@ export class StrategyService {
     const rows = await this.prisma.$queryRawUnsafe<NodeRow[]>(
       `INSERT INTO strategy.strategy_nodes
        (id, type, name_en, name_ar, plan_version_id, state, created_by)
-       VALUES ($1::uuid, $2::strategy."StrategyNodeType", $3, $4, $5::uuid, 'draft', $6::uuid)
+       VALUES ($1::uuid, $2::strategy."StrategyNodeType", $3, $4, $5::uuid, 'draft', $6)
        RETURNING *`,
       randomUUID(), input.type, input.nameEn.trim(), input.nameAr.trim(), input.planVersionId, input.createdBy,
     );
@@ -174,7 +174,7 @@ export class StrategyService {
     const rows = await this.prisma.$queryRawUnsafe<OwnerRow[]>(
       `INSERT INTO strategy.owner_assignments
        (id, node_id, user_id, plan_version_id, created_by)
-       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid)
+       VALUES ($1::uuid, $2::uuid, $3, $4::uuid, $5)
        ON CONFLICT (node_id, user_id, plan_version_id)
        DO UPDATE SET user_id = EXCLUDED.user_id
        RETURNING *`,
@@ -187,7 +187,7 @@ export class StrategyService {
     await this.assertDraftPlan(planVersionId);
     await this.prisma.$executeRawUnsafe(
       `DELETE FROM strategy.owner_assignments
-       WHERE node_id = $1::uuid AND user_id = $2::uuid AND plan_version_id = $3::uuid`,
+       WHERE node_id = $1::uuid AND user_id = $2 AND plan_version_id = $3::uuid`,
       nodeId, userId, planVersionId,
     );
   }
@@ -230,7 +230,7 @@ export class StrategyService {
       edge_type: StrategyEdgeType; actual_count: number; min_count: number; max_count: number | null;
     }>>(
       `SELECT n.id AS node_id, r.from_type, r.to_type, r.edge_type,
-              COUNT(e.id)::int AS actual_count, r.min_count, r.max_count
+              COUNT(target.id)::int AS actual_count, r.min_count, r.max_count
        FROM strategy.strategy_nodes n
        JOIN strategy.relationship_rules r ON r.from_type = n.type
        LEFT JOIN strategy.strategy_edges e
@@ -310,7 +310,7 @@ export class StrategyService {
     return this.prisma.$transaction(async (tx) => {
       const versionRows = await tx.$queryRawUnsafe<PlanRow[]>(
         `INSERT INTO strategy.plan_versions (id, version, name, state, source_plan_version_id, created_by)
-         VALUES ($1::uuid, (SELECT COALESCE(MAX(version), 0) + 1 FROM strategy.plan_versions), $2, 'draft', $3::uuid, $4::uuid)
+         VALUES ($1::uuid, (SELECT COALESCE(MAX(version), 0) + 1 FROM strategy.plan_versions), $2, 'draft', $3::uuid, $4)
          RETURNING *`,
         randomUUID(), name.trim(), sourcePlanVersionId, createdBy,
       );
@@ -323,7 +323,7 @@ export class StrategyService {
         await tx.$executeRawUnsafe(
           `INSERT INTO strategy.strategy_nodes
            (id, type, name_en, name_ar, plan_version_id, state, created_by)
-           VALUES ($1::uuid, $2::strategy."StrategyNodeType", $3, $4, $5::uuid, 'draft', $6::uuid)`,
+           VALUES ($1::uuid, $2::strategy."StrategyNodeType", $3, $4, $5::uuid, 'draft', $6)`,
           newId, sourceNode.type, sourceNode.nameEn, sourceNode.nameAr, created.id, createdBy,
         );
       }
@@ -341,7 +341,7 @@ export class StrategyService {
         await tx.$executeRawUnsafe(
           `INSERT INTO strategy.owner_assignments
            (id, node_id, user_id, plan_version_id, created_by)
-           VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid)`,
+           VALUES ($1::uuid, $2::uuid, $3, $4::uuid, $5)`,
           randomUUID(), idMap.get(sourceOwner.nodeId)!, sourceOwner.userId, created.id, createdBy,
         );
       }
