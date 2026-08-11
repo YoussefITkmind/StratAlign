@@ -1,4 +1,8 @@
-import { createActor, setup, type SnapshotFrom } from "xstate";
+import {
+  createActor,
+  setup,
+  type SnapshotFrom,
+} from "xstate";
 import { z } from "zod";
 
 export const APPROVAL_STATES = [
@@ -30,10 +34,17 @@ export const APPROVAL_ACTION_REFS = [
   "emitApprovalRejected",
 ] as const;
 
-export type ApprovalState = (typeof APPROVAL_STATES)[number];
-export type ApprovalEventType = (typeof APPROVAL_EVENT_TYPES)[number];
-export type ApprovalGuardRef = (typeof APPROVAL_GUARD_REFS)[number];
-export type ApprovalActionRef = (typeof APPROVAL_ACTION_REFS)[number];
+export type ApprovalState =
+  (typeof APPROVAL_STATES)[number];
+
+export type ApprovalEventType =
+  (typeof APPROVAL_EVENT_TYPES)[number];
+
+export type ApprovalGuardRef =
+  (typeof APPROVAL_GUARD_REFS)[number];
+
+export type ApprovalActionRef =
+  (typeof APPROVAL_ACTION_REFS)[number];
 
 export interface ProposedChange {
   before: unknown;
@@ -47,51 +58,73 @@ export interface ApprovalMachineContext {
 }
 
 export type ApprovalMachineEvent =
-  | { type: "SUBMIT"; actorUserId: string }
-  | { type: "APPROVE"; actorUserId: string; rationale?: string }
-  | { type: "REJECT"; actorUserId: string; rationale?: string }
+  | {
+      type: "SUBMIT";
+      actorUserId: string;
+    }
+  | {
+      type: "APPROVE";
+      actorUserId: string;
+      rationale?: string;
+    }
+  | {
+      type: "REJECT";
+      actorUserId: string;
+      rationale?: string;
+    }
   | {
       type: "REQUEST_CHANGES";
       actorUserId: string;
       rationale?: string;
     }
-  | { type: "RESUBMIT"; actorUserId: string };
+  | {
+      type: "RESUBMIT";
+      actorUserId: string;
+    };
 
-export const approvalTransitionDefinitionSchema = z.object({
-  target: z.enum(APPROVAL_STATES),
-  guard: z.enum(APPROVAL_GUARD_REFS).optional(),
-  actions: z.array(z.enum(APPROVAL_ACTION_REFS)).default([]),
-});
+export const approvalTransitionDefinitionSchema =
+  z.object({
+    target: z.enum(APPROVAL_STATES),
+    guard: z.enum(APPROVAL_GUARD_REFS).optional(),
+    actions: z
+      .array(z.enum(APPROVAL_ACTION_REFS))
+      .default([]),
+  });
 
-export const approvalStateDefinitionSchema = z.object({
-  type: z.literal("final").optional(),
-  on: z
-    .partialRecord(
-      z.enum(APPROVAL_EVENT_TYPES),
-      approvalTransitionDefinitionSchema,
-    )
-    .optional(),
-});
+export const approvalStateDefinitionSchema =
+  z.object({
+    type: z.literal("final").optional(),
+    on: z
+      .partialRecord(
+        z.enum(APPROVAL_EVENT_TYPES),
+        approvalTransitionDefinitionSchema,
+      )
+      .optional(),
+  });
 
-export const workflowMachineDefinitionSchema = z.object({
-  key: z.string().trim().min(1),
-  version: z.number().int().positive(),
-  initial: z.enum(APPROVAL_STATES),
-  states: z.record(
-    z.enum(APPROVAL_STATES),
-    approvalStateDefinitionSchema,
-  ),
-});
+export const workflowMachineDefinitionSchema =
+  z.object({
+    key: z.string().trim().min(1),
+    version: z.number().int().positive(),
+    initial: z.enum(APPROVAL_STATES),
 
-export type WorkflowMachineDefinition = z.infer<
-  typeof workflowMachineDefinitionSchema
->;
+    states: z.record(
+      z.enum(APPROVAL_STATES),
+      approvalStateDefinitionSchema,
+    ),
+  });
 
-export const DEFAULT_APPROVAL_WORKFLOW_DEFINITION: WorkflowMachineDefinition =
+export type WorkflowMachineDefinition =
+  z.infer<
+    typeof workflowMachineDefinitionSchema
+  >;
+
+export const DEFAULT_APPROVAL_WORKFLOW_DEFINITION =
   workflowMachineDefinitionSchema.parse({
     key: "generic_approval",
     version: 1,
     initial: "draft",
+
     states: {
       draft: {
         on: {
@@ -112,6 +145,7 @@ export const DEFAULT_APPROVAL_WORKFLOW_DEFINITION: WorkflowMachineDefinition =
               "emitApprovalGranted",
             ],
           },
+
           REJECT: {
             target: "rejected",
             guard: "separationOfDuties",
@@ -120,9 +154,12 @@ export const DEFAULT_APPROVAL_WORKFLOW_DEFINITION: WorkflowMachineDefinition =
               "emitApprovalRejected",
             ],
           },
+
           REQUEST_CHANGES: {
             target: "changes_requested",
-            actions: ["recordChangesRequested"],
+            actions: [
+              "recordChangesRequested",
+            ],
           },
         },
       },
@@ -151,21 +188,31 @@ export type SeparationOfDutiesCheck = (
   actorUserId: string,
 ) => boolean;
 
+export function parseWorkflowDefinition(
+  input: unknown,
+): WorkflowMachineDefinition {
+  return workflowMachineDefinitionSchema.parse(
+    input,
+  );
+}
+
 const approvalSetup = setup({
   types: {
-    context: {} as ApprovalMachineContext,
-    input: {} as ApprovalMachineContext,
-    events: {} as ApprovalMachineEvent,
+    context:
+      {} as ApprovalMachineContext,
+
+    input:
+      {} as ApprovalMachineContext,
+
+    events:
+      {} as ApprovalMachineEvent,
   },
 
   guards: {
-    // Fail closed until the caller provides the real IAM-backed guard.
     separationOfDuties: () => false,
   },
 
   actions: {
-    // These are semantic action references.
-    // Persistence/outbox implementations are supplied by Governance.
     recordSubmission: () => undefined,
     recordDecision: () => undefined,
     recordChangesRequested: () => undefined,
@@ -175,73 +222,277 @@ const approvalSetup = setup({
   },
 });
 
-const genericApprovalMachine = approvalSetup.createMachine({
-  id: DEFAULT_APPROVAL_WORKFLOW_DEFINITION.key,
-  initial: "draft",
-  context: ({ input }) => input,
-
-  states: {
-    draft: {
-      on: {
-        SUBMIT: {
-          target: "pending_approval",
-          actions: "recordSubmission",
-        },
-      },
-    },
-
-    pending_approval: {
-      on: {
-        APPROVE: {
-          target: "approved",
-          guard: "separationOfDuties",
-          actions: [
-            "recordDecision",
-            "emitApprovalGranted",
-          ],
-        },
-
-        REJECT: {
-          target: "rejected",
-          guard: "separationOfDuties",
-          actions: [
-            "recordDecision",
-            "emitApprovalRejected",
-          ],
-        },
-
-        REQUEST_CHANGES: {
-          target: "changes_requested",
-          actions: "recordChangesRequested",
-        },
-      },
-    },
-
-    approved: {
-      type: "final",
-    },
-
-    rejected: {
-      type: "final",
-    },
-
-    changes_requested: {
-      on: {
-        RESUBMIT: {
-          target: "pending_approval",
-          actions: "recordResubmission",
-        },
-      },
-    },
-  },
-});
-
-export function createApprovalMachine(
-  separationOfDutiesCheck: SeparationOfDutiesCheck,
+function compileTransition(
+  transition:
+    | z.infer<
+        typeof approvalTransitionDefinitionSchema
+      >
+    | undefined,
 ) {
-  return genericApprovalMachine.provide({
+  if (!transition) {
+    return undefined;
+  }
+
+  return {
+    target: transition.target,
+
+    ...(transition.guard
+      ? {
+          guard: transition.guard,
+        }
+      : {}),
+
+    ...(transition.actions.length > 0
+      ? {
+          actions: transition.actions,
+        }
+      : {}),
+  };
+}
+
+function compactTransitions<
+  T extends Record<
+    string,
+    ReturnType<typeof compileTransition>
+  >,
+>(transitions: T) {
+  return Object.fromEntries(
+    Object.entries(transitions).filter(
+      ([, value]) => value !== undefined,
+    ),
+  );
+}
+
+export function createApprovalMachine(input: {
+  definition:
+    | WorkflowMachineDefinition
+    | unknown;
+
+  separationOfDutiesCheck:
+    SeparationOfDutiesCheck;
+}) {
+  const definition =
+    parseWorkflowDefinition(
+      input.definition,
+    );
+
+  const draft =
+    definition.states.draft;
+
+  const pending =
+    definition.states.pending_approval;
+
+  const approved =
+    definition.states.approved;
+
+  const rejected =
+    definition.states.rejected;
+
+  const changesRequested =
+    definition.states.changes_requested;
+
+  const machine =
+    approvalSetup.createMachine({
+      id: definition.key,
+      initial: definition.initial,
+
+      context: ({ input: context }) =>
+        context,
+
+      states: {
+        draft: {
+          ...(draft.type === "final"
+            ? {
+                type: "final" as const,
+              }
+            : {}),
+
+          on: compactTransitions({
+            SUBMIT:
+              compileTransition(
+                draft.on?.SUBMIT,
+              ),
+
+            APPROVE:
+              compileTransition(
+                draft.on?.APPROVE,
+              ),
+
+            REJECT:
+              compileTransition(
+                draft.on?.REJECT,
+              ),
+
+            REQUEST_CHANGES:
+              compileTransition(
+                draft.on
+                  ?.REQUEST_CHANGES,
+              ),
+
+            RESUBMIT:
+              compileTransition(
+                draft.on?.RESUBMIT,
+              ),
+          }),
+        },
+
+        pending_approval: {
+          ...(pending.type === "final"
+            ? {
+                type: "final" as const,
+              }
+            : {}),
+
+          on: compactTransitions({
+            SUBMIT:
+              compileTransition(
+                pending.on?.SUBMIT,
+              ),
+
+            APPROVE:
+              compileTransition(
+                pending.on?.APPROVE,
+              ),
+
+            REJECT:
+              compileTransition(
+                pending.on?.REJECT,
+              ),
+
+            REQUEST_CHANGES:
+              compileTransition(
+                pending.on
+                  ?.REQUEST_CHANGES,
+              ),
+
+            RESUBMIT:
+              compileTransition(
+                pending.on?.RESUBMIT,
+              ),
+          }),
+        },
+
+        approved: {
+          ...(approved.type === "final"
+            ? {
+                type: "final" as const,
+              }
+            : {}),
+
+          on: compactTransitions({
+            SUBMIT:
+              compileTransition(
+                approved.on?.SUBMIT,
+              ),
+
+            APPROVE:
+              compileTransition(
+                approved.on?.APPROVE,
+              ),
+
+            REJECT:
+              compileTransition(
+                approved.on?.REJECT,
+              ),
+
+            REQUEST_CHANGES:
+              compileTransition(
+                approved.on
+                  ?.REQUEST_CHANGES,
+              ),
+
+            RESUBMIT:
+              compileTransition(
+                approved.on?.RESUBMIT,
+              ),
+          }),
+        },
+
+        rejected: {
+          ...(rejected.type === "final"
+            ? {
+                type: "final" as const,
+              }
+            : {}),
+
+          on: compactTransitions({
+            SUBMIT:
+              compileTransition(
+                rejected.on?.SUBMIT,
+              ),
+
+            APPROVE:
+              compileTransition(
+                rejected.on?.APPROVE,
+              ),
+
+            REJECT:
+              compileTransition(
+                rejected.on?.REJECT,
+              ),
+
+            REQUEST_CHANGES:
+              compileTransition(
+                rejected.on
+                  ?.REQUEST_CHANGES,
+              ),
+
+            RESUBMIT:
+              compileTransition(
+                rejected.on?.RESUBMIT,
+              ),
+          }),
+        },
+
+        changes_requested: {
+          ...(changesRequested.type ===
+          "final"
+            ? {
+                type: "final" as const,
+              }
+            : {}),
+
+          on: compactTransitions({
+            SUBMIT:
+              compileTransition(
+                changesRequested.on
+                  ?.SUBMIT,
+              ),
+
+            APPROVE:
+              compileTransition(
+                changesRequested.on
+                  ?.APPROVE,
+              ),
+
+            REJECT:
+              compileTransition(
+                changesRequested.on
+                  ?.REJECT,
+              ),
+
+            REQUEST_CHANGES:
+              compileTransition(
+                changesRequested.on
+                  ?.REQUEST_CHANGES,
+              ),
+
+            RESUBMIT:
+              compileTransition(
+                changesRequested.on
+                  ?.RESUBMIT,
+              ),
+          }),
+        },
+      },
+    });
+
+  return machine.provide({
     guards: {
-      separationOfDuties: ({ context, event }) => {
+      separationOfDuties: ({
+        context,
+        event,
+      }) => {
         if (
           event.type !== "APPROVE" &&
           event.type !== "REJECT"
@@ -249,32 +500,52 @@ export function createApprovalMachine(
           return false;
         }
 
-        return separationOfDutiesCheck(
-          context.submittedBy,
-          event.actorUserId,
-        );
+        return input
+          .separationOfDutiesCheck(
+            context.submittedBy,
+            event.actorUserId,
+          );
       },
     },
   });
 }
 
-export type ApprovalMachineSnapshot = SnapshotFrom<
-  ReturnType<typeof createApprovalMachine>
->;
+export type ApprovalMachineSnapshot =
+  SnapshotFrom<
+    ReturnType<
+      typeof createApprovalMachine
+    >
+  >;
 
 export function createApprovalActor(input: {
   context: ApprovalMachineContext;
-  separationOfDutiesCheck: SeparationOfDutiesCheck;
+
+  separationOfDutiesCheck:
+    SeparationOfDutiesCheck;
+
+  definition?:
+    | WorkflowMachineDefinition
+    | unknown;
+
   snapshot?: ApprovalMachineSnapshot;
 }) {
-  const machine = createApprovalMachine(
-    input.separationOfDutiesCheck,
-  );
+  const machine =
+    createApprovalMachine({
+      definition:
+        input.definition ??
+        DEFAULT_APPROVAL_WORKFLOW_DEFINITION,
+
+      separationOfDutiesCheck:
+        input.separationOfDutiesCheck,
+    });
 
   return createActor(machine, {
     input: input.context,
+
     ...(input.snapshot === undefined
       ? {}
-      : { snapshot: input.snapshot }),
+      : {
+          snapshot: input.snapshot,
+        }),
   });
 }

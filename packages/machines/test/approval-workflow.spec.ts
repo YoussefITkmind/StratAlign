@@ -175,6 +175,43 @@ describe("generic approval workflow", () => {
     );
   });
 
+  it("builds runtime transitions from the supplied versioned definition", () => {
+    const customDefinition = JSON.parse(
+      JSON.stringify(
+        DEFAULT_APPROVAL_WORKFLOW_DEFINITION,
+      ),
+    );
+
+    customDefinition.version = 2;
+
+    customDefinition.states.draft.on.SUBMIT.target =
+      "changes_requested";
+
+    const workflow = createApprovalActor({
+      context: {
+        submittedBy: "submitter-user",
+        proposedChange,
+      },
+
+      definition: customDefinition,
+
+      separationOfDutiesCheck: (
+        submittedBy,
+        actorUserId,
+      ) => submittedBy !== actorUserId,
+    }).start();
+
+    workflow.send({
+      type: "SUBMIT",
+      actorUserId: "submitter-user",
+    });
+
+    expect(
+      workflow.getSnapshot().value,
+    ).toBe("changes_requested");
+  });
+
+
   it("can persist and restore an actor snapshot", () => {
     const first = actor();
 
