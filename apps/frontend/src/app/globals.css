@@ -13,8 +13,9 @@
 
 html,
 body {
-  min-height: 100%;
+  height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
 body {
@@ -29,24 +30,29 @@ main {
   padding: 48px 0;
 }
 
-.sidebar-scroll {
+.sidebar-scroll,
+.app-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 178, 204, 0.35) transparent;
 }
 
-.sidebar-scroll::-webkit-scrollbar {
+.sidebar-scroll::-webkit-scrollbar,
+.app-scroll::-webkit-scrollbar {
   width: 6px;
 }
 
-.sidebar-scroll::-webkit-scrollbar-track {
+.sidebar-scroll::-webkit-scrollbar-track,
+.app-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.sidebar-scroll::-webkit-scrollbar-thumb {
+.sidebar-scroll::-webkit-scrollbar-thumb,
+.app-scroll::-webkit-scrollbar-thumb {
   background-color: rgba(148, 178, 204, 0.35);
   border-radius: 9999px;
 }
 
-.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+.sidebar-scroll::-webkit-scrollbar-thumb:hover,
+.app-scroll::-webkit-scrollbar-thumb:hover {
   background-color: rgba(148, 178, 204, 0.6);
 }

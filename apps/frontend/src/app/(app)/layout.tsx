@@ -15,7 +15,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     : "member";
 
   return (
-    <AppShell role={navigationRole} email={session.user.email ?? ""}>
+    <AppShell role={navigationRole} email={session?.user?.email ?? "demo@stratalign.app"}>
       {children}
     </AppShell>
   );

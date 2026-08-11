@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "scheduling"]
+  schemas  = ["public", "iam", "rules", "audit", "scheduling", "strategy", "registry"]
 }
 
 model SystemSetting {
@@ -21,22 +21,28 @@ model SystemSetting {
 }
 
 model User {
-  id                      String                   @id @default(uuid())
-  email                   String                   @unique
-  displayName             String?                  @map("display_name")
-  emailVerifiedAt         DateTime?                @map("email_verified_at")
-  preferredLocale         String                   @default("en") @map("preferred_locale")
-  createdAt               DateTime                 @default(now()) @map("created_at")
-  updatedAt               DateTime                 @updatedAt @map("updated_at")
-  localCredential         LocalCredential?
-  oidcIdentities          OidcIdentity[]
-  scopeGrants             ScopeGrant[]             @relation("ScopeGrantUser")
-  grantsGiven             ScopeGrant[]             @relation("ScopeGrantGrantor")
-  mappingsCreated         GroupRoleMapping[]       @relation("MappingCreator")
-  rulesCreated            RuleDefinition[]         @relation("RuleDefinitionCreator")
-  notificationPreferences NotificationPreference[] @relation("NotificationPreferenceRecipient")
-  notificationDeliveries  NotificationDelivery[]   @relation("NotificationDeliveryRecipient")
-  notificationDigests     NotificationDigest[]     @relation("NotificationDigestRecipient")
+  id                               String                   @id @default(uuid())
+  email                            String                   @unique
+  displayName                      String?                  @map("display_name")
+  emailVerifiedAt                  DateTime?                @map("email_verified_at")
+  preferredLocale                  String                   @default("en") @map("preferred_locale")
+  createdAt                        DateTime                 @default(now()) @map("created_at")
+  updatedAt                        DateTime                 @updatedAt @map("updated_at")
+  localCredential                  LocalCredential?
+  oidcIdentities                   OidcIdentity[]
+  scopeGrants                      ScopeGrant[]             @relation("ScopeGrantUser")
+  grantsGiven                      ScopeGrant[]             @relation("ScopeGrantGrantor")
+  mappingsCreated                  GroupRoleMapping[]       @relation("MappingCreator")
+  rulesCreated                     RuleDefinition[]         @relation("RuleDefinitionCreator")
+  notificationPreferences          NotificationPreference[] @relation("NotificationPreferenceRecipient")
+  notificationDeliveries           NotificationDelivery[]   @relation("NotificationDeliveryRecipient")
+  notificationDigests              NotificationDigest[]     @relation("NotificationDigestRecipient")
+  strategyNodesCreated             StrategyNode[]           @relation("StrategyNodeCreator")
+  strategyOwnerAssignments         OwnerAssignment[]        @relation("StrategyOwner")
+  strategyOwnerAssignmentsAssigned OwnerAssignment[]        @relation("StrategyAssigner")
+  strategyStagedChangesRequested   StagedChange[]           @relation("StrategyStagedChangeRequester")
+  kpiVersionsOwned                 KpiVersion[]             @relation("KpiVersionOwner")
+  kpiVersionsStewarded             KpiVersion[]             @relation("KpiVersionSteward")
 
   @@map("users")
   @@schema("iam")
@@ -185,6 +191,8 @@ model RuleDefinition {
   supersedes   RuleDefinition? @relation("RuleDefinitionVersions", fields: [supersedesId], references: [id], onDelete: Restrict)
   supersededBy RuleDefinition? @relation("RuleDefinitionVersions")
 
+  kpiRollupLinks KpiHierarchyNode[] @relation("KpiHierarchyRollupRule")
+
   @@unique([ruleKey, version])
   @@index([ruleKey, isCurrent])
   @@index([ruleType])
@@ -259,6 +267,173 @@ model EntitySnapshot {
   @@index([aggregateType, aggregateId, validFrom, validTo])
   @@map("entity_snapshots")
   @@schema("audit")
+}
+
+// ---------------------------------------------------------------------------
+// Strategy model
+// ---------------------------------------------------------------------------
+
+enum StrategyNodeType {
+  CORPORATE_STRATEGY @map("corporate_strategy")
+  THEME              @map("theme")
+  OBJECTIVE          @map("objective")
+  STRATEGIC_PLAY     @map("strategic_play")
+  PORTFOLIO          @map("portfolio")
+  AREA_OF_FOCUS      @map("area_of_focus")
+
+  @@schema("strategy")
+}
+
+enum StrategyNodeState {
+  DRAFT   @map("draft")
+  ACTIVE  @map("active")
+  RETIRED @map("retired")
+
+  @@schema("strategy")
+}
+
+enum StrategyEdgeType {
+  CONTAINS             @map("contains")
+  EXECUTED_BY          @map("executed_by")
+  BELONGS_TO_PORTFOLIO @map("belongs_to_portfolio")
+  ALIGNS_TO            @map("aligns_to")
+
+  @@schema("strategy")
+}
+
+enum PlanVersionStatus {
+  DRAFT  @map("draft")
+  ACTIVE @map("active")
+  CLOSED @map("closed")
+
+  @@schema("strategy")
+}
+
+enum StagedChangeKind {
+  NODE_CREATE @map("node_create")
+  NODE_UPDATE @map("node_update")
+  NODE_RETIRE @map("node_retire")
+  EDGE_LINK   @map("edge_link")
+  EDGE_UNLINK @map("edge_unlink")
+
+  @@schema("strategy")
+}
+
+enum StagedChangeStatus {
+  PENDING   @map("pending")
+  APPLIED   @map("applied")
+  CANCELLED @map("cancelled")
+
+  @@schema("strategy")
+}
+
+model PlanVersion {
+  id                     String            @id @default(uuid()) @db.Uuid
+  name                   String
+  status                 PlanVersionStatus @default(DRAFT)
+  opensAt                DateTime?         @map("opens_at")
+  closesAt               DateTime?         @map("closes_at")
+  sourcePlanVersionId    String?           @map("source_plan_version_id") @db.Uuid
+  sourcePlanVersion      PlanVersion?      @relation("PlanVersionCarryForward", fields: [sourcePlanVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  carriedForwardVersions PlanVersion[]     @relation("PlanVersionCarryForward")
+  nodes                  StrategyNode[]
+  edges                  StrategyEdge[]
+  stagedChanges          StagedChange[]
+
+  @@index([status])
+  @@index([sourcePlanVersionId])
+  @@map("plan_versions")
+  @@schema("strategy")
+}
+
+model StrategyNode {
+  id                 String            @id @default(uuid()) @db.Uuid
+  type               StrategyNodeType
+  nameEn             String            @map("name_en")
+  nameAr             String            @map("name_ar")
+  planVersionId      String            @map("plan_version_id") @db.Uuid
+  state              StrategyNodeState @default(DRAFT)
+  createdBy          String            @map("created_by")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  planVersion        PlanVersion       @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creator            User              @relation("StrategyNodeCreator", fields: [createdBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  outgoingEdges      StrategyEdge[]    @relation("StrategyEdgeFrom")
+  incomingEdges      StrategyEdge[]    @relation("StrategyEdgeTo")
+  ownerAssignments   OwnerAssignment[]
+  registryOkrs       Okr[]             @relation("RegistryOkrObjective")
+  registryAlignments Alignment[]       @relation("RegistryStrategyAlignment")
+
+  @@index([planVersionId, type])
+  @@index([planVersionId, state])
+  @@map("strategy_nodes")
+  @@schema("strategy")
+}
+
+model StrategyEdge {
+  id            String           @id @default(uuid()) @db.Uuid
+  fromNodeId    String           @map("from_node_id") @db.Uuid
+  toNodeId      String           @map("to_node_id") @db.Uuid
+  edgeType      StrategyEdgeType @map("edge_type")
+  planVersionId String           @map("plan_version_id") @db.Uuid
+  fromNode      StrategyNode     @relation("StrategyEdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  toNode        StrategyNode     @relation("StrategyEdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  planVersion   PlanVersion      @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([fromNodeId, toNodeId, edgeType, planVersionId])
+  @@index([fromNodeId])
+  @@index([toNodeId])
+  @@index([planVersionId])
+  @@map("strategy_edges")
+  @@schema("strategy")
+}
+
+model RelationshipRule {
+  id       String           @id @default(uuid()) @db.Uuid
+  fromType StrategyNodeType @map("from_type")
+  toType   StrategyNodeType @map("to_type")
+  edgeType StrategyEdgeType @map("edge_type")
+  minCount Int              @default(0) @map("min_count")
+  maxCount Int?             @map("max_count")
+
+  @@unique([fromType, toType, edgeType])
+  @@map("relationship_rules")
+  @@schema("strategy")
+}
+
+model OwnerAssignment {
+  id          String       @id @default(uuid()) @db.Uuid
+  nodeId      String       @map("node_id") @db.Uuid
+  ownerUserId String       @map("owner_user_id")
+  assignedBy  String       @map("assigned_by")
+  assignedAt  DateTime     @default(now()) @map("assigned_at")
+  node        StrategyNode @relation(fields: [nodeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  owner       User         @relation("StrategyOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  assigner    User         @relation("StrategyAssigner", fields: [assignedBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([nodeId, ownerUserId])
+  @@index([ownerUserId])
+  @@map("owner_assignments")
+  @@schema("strategy")
+}
+
+model StagedChange {
+  id             String             @id @default(uuid()) @db.Uuid
+  approvalCaseId String             @map("approval_case_id") @db.Uuid
+  planVersionId  String             @map("plan_version_id") @db.Uuid
+  kind           StagedChangeKind
+  targetId       String?            @map("target_id") @db.Uuid
+  payload        Json
+  status         StagedChangeStatus @default(PENDING)
+  requestedBy    String             @map("requested_by")
+  requestedAt    DateTime           @default(now()) @map("requested_at")
+  appliedAt      DateTime?          @map("applied_at")
+  planVersion    PlanVersion        @relation(fields: [planVersionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  requester      User               @relation("StrategyStagedChangeRequester", fields: [requestedBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([approvalCaseId, status])
+  @@index([planVersionId, status])
+  @@map("staged_changes")
+  @@schema("strategy")
 }
 
 // ---------------------------------------------------------------------------
@@ -563,4 +738,216 @@ model NotificationDelivery {
   @@index([digestId])
   @@map("notification_deliveries")
   @@schema("public")
+}
+
+// ---------------------------------------------------------------------------
+// Registry (KPI / OKR)
+//
+// Ownership boundary: this schema owns KPI and OKR definitions only.
+//
+// Two references deliberately have no foreign key because the modules that
+// would own them do not exist in this repository yet:
+//
+//   - `strategy_node_id` / `objective_node_id` point at the Strategy module
+//     (Prompts 2.1-2.3). Validated through StrategyNodeGateway instead.
+//   - Publication approval lives in the Workflow module (Prompt 1.5).
+//     `approval_case_id` is recorded for traceability and checked through
+//     ApprovalGateway; no approval_cases table is defined here.
+//
+// `rollup_method_rule_id` DOES have a foreign key: RuleDefinition exists.
+// ---------------------------------------------------------------------------
+
+enum KpiStatus {
+  DRAFT   @map("draft")
+  ACTIVE  @map("active")
+  RETIRED @map("retired")
+
+  @@schema("registry")
+}
+
+enum KpiPolarity {
+  HIGHER_IS_BETTER @map("higher_is_better")
+  LOWER_IS_BETTER  @map("lower_is_better")
+
+  @@schema("registry")
+}
+
+enum KpiFrequency {
+  MONTHLY   @map("monthly")
+  QUARTERLY @map("quarterly")
+
+  @@schema("registry")
+}
+
+enum KpiDataSourceType {
+  MANUAL @map("manual")
+  FEED   @map("feed")
+
+  @@schema("registry")
+}
+
+enum KeyResultType {
+  QUANTITATIVE @map("quantitative")
+  MILESTONE    @map("milestone")
+
+  @@schema("registry")
+}
+
+enum AlignmentType {
+  OBJECTIVE @map("objective")
+  PLAY      @map("play")
+  SECTOR    @map("sector")
+  PROJECT   @map("project")
+
+  @@schema("registry")
+}
+
+/// Stable identity for a KPI across every version it ever has.
+/// Carries no descriptive attributes: those live on KpiVersion so that
+/// renaming or re-specifying a KPI never rewrites history.
+model KpiDefinition {
+  id              String    @id @default(uuid())
+  activeVersionId String?   @unique @map("active_version_id")
+  status          KpiStatus @default(DRAFT)
+  retiredAt       DateTime? @map("retired_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  versions      KpiVersion[]       @relation("KpiDefinitionVersions")
+  activeVersion KpiVersion?        @relation("KpiActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+  alignments    Alignment[]
+  parentLinks   KpiHierarchyNode[] @relation("KpiHierarchyParent")
+  childLinks    KpiHierarchyNode[] @relation("KpiHierarchyChild")
+
+  @@index([status])
+  @@map("kpi_definitions")
+  @@schema("registry")
+}
+
+/// Append-only. Rows are never updated or deleted; a database trigger
+/// (see the registry migration) rejects UPDATE and DELETE outright.
+model KpiVersion {
+  id                   String            @id @default(uuid())
+  kpiDefinitionId      String            @map("kpi_definition_id")
+  version              Int
+  nameEn               String            @map("name_en")
+  nameAr               String            @map("name_ar")
+  descriptionEn        String?           @map("description_en")
+  descriptionAr        String?           @map("description_ar")
+  unit                 String
+  polarity             KpiPolarity
+  frequency            KpiFrequency
+  dataSourceType       KpiDataSourceType @map("data_source_type")
+  calculationLogicText String?           @map("calculation_logic_text")
+  ownerUserId          String            @map("owner_user_id")
+  stewardUserId        String?           @map("steward_user_id")
+  activeFrom           DateTime          @map("active_from")
+  supersedesVersionId  String?           @unique @map("supersedes_version_id")
+  /// Workflow case that authorised publication. No foreign key: the Workflow
+  /// module (Prompt 1.5) owns approval cases and does not exist yet.
+  approvalCaseId       String?           @map("approval_case_id")
+  publishedAt          DateTime?         @map("published_at")
+  createdAt            DateTime          @default(now()) @map("created_at")
+
+  kpiDefinition KpiDefinition  @relation("KpiDefinitionVersions", fields: [kpiDefinitionId], references: [id], onDelete: Cascade)
+  activeFor     KpiDefinition? @relation("KpiActiveVersion")
+  owner         User           @relation("KpiVersionOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  steward       User?          @relation("KpiVersionSteward", fields: [stewardUserId], references: [id], onDelete: Restrict)
+  supersedes    KpiVersion?    @relation("KpiVersionChain", fields: [supersedesVersionId], references: [id], onDelete: Restrict)
+  supersededBy  KpiVersion?    @relation("KpiVersionChain")
+
+  @@unique([kpiDefinitionId, version])
+  @@index([kpiDefinitionId, activeFrom])
+  @@index([ownerUserId])
+  @@index([stewardUserId])
+  @@index([approvalCaseId])
+  @@map("kpi_versions")
+  @@schema("registry")
+}
+
+model Okr {
+  id String @id @default(uuid())
+
+  /// Strategy node of type objective.
+  objectiveNodeId String       @map("objective_node_id") @db.Uuid
+  objectiveNode   StrategyNode @relation("RegistryOkrObjective", fields: [objectiveNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  nameEn    String   @map("name_en")
+  nameAr    String   @map("name_ar")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  keyResults KeyResult[]
+
+  @@index([objectiveNodeId])
+  @@map("okrs")
+  @@schema("registry")
+}
+
+model KeyResult {
+  id    String        @id @default(uuid())
+  okrId String        @map("okr_id")
+  type  KeyResultType
+
+  targetValue Decimal @map("target_value") @db.Decimal(20, 6)
+  unit        String
+
+  /// Progress tracked on the key result itself. Prompt 2.4 carries no
+  /// measurement data model, so this is the definition-side latest value
+  /// rather than a time series.
+  currentValue      Decimal?  @map("current_value") @db.Decimal(20, 6)
+  progressUpdatedAt DateTime? @map("progress_updated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  okr Okr @relation(fields: [okrId], references: [id], onDelete: Cascade)
+
+  @@index([okrId])
+  @@map("key_results")
+  @@schema("registry")
+}
+
+/// Many-to-many between a KPI and the strategy nodes it measures.
+model Alignment {
+  id              String @id @default(uuid())
+  kpiDefinitionId String @map("kpi_definition_id")
+
+  strategyNodeId String @map("strategy_node_id") @db.Uuid
+
+  alignmentType AlignmentType @map("alignment_type")
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  kpiDefinition KpiDefinition @relation(fields: [kpiDefinitionId], references: [id], onDelete: Cascade)
+  strategyNode  StrategyNode  @relation("RegistryStrategyAlignment", fields: [strategyNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([kpiDefinitionId, strategyNodeId, alignmentType])
+  @@index([kpiDefinitionId])
+  @@index([strategyNodeId])
+  @@map("alignments")
+  @@schema("registry")
+}
+
+/// Parent/child KPI edge carrying the rollup rule used to derive the parent.
+model KpiHierarchyNode {
+  id          String @id @default(uuid())
+  parentKpiId String @map("parent_kpi_id")
+  childKpiId  String @map("child_kpi_id")
+
+  /// Must reference a RuleDefinition whose ruleType is ROLLUP. Enforced in
+  /// KpiHierarchyService; the foreign key alone cannot express the type check.
+  rollupMethodRuleId String @map("rollup_method_rule_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  parentKpi        KpiDefinition  @relation("KpiHierarchyParent", fields: [parentKpiId], references: [id], onDelete: Cascade)
+  childKpi         KpiDefinition  @relation("KpiHierarchyChild", fields: [childKpiId], references: [id], onDelete: Cascade)
+  rollupMethodRule RuleDefinition @relation("KpiHierarchyRollupRule", fields: [rollupMethodRuleId], references: [id], onDelete: Restrict)
+
+  @@unique([parentKpiId, childKpiId])
+  @@index([childKpiId])
+  @@index([rollupMethodRuleId])
+  @@map("kpi_hierarchy_nodes")
+  @@schema("registry")
 }
