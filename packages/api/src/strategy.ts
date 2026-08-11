@@ -16,13 +16,19 @@ export interface StrategyServiceContract {
 }
 
 declare module "./index" {
-  interface TrpcContext { strategy: StrategyServiceContract; }
+  interface TrpcContext { strategy?: StrategyServiceContract; }
 }
 
 const id = z.string().uuid();
 const admin = () => requireRole("seo_administrator");
 const fail = (error: unknown): never => {
   throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Strategy operation failed" });
+};
+const service = (ctx: { strategy?: StrategyServiceContract }): StrategyServiceContract => {
+  if (!ctx.strategy) {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Strategy service unavailable" });
+  }
+  return ctx.strategy;
 };
 
 export const strategyRouter = router({
@@ -32,31 +38,31 @@ export const strategyRouter = router({
       nameEn: z.string().trim().min(1).max(300), nameAr: z.string().trim().min(1).max(300), planVersionId: id,
       approvalCaseId: id.optional(),
     }).strict()).mutation(async ({ ctx, input }) => {
-      try { return await ctx.strategy.createNode({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); }
+      try { return await service(ctx).createNode({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); }
     }),
     update: admin().input(z.object({ nodeId: id, nameEn: z.string().trim().min(1).max(300).optional(), nameAr: z.string().trim().min(1).max(300).optional(), approvalCaseId: id.optional() }).strict())
-      .mutation(async ({ ctx, input }) => { try { return await ctx.strategy.updateNode({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
+      .mutation(async ({ ctx, input }) => { try { return await service(ctx).updateNode({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
     retire: admin().input(z.object({ nodeId: id, approvalCaseId: id.optional() }).strict())
-      .mutation(async ({ ctx, input }) => { try { return await ctx.strategy.retireNode({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
+      .mutation(async ({ ctx, input }) => { try { return await service(ctx).retireNode({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
   }),
   edge: router({
     link: admin().input(z.object({ fromNodeId: id, toNodeId: id, edgeType: z.enum(["contains","executed_by","belongs_to_portfolio","aligns_to"]), planVersionId: id, approvalCaseId: id.optional() }).strict())
-      .mutation(async ({ ctx, input }) => { try { return await ctx.strategy.linkEdge({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
+      .mutation(async ({ ctx, input }) => { try { return await service(ctx).linkEdge({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
     unlink: admin().input(z.object({ edgeId: id, approvalCaseId: id.optional() }).strict())
-      .mutation(async ({ ctx, input }) => { try { return await ctx.strategy.unlinkEdge({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
+      .mutation(async ({ ctx, input }) => { try { return await service(ctx).unlinkEdge({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
   }),
   owner: router({
     assign: admin().input(z.object({ nodeId: id, ownerUserId: z.string().min(1) }).strict())
-      .mutation(async ({ ctx, input }) => { try { return await ctx.strategy.assignOwner({ ...input, assignedBy: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
+      .mutation(async ({ ctx, input }) => { try { return await service(ctx).assignOwner({ ...input, assignedBy: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
   }),
   planVersion: router({
     create: admin().input(z.object({ name: z.string().trim().min(1).max(300) }).strict())
-      .mutation(async ({ ctx, input }) => { try { return await ctx.strategy.createPlanVersion(input.name); } catch (e) { return fail(e); } }),
+      .mutation(async ({ ctx, input }) => { try { return await service(ctx).createPlanVersion(input.name); } catch (e) { return fail(e); } }),
     open: admin().input(z.object({ planVersionId: id, opensAt: z.coerce.date().optional() }).strict())
-      .mutation(async ({ ctx, input }) => { try { return await ctx.strategy.openPlanVersion(input.planVersionId, input.opensAt); } catch (e) { return fail(e); } }),
+      .mutation(async ({ ctx, input }) => { try { return await service(ctx).openPlanVersion(input.planVersionId, input.opensAt); } catch (e) { return fail(e); } }),
     close: admin().input(z.object({ planVersionId: id, closesAt: z.coerce.date().optional() }).strict())
-      .mutation(async ({ ctx, input }) => { try { return await ctx.strategy.closePlanVersion(input.planVersionId, input.closesAt); } catch (e) { return fail(e); } }),
+      .mutation(async ({ ctx, input }) => { try { return await service(ctx).closePlanVersion(input.planVersionId, input.closesAt); } catch (e) { return fail(e); } }),
     carryForward: admin().input(z.object({ sourcePlanVersionId: id, name: z.string().trim().min(1).max(300) }).strict())
-      .mutation(async ({ ctx, input }) => { try { return await ctx.strategy.carryForward(input.sourcePlanVersionId, input.name, ctx.session!.user.id); } catch (e) { return fail(e); } }),
+      .mutation(async ({ ctx, input }) => { try { return await service(ctx).carryForward(input.sourcePlanVersionId, input.name, ctx.session!.user.id); } catch (e) { return fail(e); } }),
   }),
 });
