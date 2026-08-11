@@ -486,6 +486,18 @@ export interface PerformanceServiceContract {
   }): Promise<RollupResultOutput | null>;
 }
 
+export interface GovernanceApprovalReferenceInput {
+  approvalCaseId: string;
+  entityType: string;
+  entityId: string;
+}
+
+export interface GovernanceServiceContract {
+  assertApproved(
+    input: GovernanceApprovalReferenceInput,
+  ): Promise<void>;
+}
+
 export interface AuditTapServiceContract {
   recordCompletedCall(input: {
     procedurePath: string;
@@ -506,15 +518,23 @@ export interface TrpcContext {
   authorization: IamAuthorizationServiceContract;
   iam: IamAdminServiceContract;
   rules: RulesServiceContract;
+  governance: GovernanceServiceContract;
   audit: AuditServiceContract;
   auditTap: AuditTapServiceContract;
   performance: PerformanceServiceContract;
   registry: RegistryServicesContract;
 }
 
+type WorkflowReferenceRequirement = {
+  entityType: string;
+  entityIdField: string;
+  approvalCaseIdField?: string;
+};
+
 type ProcedureMeta = {
   actionClass?: StepUpActionClass;
   auditRelevant?: boolean;
+  requiresApprovalCase?: WorkflowReferenceRequirement;
 };
 const t = initTRPC.context<TrpcContext>().meta<ProcedureMeta>().create({
   errorFormatter({ shape, error }) {
@@ -577,6 +597,86 @@ export const withStepUpCheck = middleware(async ({ ctx, meta, next }) => {
   }
   return next({ ctx: authorized });
 });
+
+export const withWorkflowReferenceCheck = middleware(
+  async ({
+    ctx,
+    meta,
+    getRawInput,
+    next,
+  }) => {
+    const requirement =
+      meta?.requiresApprovalCase;
+
+    if (!requirement) {
+      return next({ ctx });
+    }
+
+    const rawInput =
+      await getRawInput();
+
+    if (
+      typeof rawInput !== "object" ||
+      rawInput === null ||
+      Array.isArray(rawInput)
+    ) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "Workflow approval reference is required",
+      });
+    }
+
+    const input =
+      rawInput as Record<
+        string,
+        unknown
+      >;
+
+    const approvalCaseIdField =
+      requirement.approvalCaseIdField ??
+      "approvalCaseId";
+
+    const approvalCaseId =
+      input[approvalCaseIdField];
+
+    const entityId =
+      input[
+        requirement.entityIdField
+      ];
+
+    if (
+      typeof approvalCaseId !==
+        "string" ||
+      approvalCaseId.trim().length === 0 ||
+      typeof entityId !== "string" ||
+      entityId.trim().length === 0
+    ) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "Workflow approval reference is required",
+      });
+    }
+
+    try {
+      await ctx.governance.assertApproved({
+        approvalCaseId,
+        entityType:
+          requirement.entityType,
+        entityId,
+      });
+    } catch {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message:
+          "This operation requires an approved workflow case for the same entity",
+      });
+    }
+
+    return next({ ctx });
+  },
+);
 
 export const withAuditTap = middleware(
   async ({ ctx, meta, path, type, next }) => {
@@ -719,6 +819,7 @@ const rulesCreateInputSchema = z.object({
 
 const rulesPublishInputSchema = z.object({
   ruleId: z.string().uuid(),
+  approvalCaseId: z.string().uuid(),
 }).strict();
 
 const rulesEvaluateInputSchema = z.object({
@@ -1178,14 +1279,30 @@ export const appRouter = router({
         return evaluateRule(input.draftDocument, validatedInput);
       }),
 
-    publish: requireRole("seo_administrator", "strategy_analyst")
+    publish: requireRole(
+      "seo_administrator",
+      "strategy_analyst",
+    )
       .input(rulesPublishInputSchema)
+      .meta({
+        requiresApprovalCase: {
+          entityType: "RuleDefinition",
+          entityIdField: "ruleId",
+        },
+      })
+      .use(withWorkflowReferenceCheck)
       .output(ruleDefinitionOutputSchema)
       .mutation(async ({ ctx, input }) => {
         try {
-          return await ctx.rules.publish(input.ruleId);
+          return await ctx.rules.publish(
+            input.ruleId,
+          );
         } catch {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Unable to publish rule" });
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Unable to publish rule",
+          });
         }
       }),
 
