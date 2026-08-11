@@ -146,7 +146,6 @@ export interface AuditServiceContract {
   }): Promise<AuditJournalEntryOutput[]>;
 }
 
-
 export interface RulesServiceContract {
   createDraft(input: {
     ruleKey: string;
@@ -165,9 +164,9 @@ export interface RulesServiceContract {
   ): Promise<RuleDefinitionOutput | null>;
 
   evaluate(
-  ruleId: string,
-  input: unknown,
-): Promise<RuleResult>;
+    ruleId: string,
+    input: unknown,
+  ): Promise<RuleResult>;
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +406,7 @@ const t = initTRPC.context<TrpcContext>().meta<ProcedureMeta>().create({
 });
 
 export const router = t.router;
+export const mergeRouters = t.mergeRouters;
 export const middleware = t.middleware;
 
 export const withAuthn = middleware(({ ctx, next }) => {
@@ -461,9 +461,7 @@ export const withAuditTap = middleware(
       return result;
     }
 
-    const auditRelevant =
-      meta?.auditRelevant ??
-      (type === "mutation");
+    const auditRelevant = meta?.auditRelevant ?? (type === "mutation");
 
     if (!auditRelevant) {
       return result;
@@ -580,11 +578,7 @@ const ruleDefinitionOutputSchema = z.object({
   name: z.string(),
   document: ruleDocumentSchema,
   version: z.number().int().positive(),
-  status: z.enum([
-    "draft",
-    "published",
-    "superseded",
-  ]),
+  status: z.enum(["draft", "published", "superseded"]),
   isCurrent: z.boolean(),
   publishedAt: z.date().nullable(),
   supersedesId: z.string().uuid().nullable(),
@@ -871,43 +865,25 @@ export const appRouter = router({
             createdBy: ctx.session.user.id,
           });
         } catch {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Unable to create rule draft",
-          });
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Unable to create rule draft" });
         }
       }),
 
     preview: protectedProcedure
       .input(rulesPreviewInputSchema)
       .mutation(({ input }) => {
-        const validatedInput = parseRuleInput(
-          input.draftDocument,
-          input.sampleData,
-        );
-
-        return evaluateRule(
-          input.draftDocument,
-          validatedInput,
-        );
+        const validatedInput = parseRuleInput(input.draftDocument, input.sampleData);
+        return evaluateRule(input.draftDocument, validatedInput);
       }),
 
-    publish: requireRole(
-      "seo_administrator",
-      "strategy_analyst",
-    )
+    publish: requireRole("seo_administrator", "strategy_analyst")
       .input(rulesPublishInputSchema)
       .output(ruleDefinitionOutputSchema)
       .mutation(async ({ ctx, input }) => {
         try {
-          // TODO(1.5): Replace role gating with
-          // workflow-case-gated publication.
           return await ctx.rules.publish(input.ruleId);
         } catch {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Unable to publish rule",
-          });
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Unable to publish rule" });
         }
       }),
 
@@ -915,15 +891,9 @@ export const appRouter = router({
       .input(rulesEvaluateInputSchema)
       .mutation(async ({ ctx, input }) => {
         try {
-          return await ctx.rules.evaluate(
-            input.ruleId,
-            input.input,
-          );
+          return await ctx.rules.evaluate(input.ruleId, input.input);
         } catch {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Unable to evaluate rule",
-          });
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Unable to evaluate rule" });
         }
       }),
 
@@ -934,12 +904,7 @@ export const appRouter = router({
     getVersion: protectedProcedure
       .input(rulesGetVersionInputSchema)
       .output(ruleDefinitionOutputSchema.nullable())
-      .query(({ ctx, input }) =>
-        ctx.rules.getVersion(
-          input.ruleKey,
-          input.version,
-        ),
-      ),
+      .query(({ ctx, input }) => ctx.rules.getVersion(input.ruleKey, input.version)),
   }),
   registry: router({
     kpi: router({
@@ -1078,8 +1043,7 @@ export const appRouter = router({
     reconcileOidc: publicProcedure.input(oidcIdTokenInput).output(reconciledOidcUserOutput)
       .mutation(async ({ ctx, input }) => {
         try {
-          const user = await ctx.oidcIdentities.reconcile(input.idToken);
-          return user;
+          return await ctx.oidcIdentities.reconcile(input.idToken);
         } catch (error) {
           if (isExpectedOidcError(error)) {
             throw new TRPCError({ code: "UNAUTHORIZED", message: "Unable to sign in" });
@@ -1149,4 +1113,4 @@ export const appRouter = router({
   }),
 });
 
-export type AppRouter = typeof appRouter;
+export type { AppRouter } from "./root";

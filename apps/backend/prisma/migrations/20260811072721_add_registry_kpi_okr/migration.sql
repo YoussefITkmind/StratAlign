@@ -59,7 +59,7 @@ CREATE TABLE "registry"."kpi_versions" (
 -- CreateTable
 CREATE TABLE "registry"."okrs" (
     "id" TEXT NOT NULL,
-    "objective_node_id" TEXT NOT NULL,
+    "objective_node_id" UUID NOT NULL,
     "name_en" TEXT NOT NULL,
     "name_ar" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -87,7 +87,7 @@ CREATE TABLE "registry"."key_results" (
 CREATE TABLE "registry"."alignments" (
     "id" TEXT NOT NULL,
     "kpi_definition_id" TEXT NOT NULL,
-    "strategy_node_id" TEXT NOT NULL,
+    "strategy_node_id" UUID NOT NULL,
     "alignment_type" "registry"."AlignmentType" NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -290,3 +290,17 @@ CREATE TRIGGER "kpi_versions_append_only"
     BEFORE UPDATE OR DELETE ON "registry"."kpi_versions"
     FOR EACH ROW
     EXECUTE FUNCTION "registry"."kpi_versions_enforce_append_only"();
+
+-- AddForeignKey
+ALTER TABLE "registry"."okrs"
+ADD CONSTRAINT "okrs_objective_node_id_fkey"
+FOREIGN KEY ("objective_node_id")
+REFERENCES "strategy"."strategy_nodes"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "registry"."alignments"
+ADD CONSTRAINT "alignments_strategy_node_id_fkey"
+FOREIGN KEY ("strategy_node_id")
+REFERENCES "strategy"."strategy_nodes"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;

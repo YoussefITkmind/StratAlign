@@ -77,6 +77,52 @@ describe.sequential(
       });
 
       ownerUserId = owner.id;
+
+      // Real Strategy fixtures. Registry references now use actual UUID
+      // foreign keys into strategy.strategy_nodes.
+      const registryPlan = await prisma.planVersion.create({
+        data: {
+          name: "Registry integration strategy plan",
+        },
+      });
+
+      await prisma.strategyNode.createMany({
+        data: [
+          {
+            id: "10000000-0000-4000-8000-000000000001",
+            type: "OBJECTIVE",
+            nameEn: "Registry objective",
+            nameAr: "هدف السجل",
+            planVersionId: registryPlan.id,
+            createdBy: ownerUserId,
+          },
+          {
+            id: "20000000-0000-4000-8000-000000000002",
+            type: "STRATEGIC_PLAY",
+            nameEn: "Registry strategic play",
+            nameAr: "مبادرة استراتيجية للسجل",
+            planVersionId: registryPlan.id,
+            createdBy: ownerUserId,
+          },
+          {
+            id: "30000000-0000-4000-8000-000000000003",
+            type: "AREA_OF_FOCUS",
+            nameEn: "Registry area of focus",
+            nameAr: "مجال تركيز السجل",
+            planVersionId: registryPlan.id,
+            createdBy: ownerUserId,
+          },
+          {
+            id: "40000000-0000-4000-8000-000000000004",
+            type: "OBJECTIVE",
+            nameEn: "Shared registry objective",
+            nameAr: "هدف مشترك للسجل",
+            planVersionId: registryPlan.id,
+            createdBy: ownerUserId,
+          },
+        ],
+      });
+
       rules = new RulesService(prisma);
 
       // Rollup rules come from the existing Rules module rather than being
@@ -384,8 +430,8 @@ describe.sequential(
         await alignments.set({
           kpiDefinitionId: parent.definition.id,
           alignments: [
-            { strategyNodeId: "node-obj-1", alignmentType: "objective" },
-            { strategyNodeId: "node-sector-3", alignmentType: "sector" },
+            { strategyNodeId: "10000000-0000-4000-8000-000000000001", alignmentType: "objective" },
+            { strategyNodeId: "30000000-0000-4000-8000-000000000003", alignmentType: "sector" },
           ],
         });
 
@@ -399,8 +445,8 @@ describe.sequential(
 
         expect(impact.affectedAlignments).toHaveLength(2);
         expect(impact.affectedStrategyNodeIds.sort()).toEqual([
-          "node-obj-1",
-          "node-sector-3",
+          "10000000-0000-4000-8000-000000000001",
+          "30000000-0000-4000-8000-000000000003",
         ]);
         expect(impact.affectedHierarchyEdges).toHaveLength(1);
         // Nothing has confirmed those strategy nodes exist.
@@ -409,7 +455,7 @@ describe.sequential(
 
       it("reports verification honestly when an adapter can verify", async () => {
         const verifying = new FakeStrategyNodeGateway(true);
-        verifying.register("node-obj-1");
+        verifying.register("10000000-0000-4000-8000-000000000001");
 
         const service = new KpiRegistryService(
           prisma,
@@ -439,7 +485,7 @@ describe.sequential(
           alignments.set({
             kpiDefinitionId: published.definition.id,
             alignments: [
-              { strategyNodeId: "node-1", alignmentType: "objective" },
+              { strategyNodeId: "10000000-0000-4000-8000-000000000001", alignmentType: "objective" },
             ],
           }),
         ).rejects.toBeInstanceOf(RegistryOperationError);
@@ -723,20 +769,20 @@ describe.sequential(
         await alignments.set({
           kpiDefinitionId: kpi.definition.id,
           alignments: [
-            { strategyNodeId: "node-1", alignmentType: "objective" },
-            { strategyNodeId: "node-2", alignmentType: "play" },
+            { strategyNodeId: "10000000-0000-4000-8000-000000000001", alignmentType: "objective" },
+            { strategyNodeId: "20000000-0000-4000-8000-000000000002", alignmentType: "play" },
           ],
         });
 
         const replaced = await alignments.set({
           kpiDefinitionId: kpi.definition.id,
           alignments: [
-            { strategyNodeId: "node-3", alignmentType: "project" },
+            { strategyNodeId: "30000000-0000-4000-8000-000000000003", alignmentType: "project" },
           ],
         });
 
         expect(replaced).toHaveLength(1);
-        expect(replaced[0].strategyNodeId).toBe("node-3");
+        expect(replaced[0].strategyNodeId).toBe("30000000-0000-4000-8000-000000000003");
       });
 
       it("supports the same node under different alignment types", async () => {
@@ -745,8 +791,8 @@ describe.sequential(
         const result = await alignments.set({
           kpiDefinitionId: kpi.definition.id,
           alignments: [
-            { strategyNodeId: "node-1", alignmentType: "objective" },
-            { strategyNodeId: "node-1", alignmentType: "sector" },
+            { strategyNodeId: "10000000-0000-4000-8000-000000000001", alignmentType: "objective" },
+            { strategyNodeId: "10000000-0000-4000-8000-000000000001", alignmentType: "sector" },
           ],
         });
 
@@ -760,8 +806,8 @@ describe.sequential(
           alignments.set({
             kpiDefinitionId: kpi.definition.id,
             alignments: [
-              { strategyNodeId: "node-1", alignmentType: "objective" },
-              { strategyNodeId: "node-1", alignmentType: "objective" },
+              { strategyNodeId: "10000000-0000-4000-8000-000000000001", alignmentType: "objective" },
+              { strategyNodeId: "10000000-0000-4000-8000-000000000001", alignmentType: "objective" },
             ],
           }),
         ).rejects.toBeInstanceOf(RegistryOperationError);
@@ -773,7 +819,7 @@ describe.sequential(
         await alignments.set({
           kpiDefinitionId: kpi.definition.id,
           alignments: [
-            { strategyNodeId: "node-1", alignmentType: "objective" },
+            { strategyNodeId: "10000000-0000-4000-8000-000000000001", alignmentType: "objective" },
           ],
         });
 
@@ -791,7 +837,7 @@ describe.sequential(
         await alignments.set({
           kpiDefinitionId: kpi.definition.id,
           alignments: [
-            { strategyNodeId: "node-keep", alignmentType: "objective" },
+            { strategyNodeId: "10000000-0000-4000-8000-000000000001", alignmentType: "objective" },
           ],
         });
 
@@ -811,7 +857,7 @@ describe.sequential(
 
         const surviving = await alignments.listForKpi(kpi.definition.id);
         expect(surviving).toHaveLength(1);
-        expect(surviving[0].strategyNodeId).toBe("node-keep");
+        expect(surviving[0].strategyNodeId).toBe("10000000-0000-4000-8000-000000000001");
       });
 
       it("finds every KPI aligned to a strategy node", async () => {
@@ -821,18 +867,18 @@ describe.sequential(
         await alignments.set({
           kpiDefinitionId: first.definition.id,
           alignments: [
-            { strategyNodeId: "shared-node", alignmentType: "objective" },
+            { strategyNodeId: "40000000-0000-4000-8000-000000000004", alignmentType: "objective" },
           ],
         });
         await alignments.set({
           kpiDefinitionId: second.definition.id,
           alignments: [
-            { strategyNodeId: "shared-node", alignmentType: "sector" },
+            { strategyNodeId: "40000000-0000-4000-8000-000000000004", alignmentType: "sector" },
           ],
         });
 
         expect(
-          await alignments.listForStrategyNode("shared-node"),
+          await alignments.listForStrategyNode("40000000-0000-4000-8000-000000000004"),
         ).toHaveLength(2);
       });
     });
@@ -840,7 +886,7 @@ describe.sequential(
     describe("OKRs", () => {
       it("creates an OKR with its key results atomically", async () => {
         const okr = await okrs.create({
-          objectiveNodeId: "node-objective-1",
+          objectiveNodeId: "10000000-0000-4000-8000-000000000001",
           nameEn: "Improve service quality",
           nameAr: "تحسين جودة الخدمة",
           keyResults: [
@@ -858,7 +904,7 @@ describe.sequential(
       it("rejects an OKR with no key results", async () => {
         await expect(
           okrs.create({
-            objectiveNodeId: "node-objective-1",
+            objectiveNodeId: "10000000-0000-4000-8000-000000000001",
             nameEn: "Empty",
             nameAr: "فارغ",
             keyResults: [],
@@ -870,7 +916,7 @@ describe.sequential(
 
       it("records progress and derives a percentage", async () => {
         const okr = await okrs.create({
-          objectiveNodeId: "node-objective-1",
+          objectiveNodeId: "10000000-0000-4000-8000-000000000001",
           nameEn: "Improve service quality",
           nameAr: "تحسين جودة الخدمة",
           keyResults: [
@@ -936,7 +982,7 @@ describe.sequential(
         ).toBe(true);
       });
 
-      it("has no foreign key onto tables other modules own", async () => {
+      it("links Registry to the real Strategy module while keeping workflow decoupled", async () => {
         const constraints = await prisma.$queryRaw<
           Array<{ column_name: string }>
         >`
@@ -951,10 +997,15 @@ describe.sequential(
 
         const columns = constraints.map((row) => row.column_name);
 
-        expect(columns).not.toContain("strategy_node_id");
-        expect(columns).not.toContain("objective_node_id");
+        // Strategy now exists, so Registry references are real foreign keys.
+        expect(columns).toContain("strategy_node_id");
+        expect(columns).toContain("objective_node_id");
+
+        // ApprovalCase still belongs to an unavailable workflow/governance
+        // persistence module, so Registry must not invent a foreign key.
         expect(columns).not.toContain("approval_case_id");
-        // The rules module does exist, so this reference is a real key.
+
+        // Rules also exists, so the rollup rule reference is a real key.
         expect(columns).toContain("rollup_method_rule_id");
       });
 

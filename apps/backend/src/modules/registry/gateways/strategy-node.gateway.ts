@@ -1,48 +1,103 @@
-/**
- * Integration seam onto the Strategy module (Prompts 2.1-2.3).
- *
- * Alignments and OKRs reference strategy nodes by id. Those nodes are owned by
- * the Strategy module, which does not exist in this repository yet, so
- * `registry.alignments.strategy_node_id` and `registry.okrs.objective_node_id`
- * are plain indexed columns with no foreign key — the registry does not invent
- * a strategy_nodes table it has no right to own.
- *
- * Existence checking is expressed as a port so that referential validation can
- * be switched on, without touching registry services, the moment a real
- * adapter is available.
- */
-export interface StrategyNodeGateway {
-  /**
-   * Resolves when every id is an acceptable strategy node reference.
-   * Throws `RegistryOperationError` for ids that are known not to exist.
-   */
-  assertNodesExist(strategyNodeIds: readonly string[]): Promise<void>;
+import type { PrismaService } from "../../../database/prisma.service";
+import { RegistryOperationError } from "../registry.errors";
 
-  /**
-   * Whether this adapter can actually confirm existence. Callers surface this
-   * so a consumer can tell "these nodes are valid" from "nobody checked".
-   */
+export interface StrategyNodeGateway {
+  assertNodesExist(strategyNodeIds: readonly string[]): Promise<void>;
+  assertObjectiveExists(strategyNodeId: string): Promise<void>;
   readonly canVerify: boolean;
 }
 
 /**
- * The production adapter until the Strategy module lands.
- *
- * Unlike `UnavailableApprovalGateway`, this one accepts. The asymmetry is
- * deliberate: approval is a security gate, so an absent checker must deny;
- * strategy-node existence is a referential check, and denying it would make
- * alignment permanently unusable and `retirementImpact` vacuous — blocking
- * the module's actual deliverable to guard an invariant nothing can yet
- * violate. It reports `canVerify: false` so callers never mistake acceptance
- * for verification.
- *
- * TODO(2.1-2.3): replace with an adapter that queries the Strategy module's
- * node store and rejects unknown ids.
+ * Production adapter backed by the live Strategy module.
+ */
+export class PrismaStrategyNodeGateway implements StrategyNodeGateway {
+  readonly canVerify = true;
+
+  constructor(
+    private readonly prisma: PrismaService,
+  ) {}
+
+  async assertObjectiveExists(
+    strategyNodeId: string,
+  ): Promise<void> {
+    try {
+      const node = await this.prisma.strategyNode.findUnique({
+        where: {
+          id: strategyNodeId,
+        },
+        select: {
+          id: true,
+          type: true,
+        },
+      });
+
+      if (!node || node.type !== "OBJECTIVE") {
+        throw new RegistryOperationError(
+          "The OKR must reference an objective strategy node",
+        );
+      }
+    } catch (error) {
+      if (error instanceof RegistryOperationError) {
+        throw error;
+      }
+
+      throw new RegistryOperationError(
+        "The OKR must reference an objective strategy node",
+      );
+    }
+  }
+
+  async assertNodesExist(
+    strategyNodeIds: readonly string[],
+  ): Promise<void> {
+    const ids = [...new Set(strategyNodeIds)];
+
+    if (ids.length === 0) {
+      return;
+    }
+
+    try {
+      const nodes = await this.prisma.strategyNode.findMany({
+        where: {
+          id: {
+            in: ids,
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      const found = new Set(nodes.map((node) => node.id));
+
+      if (ids.some((id) => !found.has(id))) {
+        throw new RegistryOperationError(
+          "One or more strategy nodes were not found",
+        );
+      }
+    } catch (error) {
+      if (error instanceof RegistryOperationError) {
+        throw error;
+      }
+
+      throw new RegistryOperationError(
+        "One or more strategy nodes were not found",
+      );
+    }
+  }
+}
+
+/**
+ * Kept only for isolated tests or explicit non-production use.
  */
 export class UnverifiedStrategyNodeGateway implements StrategyNodeGateway {
   readonly canVerify = false;
 
   assertNodesExist(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  assertObjectiveExists(): Promise<void> {
     return Promise.resolve();
   }
 }

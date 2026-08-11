@@ -84,4 +84,9 @@ export class FakeStrategyNodeGateway implements StrategyNodeGateway {
           new Error(`Unknown strategy nodes: ${unknown.join(", ")}`),
         );
   }
+
+  assertObjectiveExists(strategyNodeId: string): Promise<void> {
+    return this.assertNodesExist([strategyNodeId]);
+  }
+
 }

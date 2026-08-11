@@ -102,7 +102,7 @@ export class OkrService {
       }
     }
 
-    await this.strategyNodes.assertNodesExist([objectiveNodeId]);
+    await this.strategyNodes.assertObjectiveExists(objectiveNodeId);
 
     try {
       // One transaction so an OKR is never persisted without its key
