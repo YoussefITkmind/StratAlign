@@ -21,22 +21,26 @@ model SystemSetting {
 }
 
 model User {
-  id                      String                   @id @default(uuid())
-  email                   String                   @unique
-  displayName             String?                  @map("display_name")
-  emailVerifiedAt         DateTime?                @map("email_verified_at")
-  preferredLocale         String                   @default("en") @map("preferred_locale")
-  createdAt               DateTime                 @default(now()) @map("created_at")
-  updatedAt               DateTime                 @updatedAt @map("updated_at")
-  localCredential         LocalCredential?
-  oidcIdentities          OidcIdentity[]
-  scopeGrants             ScopeGrant[]             @relation("ScopeGrantUser")
-  grantsGiven             ScopeGrant[]             @relation("ScopeGrantGrantor")
-  mappingsCreated         GroupRoleMapping[]       @relation("MappingCreator")
-  rulesCreated            RuleDefinition[]         @relation("RuleDefinitionCreator")
-  notificationPreferences NotificationPreference[] @relation("NotificationPreferenceRecipient")
-  notificationDeliveries  NotificationDelivery[]   @relation("NotificationDeliveryRecipient")
-  notificationDigests     NotificationDigest[]     @relation("NotificationDigestRecipient")
+  id                               String                   @id @default(uuid())
+  email                            String                   @unique
+  displayName                      String?                  @map("display_name")
+  emailVerifiedAt                  DateTime?                @map("email_verified_at")
+  preferredLocale                  String                   @default("en") @map("preferred_locale")
+  createdAt                        DateTime                 @default(now()) @map("created_at")
+  updatedAt                        DateTime                 @updatedAt @map("updated_at")
+  localCredential                  LocalCredential?
+  oidcIdentities                   OidcIdentity[]
+  scopeGrants                      ScopeGrant[]             @relation("ScopeGrantUser")
+  grantsGiven                      ScopeGrant[]             @relation("ScopeGrantGrantor")
+  mappingsCreated                  GroupRoleMapping[]       @relation("MappingCreator")
+  rulesCreated                     RuleDefinition[]         @relation("RuleDefinitionCreator")
+  notificationPreferences          NotificationPreference[] @relation("NotificationPreferenceRecipient")
+  notificationDeliveries           NotificationDelivery[]   @relation("NotificationDeliveryRecipient")
+  notificationDigests              NotificationDigest[]     @relation("NotificationDigestRecipient")
+  strategyNodesCreated             StrategyNode[]           @relation("StrategyNodeCreator")
+  strategyOwnerAssignments         OwnerAssignment[]        @relation("StrategyOwner")
+  strategyOwnerAssignmentsAssigned OwnerAssignment[]        @relation("StrategyAssigner")
+  strategyStagedChangesRequested   StagedChange[]           @relation("StrategyStagedChangeRequester")
 
   @@map("users")
   @@schema("iam")
@@ -320,12 +324,17 @@ enum StagedChangeStatus {
 }
 
 model PlanVersion {
-  id                  String            @id @default(uuid()) @db.Uuid
-  name                String
-  status              PlanVersionStatus @default(DRAFT)
-  opensAt             DateTime?         @map("opens_at")
-  closesAt            DateTime?         @map("closes_at")
-  sourcePlanVersionId String?           @map("source_plan_version_id") @db.Uuid
+  id                     String            @id @default(uuid()) @db.Uuid
+  name                   String
+  status                 PlanVersionStatus @default(DRAFT)
+  opensAt                DateTime?         @map("opens_at")
+  closesAt               DateTime?         @map("closes_at")
+  sourcePlanVersionId    String?           @map("source_plan_version_id") @db.Uuid
+  sourcePlanVersion      PlanVersion?      @relation("PlanVersionCarryForward", fields: [sourcePlanVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  carriedForwardVersions PlanVersion[]     @relation("PlanVersionCarryForward")
+  nodes                  StrategyNode[]
+  edges                  StrategyEdge[]
+  stagedChanges          StagedChange[]
 
   @@index([status])
   @@index([sourcePlanVersionId])
@@ -334,14 +343,19 @@ model PlanVersion {
 }
 
 model StrategyNode {
-  id            String            @id @default(uuid()) @db.Uuid
-  type          StrategyNodeType
-  nameEn        String            @map("name_en")
-  nameAr        String            @map("name_ar")
-  planVersionId String            @map("plan_version_id") @db.Uuid
-  state         StrategyNodeState @default(DRAFT)
-  createdBy     String            @map("created_by")
-  createdAt     DateTime          @default(now()) @map("created_at")
+  id               String            @id @default(uuid()) @db.Uuid
+  type             StrategyNodeType
+  nameEn           String            @map("name_en")
+  nameAr           String            @map("name_ar")
+  planVersionId    String            @map("plan_version_id") @db.Uuid
+  state            StrategyNodeState @default(DRAFT)
+  createdBy        String            @map("created_by")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  planVersion      PlanVersion       @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creator          User              @relation("StrategyNodeCreator", fields: [createdBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  outgoingEdges    StrategyEdge[]    @relation("StrategyEdgeFrom")
+  incomingEdges    StrategyEdge[]    @relation("StrategyEdgeTo")
+  ownerAssignments OwnerAssignment[]
 
   @@index([planVersionId, type])
   @@index([planVersionId, state])
@@ -355,6 +369,9 @@ model StrategyEdge {
   toNodeId      String           @map("to_node_id") @db.Uuid
   edgeType      StrategyEdgeType @map("edge_type")
   planVersionId String           @map("plan_version_id") @db.Uuid
+  fromNode      StrategyNode     @relation("StrategyEdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  toNode        StrategyNode     @relation("StrategyEdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  planVersion   PlanVersion      @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([fromNodeId, toNodeId, edgeType, planVersionId])
   @@index([fromNodeId])
@@ -378,11 +395,14 @@ model RelationshipRule {
 }
 
 model OwnerAssignment {
-  id          String   @id @default(uuid()) @db.Uuid
-  nodeId      String   @map("node_id") @db.Uuid
-  ownerUserId String   @map("owner_user_id")
-  assignedBy  String   @map("assigned_by")
-  assignedAt  DateTime @default(now()) @map("assigned_at")
+  id          String       @id @default(uuid()) @db.Uuid
+  nodeId      String       @map("node_id") @db.Uuid
+  ownerUserId String       @map("owner_user_id")
+  assignedBy  String       @map("assigned_by")
+  assignedAt  DateTime     @default(now()) @map("assigned_at")
+  node        StrategyNode @relation(fields: [nodeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  owner       User         @relation("StrategyOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  assigner    User         @relation("StrategyAssigner", fields: [assignedBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([nodeId, ownerUserId])
   @@index([ownerUserId])
@@ -401,6 +421,8 @@ model StagedChange {
   requestedBy    String             @map("requested_by")
   requestedAt    DateTime           @default(now()) @map("requested_at")
   appliedAt      DateTime?          @map("applied_at")
+  planVersion    PlanVersion        @relation(fields: [planVersionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  requester      User               @relation("StrategyStagedChangeRequester", fields: [requestedBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@index([approvalCaseId, status])
   @@index([planVersionId, status])

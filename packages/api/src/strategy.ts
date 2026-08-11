@@ -1,18 +1,81 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import type {
+  OwnerAssignment,
+  PlanVersion,
+  StrategyEdge,
+  StrategyNode,
+} from "@spm/domain-strategy";
 import { requireRole, router } from "./index";
 
+export interface StagedChangeOutput {
+  id: string;
+  approvalCaseId: string;
+  planVersionId: string;
+  kind: "node_create" | "node_update" | "node_retire" | "edge_link" | "edge_unlink";
+  targetId: string | null;
+  payload: Record<string, unknown>;
+  status: "pending" | "applied" | "cancelled";
+  requestedBy: string;
+  requestedAt: Date;
+  appliedAt: Date | null;
+}
+
 export interface StrategyServiceContract {
-  createPlanVersion(name: string): Promise<unknown>;
-  createNode(input: { type: "corporate_strategy"|"theme"|"objective"|"strategic_play"|"portfolio"|"area_of_focus"; nameEn: string; nameAr: string; planVersionId: string; actorUserId: string; approvalCaseId?: string }): Promise<unknown>;
-  updateNode(input: { nodeId: string; nameEn?: string; nameAr?: string; actorUserId: string; approvalCaseId?: string }): Promise<unknown>;
-  retireNode(input: { nodeId: string; actorUserId: string; approvalCaseId?: string }): Promise<unknown>;
-  linkEdge(input: { fromNodeId: string; toNodeId: string; edgeType: "contains"|"executed_by"|"belongs_to_portfolio"|"aligns_to"; planVersionId: string; actorUserId: string; approvalCaseId?: string }): Promise<unknown>;
-  unlinkEdge(input: { edgeId: string; actorUserId: string; approvalCaseId?: string }): Promise<unknown>;
-  assignOwner(input: { nodeId: string; ownerUserId: string; assignedBy: string }): Promise<unknown>;
-  openPlanVersion(planVersionId: string, opensAt?: Date): Promise<unknown>;
-  closePlanVersion(planVersionId: string, closesAt?: Date): Promise<unknown>;
-  carryForward(sourcePlanVersionId: string, newName: string, actorUserId: string): Promise<unknown>;
+  createPlanVersion(name: string): Promise<PlanVersion>;
+
+  createNode(input: {
+    type: "corporate_strategy" | "theme" | "objective" | "strategic_play" | "portfolio" | "area_of_focus";
+    nameEn: string;
+    nameAr: string;
+    planVersionId: string;
+    actorUserId: string;
+    approvalCaseId?: string;
+  }): Promise<StrategyNode | StagedChangeOutput>;
+
+  updateNode(input: {
+    nodeId: string;
+    nameEn?: string;
+    nameAr?: string;
+    actorUserId: string;
+    approvalCaseId?: string;
+  }): Promise<StrategyNode | StagedChangeOutput>;
+
+  retireNode(input: {
+    nodeId: string;
+    actorUserId: string;
+    approvalCaseId?: string;
+  }): Promise<StrategyNode | StagedChangeOutput>;
+
+  linkEdge(input: {
+    fromNodeId: string;
+    toNodeId: string;
+    edgeType: "contains" | "executed_by" | "belongs_to_portfolio" | "aligns_to";
+    planVersionId: string;
+    actorUserId: string;
+    approvalCaseId?: string;
+  }): Promise<StrategyEdge | StagedChangeOutput>;
+
+  unlinkEdge(input: {
+    edgeId: string;
+    actorUserId: string;
+    approvalCaseId?: string;
+  }): Promise<{ unlinked: true } | StagedChangeOutput>;
+
+  assignOwner(input: {
+    nodeId: string;
+    ownerUserId: string;
+    assignedBy: string;
+  }): Promise<OwnerAssignment>;
+
+  openPlanVersion(planVersionId: string, opensAt?: Date): Promise<PlanVersion>;
+  closePlanVersion(planVersionId: string, closesAt?: Date): Promise<PlanVersion>;
+
+  carryForward(
+    sourcePlanVersionId: string,
+    newName: string,
+    actorUserId: string,
+  ): Promise<PlanVersion>;
 }
 
 declare module "./index" {
