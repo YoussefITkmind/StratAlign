@@ -1,8 +1,6 @@
 import "dotenv/config";
-import { mergeRouters } from "@trpc/server";
 import { createHTTPServer } from "@trpc/server/adapters/standalone";
-import { appRouter, router } from "@spm/api";
-import { strategyRouter } from "@spm/api/strategy";
+import { appRouter, mergeRouters, router, strategyRouter } from "@spm/api";
 import { validateEnvironment } from "./config/env.validation";
 import { PrismaService } from "./database/prisma.service";
 import { HealthService } from "./modules/health/health.service";
