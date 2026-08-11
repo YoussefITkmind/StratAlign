@@ -1,20 +1,23 @@
+import type { DomainEventEnvelope, EventSubscriber } from "../../events/event.types";
 import type { StrategyService } from "./strategy.service";
 
-export interface GovernanceApprovalGrantedEvent {
-  eventType: "governance.approval.granted";
-  payload: { approvalCaseId: string };
-}
-
 /**
- * Strategy-side subscriber for Prompt 1.5's approval event.
- * The outbox/relay may deliver more than once, so StrategyService only selects
- * pending staged changes. A replay therefore becomes an idempotent no-op.
+ * Applies staged strategy mutations only after Prompt 1.5 publishes
+ * governance.approval.granted. The outbox is at-least-once, and the service
+ * selects only pending staged changes, so duplicate delivery is idempotent.
  */
-export class StrategyApprovalSubscriber {
+export class StrategyApprovalSubscriber implements EventSubscriber {
+  readonly id = "strategy-approval-granted";
+  readonly eventTypes = ["governance.approval.granted"] as const;
+
   constructor(private readonly strategy: StrategyService) {}
 
-  async handle(event: GovernanceApprovalGrantedEvent): Promise<number> {
-    if (event.eventType !== "governance.approval.granted") return 0;
-    return this.strategy.applyApprovedChanges(event.payload.approvalCaseId);
+  async handle(envelope: DomainEventEnvelope): Promise<void> {
+    if (envelope.eventType !== "governance.approval.granted") return;
+    const approvalCaseId = envelope.payload.approvalCaseId;
+    if (typeof approvalCaseId !== "string" || approvalCaseId.length === 0) {
+      throw new Error("governance.approval.granted is missing approvalCaseId");
+    }
+    await this.strategy.applyApprovedChanges(approvalCaseId);
   }
 }
