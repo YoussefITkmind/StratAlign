@@ -22,6 +22,12 @@ import { SnapshotService } from "./modules/audit/snapshot.service";
 import { ApiAuditTapService } from "./modules/audit/api-audit-tap.service";
 import { StrategyService } from "./modules/strategy/strategy.service";
 import { StrategyTraversalService } from "./modules/strategy/strategy-traversal.service";
+import { KpiRegistryService } from "./modules/registry/kpi-registry.service";
+import { OkrService } from "./modules/registry/okr.service";
+import { AlignmentService } from "./modules/registry/alignment.service";
+import { KpiHierarchyService } from "./modules/registry/kpi-hierarchy.service";
+import { UnavailableApprovalGateway } from "./modules/registry/gateways/approval.gateway";
+import { PrismaStrategyNodeGateway } from "./modules/registry/gateways/strategy-node.gateway";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -50,6 +56,21 @@ async function bootstrap(): Promise<void> {
   const rules = new RulesService(prisma);
   const strategy = new StrategyService(prisma);
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
+
+  const approvalGateway = new UnavailableApprovalGateway();
+  const strategyNodeGateway = new PrismaStrategyNodeGateway(prisma);
+
+  const registry = {
+    kpi: new KpiRegistryService(
+      prisma,
+      approvalGateway,
+      strategyNodeGateway,
+    ),
+    okr: new OkrService(prisma, strategyNodeGateway),
+    alignment: new AlignmentService(prisma, strategyNodeGateway),
+    hierarchy: new KpiHierarchyService(prisma),
+  };
+
   const audit = new SnapshotService(prisma);
   const auditTap = new ApiAuditTapService(prisma, eventBus);
 
@@ -73,6 +94,7 @@ async function bootstrap(): Promise<void> {
         rules,
         strategy,
         strategyTraversal,
+        registry,
         audit,
         auditTap,
       };
