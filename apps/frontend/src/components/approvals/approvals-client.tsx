@@ -19,28 +19,28 @@ export function ApprovalsClient() {
         {query.data?.map((item) => (
           <div
             key={item.id}
-            className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4"
           >
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[14px] font-semibold text-slate-900">{item.caseType}</span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="break-words text-[14px] font-semibold text-slate-900">{item.caseType}</span>
                 {item.escalated && (
                   <span
                     data-testid="escalated-badge"
-                    className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                    className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
                   >
                     {t("approvals.escalated")}
                   </span>
                 )}
               </div>
-              <p className="mt-1 text-[12.5px] text-slate-500">
+              <p className="mt-1 break-words text-[12.5px] text-slate-500">
                 {t("approvals.submittedBy")}: {item.submittedBy} ·{" "}
                 {new Date(item.createdAt).toLocaleString()}
               </p>
             </div>
             <Link
               href={`/approvals/${item.id}`}
-              className="rounded-lg px-3.5 py-2 text-[13px] font-medium text-[var(--brand-accent,#2E8FA3)] hover:underline"
+              className="shrink-0 rounded-lg px-3.5 py-2 text-[13px] font-medium text-[var(--brand-accent,#2E8FA3)] hover:underline"
             >
               {t("approvals.viewCase")}
             </Link>

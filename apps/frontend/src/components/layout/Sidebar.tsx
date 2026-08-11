@@ -40,7 +40,7 @@ type NavSection = {
   collapsible?: boolean;
 };
 
-const NAV_SECTIONS: NavSection[] = [
+export const NAV_SECTIONS: NavSection[] = [
   {
     label: 'MAIN',
     items: [{ label: 'Overview', href: '/overview', icon: LayoutGrid }],
@@ -91,7 +91,13 @@ const CURRENT_USER = {
   role: 'Chief Strategy Officer',
 };
 
-export default function Sidebar() {
+export default function Sidebar({
+  open = false,
+  onClose,
+}: {
+  open?: boolean;
+  onClose?: () => void;
+}) {
   const pathname = usePathname();
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
@@ -100,17 +106,39 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="flex h-screen w-72 shrink-0 flex-col bg-[#0B2942]">
-      {/* Logo */}
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#1E4F73]">
-          <Target className="h-5 w-5 text-cyan-300" strokeWidth={2} />
+    <>
+      {open && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-900/50 lg:hidden"
+          aria-hidden="true"
+          onClick={onClose}
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 start-0 z-50 flex h-dvh w-72 max-w-[85vw] shrink-0 flex-col bg-[#0B2942] transition-transform duration-200 ease-out lg:static lg:z-auto lg:max-w-none lg:translate-x-0 ${
+          open ? "translate-x-0" : "-translate-x-full rtl:translate-x-full"
+        }`}
+      >
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 px-5 py-5">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#1E4F73]">
+            <Target className="h-5 w-5 text-cyan-300" strokeWidth={2} />
+          </div>
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="truncate text-[15px] font-semibold text-white">StratAlign</div>
+            <div className="truncate text-[10px] font-medium tracking-wider text-slate-400">
+              ENTERPRISE
+            </div>
+          </div>
+          <button
+            type="button"
+            aria-label="Close menu"
+            onClick={onClose}
+            className="ml-auto shrink-0 rounded-lg p-1 text-slate-400 hover:text-white lg:hidden"
+          >
+            <ChevronRight className="h-5 w-5 rotate-180" />
+          </button>
         </div>
-        <div className="leading-tight">
-          <div className="text-[15px] font-semibold text-white">StratAlign</div>
-          <div className="text-[10px] font-medium tracking-wider text-slate-400">ENTERPRISE</div>
-        </div>
-      </div>
 
       {/* Nav */}
       <nav className="sidebar-scroll flex-1 overflow-y-auto px-3 pb-4">
@@ -145,6 +173,7 @@ export default function Sidebar() {
                       <li key={item.href}>
                         <Link
                           href={item.href}
+                          onClick={onClose}
                           className={`group flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors ${
                             isActive
                               ? 'bg-[#12406B] text-white'
@@ -186,6 +215,7 @@ export default function Sidebar() {
           <LogOut className="h-4 w-4" />
         </button>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

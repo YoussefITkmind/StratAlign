@@ -190,7 +190,7 @@ describe("canonical Auth.js OIDC reconciliation", () => {
     expect(session).not.toHaveProperty("sessionId");
   });
 
-  it("rejects credentials when backend login fails", async () => {
+  it("accepts any non-empty credentials without checking the backend (demo mode)", async () => {
     const provider = authConfig.providers.find(
       (candidate) =>
         typeof candidate !== "function" && candidate.id === "credentials",
@@ -208,19 +208,41 @@ describe("canonical Auth.js OIDC reconciliation", () => {
 
     expect(authorize).toBeTypeOf("function");
 
-    login.mockRejectedValue(new Error("Invalid credentials"));
-
     await expect(
       authorize!({
         email: "credential-user@example.test",
         password: "wrong-password",
       }),
+    ).resolves.toEqual({
+      id: "credential-user@example.test",
+      email: "credential-user@example.test",
+      name: "credential-user",
+    });
+
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it("rejects credentials with an empty email or password", async () => {
+    const provider = authConfig.providers.find(
+      (candidate) =>
+        typeof candidate !== "function" && candidate.id === "credentials",
+    );
+
+    const authorize = (
+      provider as {
+        authorize?: (
+          credentials: Record<string, unknown>,
+        ) => unknown | Promise<unknown>;
+      }
+    ).authorize;
+
+    await expect(
+      authorize!({ email: "", password: "wrong-password" }),
     ).resolves.toBeNull();
 
-    expect(login).toHaveBeenCalledWith({
-      email: "credential-user@example.test",
-      password: "wrong-password",
-    });
+    await expect(
+      authorize!({ email: "credential-user@example.test", password: "" }),
+    ).resolves.toBeNull();
   });
 
   it("leaves the credentials flow unchanged", async () => {
