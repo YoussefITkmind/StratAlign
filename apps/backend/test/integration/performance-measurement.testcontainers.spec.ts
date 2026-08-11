@@ -39,7 +39,18 @@ const noopQueueService = {
 } as unknown as QueueService;
 
 const KPI = "kpi-version-alpha";
-const SCOPE = "scope-north";
+const KPI_DEFINITION = "kpi-alpha";
+
+const BETA_KPI = "kpi-version-beta";
+const BETA_KPI_DEFINITION = "kpi-beta";
+
+const SCOPE = "50000000-0000-4000-8000-000000000001";
+const OTHER_SCOPE = "50000000-0000-4000-8000-000000000002";
+const UNKNOWN_SCOPE = "50000000-0000-4000-8000-000000000099";
+
+const BASELINE_PLAN = "60000000-0000-4000-8000-000000000001";
+const REVISION_PLAN = "60000000-0000-4000-8000-000000000002";
+
 const PERIOD = "2026-Q1";
 
 /**
@@ -142,6 +153,11 @@ describe.sequential(
            "performance"."commentary",
            "performance"."target_series",
            "performance"."measurements",
+           "registry"."kpi_hierarchy_nodes",
+           "registry"."kpi_definitions",
+           "registry"."kpi_versions",
+           "strategy"."strategy_nodes",
+           "strategy"."plan_versions",
            "public"."domain_events",
            "iam"."users"
          RESTART IDENTITY CASCADE`,
@@ -158,6 +174,80 @@ describe.sequential(
 
       ownerId = owner.id;
       stewardId = steward.id;
+
+      // Real Strategy fixtures required by Performance foreign keys.
+      await prisma.planVersion.createMany({
+        data: [
+          {
+            id: BASELINE_PLAN,
+            name: "Performance baseline plan",
+          },
+          {
+            id: REVISION_PLAN,
+            name: "Performance revised plan",
+          },
+        ],
+      });
+
+      await prisma.strategyNode.createMany({
+        data: [
+          {
+            id: SCOPE,
+            type: "OBJECTIVE",
+            nameEn: "North performance scope",
+            nameAr: "نطاق الأداء الشمالي",
+            planVersionId: BASELINE_PLAN,
+            createdBy: ownerId,
+          },
+          {
+            id: OTHER_SCOPE,
+            type: "OBJECTIVE",
+            nameEn: "South performance scope",
+            nameAr: "نطاق الأداء الجنوبي",
+            planVersionId: BASELINE_PLAN,
+            createdBy: ownerId,
+          },
+        ],
+      });
+
+      // Real Registry fixture required by kpi_version_id foreign keys.
+      await prisma.kpiDefinition.createMany({
+        data: [
+          { id: KPI_DEFINITION },
+          { id: BETA_KPI_DEFINITION },
+        ],
+      });
+
+      await prisma.kpiVersion.createMany({
+        data: [
+          {
+            id: KPI,
+            kpiDefinitionId: KPI_DEFINITION,
+            version: 1,
+            nameEn: "Performance test KPI",
+            nameAr: "مؤشر اختبار الأداء",
+            unit: "%",
+            polarity: "HIGHER_IS_BETTER",
+            frequency: "QUARTERLY",
+            dataSourceType: "MANUAL",
+            ownerUserId: ownerId,
+            activeFrom: new Date("2026-01-01T00:00:00.000Z"),
+          },
+          {
+            id: BETA_KPI,
+            kpiDefinitionId: BETA_KPI_DEFINITION,
+            version: 1,
+            nameEn: "Performance beta KPI",
+            nameAr: "مؤشر الأداء التجريبي",
+            unit: "%",
+            polarity: "HIGHER_IS_BETTER",
+            frequency: "QUARTERLY",
+            dataSourceType: "MANUAL",
+            ownerUserId: ownerId,
+            activeFrom: new Date("2026-01-01T00:00:00.000Z"),
+          },
+        ],
+      });
     });
 
     // -----------------------------------------------------------------------
@@ -498,7 +588,7 @@ describe.sequential(
           scopeNodeId: SCOPE,
           period: PERIOD,
           targetValue: 100,
-          planVersionId: "baseline",
+          planVersionId: BASELINE_PLAN,
         };
 
         await prisma.targetSeries.create({ data: row });
@@ -706,7 +796,7 @@ describe.sequential(
         });
 
         const beta = await measurements.record({
-          kpiVersionId: "kpi-version-beta",
+          kpiVersionId: BETA_KPI,
           scopeNodeId: SCOPE,
           period: PERIOD,
           value: 200,
@@ -728,7 +818,7 @@ describe.sequential(
         expect(
           (
             await measurements.resolveCurrent({
-              kpiVersionId: "kpi-version-beta",
+              kpiVersionId: BETA_KPI,
               scopeNodeId: SCOPE,
               period: PERIOD,
             })
@@ -761,7 +851,7 @@ describe.sequential(
 
         await expect(
           measurements.record({
-            kpiVersionId: "kpi-version-beta",
+            kpiVersionId: BETA_KPI,
             scopeNodeId: SCOPE,
             period: PERIOD,
             value: 150,
@@ -785,7 +875,7 @@ describe.sequential(
         await expect(
           measurements.record({
             kpiVersionId: KPI,
-            scopeNodeId: "scope-south",
+            scopeNodeId: OTHER_SCOPE,
             period: PERIOD,
             value: 150,
             source: "MANUAL",
@@ -988,7 +1078,7 @@ describe.sequential(
 
         const otherScope = await measurements.record({
           kpiVersionId: KPI,
-          scopeNodeId: "scope-south",
+          scopeNodeId: OTHER_SCOPE,
           period: PERIOD,
           value: 20,
           source: "MANUAL",
@@ -1034,7 +1124,7 @@ describe.sequential(
       it("reconstructs each scope's history independently at the same instant", async () => {
         const north = await measurements.record({
           kpiVersionId: KPI,
-          scopeNodeId: "scope-north",
+          scopeNodeId: SCOPE,
           period: PERIOD,
           value: 10,
           source: "MANUAL",
@@ -1043,7 +1133,7 @@ describe.sequential(
 
         const south = await measurements.record({
           kpiVersionId: KPI,
-          scopeNodeId: "scope-south",
+          scopeNodeId: OTHER_SCOPE,
           period: PERIOD,
           value: 20,
           source: "MANUAL",
@@ -1053,7 +1143,7 @@ describe.sequential(
         // Only the northern scope is corrected.
         const northCorrection = await measurements.record({
           kpiVersionId: KPI,
-          scopeNodeId: "scope-north",
+          scopeNodeId: SCOPE,
           period: PERIOD,
           value: 11,
           source: "MANUAL",
@@ -1068,7 +1158,7 @@ describe.sequential(
         const northAt = (asOf: Date) =>
           measurements.resolveAsOf({
             kpiVersionId: KPI,
-            scopeNodeId: "scope-north",
+            scopeNodeId: SCOPE,
             period: PERIOD,
             asOf,
           });
@@ -1076,7 +1166,7 @@ describe.sequential(
         const southAt = (asOf: Date) =>
           measurements.resolveAsOf({
             kpiVersionId: KPI,
-            scopeNodeId: "scope-south",
+            scopeNodeId: OTHER_SCOPE,
             period: PERIOD,
             asOf,
           });
@@ -1248,7 +1338,7 @@ describe.sequential(
         ).resolves.toEqual([]);
 
         await expect(
-          measurements.list({ scopeNodeId: "scope-nowhere", limit: 50 }),
+          measurements.list({ scopeNodeId: UNKNOWN_SCOPE, limit: 50 }),
         ).resolves.toEqual([]);
       });
 
@@ -1263,7 +1353,7 @@ describe.sequential(
         });
 
         await measurements.record({
-          kpiVersionId: "kpi-version-beta",
+          kpiVersionId: BETA_KPI,
           scopeNodeId: SCOPE,
           period: PERIOD,
           value: 20,
@@ -2002,7 +2092,7 @@ describe.sequential(
         });
         await commentary.add({
           ...base,
-          scopeNodeId: "scope-south",
+          scopeNodeId: OTHER_SCOPE,
           authorId: ownerId,
           bodyEn: "q1 south",
         });
@@ -2052,6 +2142,8 @@ describe.sequential(
           kpiVersionId: KPI,
           scopeNodeId: SCOPE,
           period: PERIOD,
+
+          planVersionId: BASELINE_PLAN,
           targetValue: 100,
         });
 
@@ -2060,11 +2152,11 @@ describe.sequential(
           scopeNodeId: SCOPE,
           period: PERIOD,
           targetValue: 85,
-          planVersionId: "revision-1",
+          planVersionId: REVISION_PLAN,
         });
 
-        expect(baseline.planVersionId).toBe("baseline");
-        expect(revised.planVersionId).toBe("revision-1");
+        expect(baseline.planVersionId).toBe(BASELINE_PLAN);
+        expect(revised.planVersionId).toBe(REVISION_PLAN);
 
         expect(
           (
@@ -2072,6 +2164,8 @@ describe.sequential(
               kpiVersionId: KPI,
               scopeNodeId: SCOPE,
               period: PERIOD,
+
+              planVersionId: BASELINE_PLAN,
             })
           )?.targetValue,
         ).toBe(100);
@@ -2082,7 +2176,7 @@ describe.sequential(
               kpiVersionId: KPI,
               scopeNodeId: SCOPE,
               period: PERIOD,
-              planVersionId: "revision-1",
+              planVersionId: REVISION_PLAN,
             })
           )?.targetValue,
         ).toBe(85);
@@ -2093,6 +2187,8 @@ describe.sequential(
           kpiVersionId: KPI,
           scopeNodeId: SCOPE,
           period: PERIOD,
+
+          planVersionId: BASELINE_PLAN,
           targetValue: 100,
         });
 
@@ -2100,6 +2196,8 @@ describe.sequential(
           kpiVersionId: KPI,
           scopeNodeId: SCOPE,
           period: PERIOD,
+
+          planVersionId: BASELINE_PLAN,
           targetValue: 120,
         });
 

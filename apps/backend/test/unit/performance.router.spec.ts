@@ -492,7 +492,6 @@ describe("performance tRPC router", () => {
 
     it.each([
       ["MEASUREMENT_NOT_FOUND", "NOT_FOUND"],
-      ["KPI_BINDING_NOT_FOUND", "NOT_FOUND"],
       ["RULE_NOT_FOUND", "NOT_FOUND"],
       ["COMMENTARY_CONTENT_REQUIRED", "BAD_REQUEST"],
     ])("maps %s to %s on the commentary path", async (domainCode, transportCode) => {

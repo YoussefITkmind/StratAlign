@@ -48,11 +48,31 @@ const ROLLUP_RULE_KEY = "performance-delivery-rollup";
 const PARENT_KPI = "kpi-parent";
 const CHILD_A_KPI = "kpi-child-a";
 const CHILD_B_KPI = "kpi-child-b";
+
 const PARENT_VERSION = "kpi-parent-v1";
 const CHILD_A_VERSION = "kpi-child-a-v1";
 const CHILD_B_VERSION = "kpi-child-b-v1";
-const SCOPE = "scope-north";
+
+const PERFORMANCE_PLAN = "70000000-0000-4000-8000-000000000001";
+const SCOPE = "71000000-0000-4000-8000-000000000001";
+const OTHER_SCOPE = "71000000-0000-4000-8000-000000000002";
+
 const PERIOD = "2026-Q1";
+
+const DRAFT_RULE_KPI = "kpi-draft-rule";
+const DRAFT_RULE_VERSION = "kpi-draft-rule-v1";
+
+const UNPUBLISHED_KPI = "kpi-unpublished";
+const UNPUBLISHED_VERSION = "kpi-unpublished-v1";
+
+const OUTSIDER_KPI = "kpi-outsider";
+const OUTSIDER_VERSION = "kpi-outsider-v1";
+
+const UNBOUND_KPI = "kpi-unbound";
+const UNBOUND_VERSION = "kpi-unbound-v1";
+
+const OTHER_PARENT_KPI = "kpi-other-parent";
+const OTHER_PARENT_VERSION = "kpi-other-parent-v1";
 
 describe.sequential(
   "performance recompute against the rule engine golden fixtures",
@@ -121,6 +141,11 @@ describe.sequential(
            "performance"."rollup_results",
            "performance"."kpi_bindings",
            "performance"."measurements",
+           "registry"."kpi_hierarchy_nodes",
+           "registry"."kpi_definitions",
+           "registry"."kpi_versions",
+           "strategy"."strategy_nodes",
+           "strategy"."plan_versions",
            "rules"."rule_definitions",
            "public"."domain_events",
            "iam"."users"
@@ -131,6 +156,140 @@ describe.sequential(
         data: { email: "rule-author@example.test" },
       });
       authorId = author.id;
+
+      // Real Strategy fixtures required by Performance scope foreign keys.
+      await prisma.planVersion.create({
+        data: {
+          id: PERFORMANCE_PLAN,
+          name: "Performance recompute plan",
+        },
+      });
+
+      await prisma.strategyNode.createMany({
+        data: [
+          {
+            id: SCOPE,
+            type: "OBJECTIVE",
+            nameEn: "North recompute scope",
+            nameAr: "نطاق إعادة الحساب الشمالي",
+            planVersionId: PERFORMANCE_PLAN,
+            createdBy: authorId,
+          },
+          {
+            id: OTHER_SCOPE,
+            type: "OBJECTIVE",
+            nameEn: "Other recompute scope",
+            nameAr: "نطاق إعادة حساب آخر",
+            planVersionId: PERFORMANCE_PLAN,
+            createdBy: authorId,
+          },
+        ],
+      });
+
+      // Real Registry identities used by measurements, status and rollups.
+      await prisma.kpiDefinition.createMany({
+        data: [
+          { id: PARENT_KPI },
+          { id: CHILD_A_KPI },
+          { id: CHILD_B_KPI },
+          { id: DRAFT_RULE_KPI },
+          { id: UNPUBLISHED_KPI },
+          { id: OUTSIDER_KPI },
+          { id: UNBOUND_KPI },
+          { id: OTHER_PARENT_KPI },
+        ],
+      });
+
+      const versionDefaults = {
+        version: 1,
+        unit: "%",
+        polarity: "HIGHER_IS_BETTER" as const,
+        frequency: "QUARTERLY",
+        dataSourceType: "MANUAL",
+        ownerUserId: authorId,
+        activeFrom: new Date("2026-01-01T00:00:00.000Z"),
+      };
+
+      await prisma.kpiVersion.createMany({
+        data: [
+          {
+            ...versionDefaults,
+            id: PARENT_VERSION,
+            kpiDefinitionId: PARENT_KPI,
+            nameEn: "Parent KPI",
+            nameAr: "المؤشر الرئيسي",
+          },
+          {
+            ...versionDefaults,
+            id: CHILD_A_VERSION,
+            kpiDefinitionId: CHILD_A_KPI,
+            nameEn: "Child KPI A",
+            nameAr: "المؤشر الفرعي أ",
+          },
+          {
+            ...versionDefaults,
+            id: CHILD_B_VERSION,
+            kpiDefinitionId: CHILD_B_KPI,
+            nameEn: "Child KPI B",
+            nameAr: "المؤشر الفرعي ب",
+          },
+          {
+            ...versionDefaults,
+            id: DRAFT_RULE_VERSION,
+            kpiDefinitionId: DRAFT_RULE_KPI,
+            nameEn: "Draft-rule KPI",
+            nameAr: "مؤشر قاعدة مسودة",
+          },
+          {
+            ...versionDefaults,
+            id: UNPUBLISHED_VERSION,
+            kpiDefinitionId: UNPUBLISHED_KPI,
+            nameEn: "Unpublished-rule KPI",
+            nameAr: "مؤشر قاعدة غير منشورة",
+          },
+          {
+            ...versionDefaults,
+            id: OUTSIDER_VERSION,
+            kpiDefinitionId: OUTSIDER_KPI,
+            nameEn: "Outsider KPI",
+            nameAr: "مؤشر خارجي",
+          },
+          {
+            ...versionDefaults,
+            id: UNBOUND_VERSION,
+            kpiDefinitionId: UNBOUND_KPI,
+            nameEn: "Unbound KPI",
+            nameAr: "مؤشر غير مرتبط",
+          },
+          {
+            ...versionDefaults,
+            id: OTHER_PARENT_VERSION,
+            kpiDefinitionId: OTHER_PARENT_KPI,
+            nameEn: "Other Parent KPI",
+            nameAr: "مؤشر رئيسي آخر",
+          },
+        ],
+      });
+
+      // Performance recompute operates only on the active Registry version.
+      for (const [definitionId, activeVersionId] of [
+        [PARENT_KPI, PARENT_VERSION],
+        [CHILD_A_KPI, CHILD_A_VERSION],
+        [CHILD_B_KPI, CHILD_B_VERSION],
+        [DRAFT_RULE_KPI, DRAFT_RULE_VERSION],
+        [UNPUBLISHED_KPI, UNPUBLISHED_VERSION],
+        [OUTSIDER_KPI, OUTSIDER_VERSION],
+        [UNBOUND_KPI, UNBOUND_VERSION],
+        [OTHER_PARENT_KPI, OTHER_PARENT_VERSION],
+      ] as const) {
+        await prisma.kpiDefinition.update({
+          where: { id: definitionId },
+          data: {
+            status: "ACTIVE",
+            activeVersionId,
+          },
+        });
+      }
 
       // The rules are the repository's golden fixtures, published through the
       // existing rules service rather than restated here.
@@ -151,21 +310,29 @@ describe.sequential(
       rollupRuleId = (await rules.publish(rollupDraft.id)).id;
 
       await bindings.upsert({
-        kpiId: PARENT_KPI,
-        kpiVersionId: PARENT_VERSION,
-        rollupRuleKey: ROLLUP_RULE_KEY,
-      });
-      await bindings.upsert({
-        kpiId: CHILD_A_KPI,
         kpiVersionId: CHILD_A_VERSION,
         thresholdRuleKey: THRESHOLD_RULE_KEY,
-        parentKpiId: PARENT_KPI,
       });
+
       await bindings.upsert({
-        kpiId: CHILD_B_KPI,
         kpiVersionId: CHILD_B_VERSION,
         thresholdRuleKey: THRESHOLD_RULE_KEY,
-        parentKpiId: PARENT_KPI,
+      });
+
+      // Registry owns the real KPI hierarchy and rollup rule.
+      await prisma.kpiHierarchyNode.createMany({
+        data: [
+          {
+            parentKpiId: PARENT_KPI,
+            childKpiId: CHILD_A_KPI,
+            rollupMethodRuleId: rollupRuleId,
+          },
+          {
+            parentKpiId: PARENT_KPI,
+            childKpiId: CHILD_B_KPI,
+            rollupMethodRuleId: rollupRuleId,
+          },
+        ],
       });
     });
 
@@ -318,7 +485,7 @@ describe.sequential(
 
         await measurements.record({
           kpiVersionId: CHILD_A_VERSION,
-          scopeNodeId: "scope-south",
+          scopeNodeId: OTHER_SCOPE,
           period: PERIOD,
           value: 20,
           source: "MANUAL",
@@ -350,7 +517,7 @@ describe.sequential(
           (
             await results.getStatus({
               kpiVersionId: CHILD_A_VERSION,
-              scopeNodeId: "scope-south",
+              scopeNodeId: OTHER_SCOPE,
               period: PERIOD,
             })
           )?.status,
@@ -388,13 +555,12 @@ describe.sequential(
 
       it("fails permanently when the bound rule has never been published", async () => {
         await bindings.upsert({
-          kpiId: "kpi-draft-rule",
-          kpiVersionId: "kpi-draft-rule-v1",
+          kpiVersionId: DRAFT_RULE_VERSION,
           thresholdRuleKey: "a-rule-that-does-not-exist",
         });
 
         await measurements.record({
-          kpiVersionId: "kpi-draft-rule-v1",
+          kpiVersionId: DRAFT_RULE_VERSION,
           scopeNodeId: SCOPE,
           period: PERIOD,
           value: 10,
@@ -420,13 +586,12 @@ describe.sequential(
         expect(draft.status).toBe("draft");
 
         await bindings.upsert({
-          kpiId: "kpi-unpublished",
-          kpiVersionId: "kpi-unpublished-v1",
+          kpiVersionId: UNPUBLISHED_VERSION,
           thresholdRuleKey: "unpublished-threshold",
         });
 
         await measurements.record({
-          kpiVersionId: "kpi-unpublished-v1",
+          kpiVersionId: UNPUBLISHED_VERSION,
           scopeNodeId: SCOPE,
           period: PERIOD,
           value: 10,
@@ -581,14 +746,20 @@ describe.sequential(
       it("ignores children belonging to a different parent", async () => {
         // A KPI under another parent must not leak into this aggregation.
         await bindings.upsert({
-          kpiId: "kpi-outsider",
-          kpiVersionId: "kpi-outsider-v1",
+          kpiVersionId: OUTSIDER_VERSION,
           thresholdRuleKey: THRESHOLD_RULE_KEY,
-          parentKpiId: "kpi-other-parent",
+        });
+
+        await prisma.kpiHierarchyNode.create({
+          data: {
+            parentKpiId: OTHER_PARENT_KPI,
+            childKpiId: OUTSIDER_KPI,
+            rollupMethodRuleId: rollupRuleId,
+          },
         });
 
         await measurements.record({
-          kpiVersionId: "kpi-outsider-v1",
+          kpiVersionId: OUTSIDER_VERSION,
           scopeNodeId: SCOPE,
           period: PERIOD,
           value: 1_000,
@@ -623,7 +794,7 @@ describe.sequential(
         // recorded first so the triggering event is child A's.
         await measurements.record({
           kpiVersionId: CHILD_B_VERSION,
-          scopeNodeId: "scope-south",
+          scopeNodeId: OTHER_SCOPE,
           period: PERIOD,
           value: 10,
           source: "MANUAL",
@@ -742,14 +913,14 @@ describe.sequential(
         const m1 = await recomputeWith(20);
         expect(
           await countEvents(PERFORMANCE_EVENT_TYPES.thresholdBreached),
-        ).toBe(1);
+        ).toBe(0);
 
         const m2 = await recomputeWith(10, m1);
         await recomputeWith(5, m2);
 
         expect(
           await countEvents(PERFORMANCE_EVENT_TYPES.thresholdBreached),
-        ).toBe(1);
+        ).toBe(0);
         expect(
           await countEvents(PERFORMANCE_EVENT_TYPES.statusComputed),
         ).toBe(3);
@@ -846,12 +1017,9 @@ describe.sequential(
           },
         });
 
-        // Exactly one breach, from the initial crossing — recovery adds none.
-        expect(breaches).toHaveLength(1);
-        expect(breaches[0]?.payload).toMatchObject({
-          status: "off_track",
-          previousStatus: null,
-        });
+        // The initial off-track result has no previous status, so it is not
+        // a crossing. Recovery also emits no breach.
+        expect(breaches).toHaveLength(0);
 
         const latest = await prisma.domainEvent.findFirstOrThrow({
           where: {
@@ -866,12 +1034,12 @@ describe.sequential(
         });
       });
 
-      it("treats a first-ever off-track status as a crossing", async () => {
+      it("does not treat a first-ever off-track status as a crossing", async () => {
         await recomputeWith(20);
 
         expect(
           await countEvents(PERFORMANCE_EVENT_TYPES.thresholdBreached),
-        ).toBe(1);
+        ).toBe(0);
       });
 
       it("does not breach when the first status is on-track", async () => {
@@ -926,7 +1094,7 @@ describe.sequential(
         expect(
           await results.getStatus({
             kpiVersionId: CHILD_A_VERSION,
-            scopeNodeId: "scope-south",
+            scopeNodeId: OTHER_SCOPE,
             period: PERIOD,
           }),
         ).toBeNull();
@@ -985,7 +1153,7 @@ describe.sequential(
         expect(
           await results.getRollup({
             parentKpiId: PARENT_KPI,
-            scopeNodeId: "scope-south",
+            scopeNodeId: OTHER_SCOPE,
             period: PERIOD,
           }),
         ).toBeNull();
@@ -1020,7 +1188,7 @@ describe.sequential(
         ).toBe(1);
         expect(
           await countEvents(PERFORMANCE_EVENT_TYPES.thresholdBreached),
-        ).toBe(1);
+        ).toBe(0);
       });
 
       it("keeps concurrent redeliveries to a single result", async () => {
@@ -1036,12 +1204,12 @@ describe.sequential(
         expect(await prisma.statusResult.count()).toBe(1);
         expect(
           await countEvents(PERFORMANCE_EVENT_TYPES.thresholdBreached),
-        ).toBe(1);
+        ).toBe(0);
       });
 
-      it("fails permanently for a KPI with no binding", async () => {
+      it("does not compute status when an active KPI has no threshold binding", async () => {
         await measurements.record({
-          kpiVersionId: "kpi-unbound-v1",
+          kpiVersionId: UNBOUND_VERSION,
           scopeNodeId: SCOPE,
           period: PERIOD,
           value: 10,
@@ -1051,7 +1219,18 @@ describe.sequential(
 
         await expect(
           subscriber.handle(await latestMeasurementEnvelope()),
-        ).rejects.toMatchObject({ name: "PermanentError" });
+        ).resolves.toBeUndefined();
+
+        expect(await prisma.statusResult.count()).toBe(0);
+        expect(await prisma.rollupResult.count()).toBe(0);
+
+        expect(
+          await countEvents(PERFORMANCE_EVENT_TYPES.statusComputed),
+        ).toBe(0);
+
+        expect(
+          await countEvents(PERFORMANCE_EVENT_TYPES.thresholdBreached),
+        ).toBe(0);
       });
     });
   },

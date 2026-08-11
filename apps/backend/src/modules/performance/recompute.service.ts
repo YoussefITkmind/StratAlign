@@ -39,14 +39,14 @@ export interface RecomputeOutcome {
     /** True when a previous run already produced this result. */
     alreadyComputed: boolean;
   } | null;
-  rollup: {
+  rollups: Array<{
     rollupResultId: string;
     parentKpiId: string;
     aggregatedValue: number | null;
     method: string;
     ruleVersionUsed: string;
     alreadyComputed: boolean;
-  } | null;
+  }>;
 }
 
 function isOffTrack(status: string): boolean {
@@ -83,23 +83,71 @@ export class RecomputeService {
   async recompute(
     request: RecomputeRequest,
   ): Promise<RecomputeOutcome> {
+    // Registry is the source of truth for KPI identity and active version.
+    const version = await this.prisma.kpiVersion.findUnique({
+      where: { id: request.kpiVersionId },
+      select: {
+        kpiDefinitionId: true,
+        kpiDefinition: {
+          select: {
+            status: true,
+            activeVersionId: true,
+          },
+        },
+      },
+    });
+
+    if (
+      !version ||
+      version.kpiDefinition.status !== "ACTIVE" ||
+      version.kpiDefinition.activeVersionId !== request.kpiVersionId
+    ) {
+      this.logger.debug("Skipping recompute for a non-active KPI version", {
+        eventId: request.triggerEventId,
+        kpiVersionId: request.kpiVersionId,
+      });
+
+      return { status: null, rollups: [] };
+    }
+
+    // Temporary until Prompt 2.6 supplies the permanent threshold binding.
     const binding = await this.bindings.findByKpiVersion(
       request.kpiVersionId,
     );
 
-    if (!binding) {
-      throw performanceErrors.kpiBindingNotFound(request.kpiVersionId);
-    }
-
-    const status = binding.thresholdRuleKey
+    const status = binding?.thresholdRuleKey
       ? await this.evaluateStatus(request, binding.thresholdRuleKey)
       : null;
 
-    const rollup = binding.parentKpiId
-      ? await this.evaluateRollup(request, binding.parentKpiId)
-      : null;
+    // Registry hierarchy may legally expose more than one parent, so compute
+    // every parent rather than keeping the old bridge's single-parent limit.
+    const parentEdges = await this.prisma.kpiHierarchyNode.findMany({
+      where: {
+        childKpiId: version.kpiDefinitionId,
+      },
+      select: {
+        parentKpiId: true,
+      },
+    });
 
-    return { status, rollup };
+    const parentKpiIds = [
+      ...new Set(parentEdges.map((edge) => edge.parentKpiId)),
+    ];
+
+    const rollups = (
+      await Promise.all(
+        parentKpiIds.map((parentKpiId) =>
+          this.evaluateRollup(request, parentKpiId),
+        ),
+      )
+    ).filter(
+      (
+        rollup,
+      ): rollup is RecomputeOutcome["rollups"][number] =>
+        rollup !== null,
+    );
+
+    return { status, rollups };
   }
 
   private async evaluateStatus(
@@ -175,11 +223,13 @@ export class RecomputeService {
 
     const previousStatus = previous?.status ?? null;
 
-    // Breach fires on the *crossing* only. An unchanged off-track status, or a
-    // recovery out of off-track, computes a status and emits nothing else.
+    // Breach fires only on an actual transition from an existing
+    // non-off-track status into off-track. The first-ever status has no
+    // previous state, so it cannot represent a crossing.
     const breached =
+      previousStatus !== null &&
       isOffTrack(status) &&
-      (previousStatus === null || !isOffTrack(previousStatus));
+      !isOffTrack(previousStatus);
 
     const computedAt = new Date();
 
@@ -307,7 +357,7 @@ export class RecomputeService {
   private async evaluateRollup(
     request: RecomputeRequest,
     parentKpiId: string,
-  ): Promise<RecomputeOutcome["rollup"]> {
+  ): Promise<RecomputeOutcome["rollups"][number] | null> {
     const dedupeKey = performanceDedupeKey(
       PERFORMANCE_EVENT_TYPES.statusComputed,
       "rollup",
@@ -335,43 +385,78 @@ export class RecomputeService {
       };
     }
 
-    const parent = await this.bindings.findActiveByKpi(parentKpiId);
+    // Registry owns the hierarchy and the exact roll-up RuleDefinition.
+    const edges = await this.prisma.kpiHierarchyNode.findMany({
+      where: { parentKpiId },
+      orderBy: { createdAt: "asc" },
+      select: {
+        rollupMethodRuleId: true,
+        childKpi: {
+          select: {
+            id: true,
+            status: true,
+            activeVersionId: true,
+          },
+        },
+      },
+    });
 
-    if (!parent?.rollupRuleKey) {
-      this.logger.debug("Parent KPI has no rollup rule configured", {
+    if (edges.length === 0) {
+      this.logger.debug("Parent KPI has no Registry hierarchy children", {
         eventId: request.triggerEventId,
         parentKpiId,
       });
       return null;
     }
 
-    const children = await this.bindings.findActiveChildren(parentKpiId);
+    const rollupRuleIds = new Set(
+      edges.map((edge) => edge.rollupMethodRuleId),
+    );
+
+    // A parent must have one deterministic aggregation rule. If Registry has
+    // conflicting rules across its child edges, fail instead of producing a
+    // result that depends on which child event happened to arrive first.
+    if (rollupRuleIds.size !== 1) {
+      throw performanceErrors.ruleEvaluationFailed(
+        `rollup:${parentKpiId}`,
+      );
+    }
+
+    const rollupRuleId = edges[0]!.rollupMethodRuleId;
+
+    const activeChildren = edges.filter(
+      (edge) =>
+        edge.childKpi.status === "ACTIVE" &&
+        edge.childKpi.activeVersionId !== null,
+    );
 
     const childValues = await Promise.all(
-      children.map(async (child) => {
+      activeChildren.map(async (edge) => {
+        const kpiVersionId = edge.childKpi.activeVersionId!;
+
         const measurement = await this.measurements.resolveCurrent({
-          kpiVersionId: child.kpiVersionId,
+          kpiVersionId,
           scopeNodeId: request.scopeNodeId,
           period: request.period,
         });
 
         return {
-          id: child.kpiId,
+          id: edge.childKpi.id,
           value: measurement?.value ?? null,
         };
       }),
     );
 
-    const rule = await this.requirePublishedRule(parent.rollupRuleKey);
+    const rule = await this.requirePublishedRuleById(rollupRuleId);
 
     const evaluation = await this.evaluateWithRuleEngine(
       rule,
       { children: childValues },
-      parent.rollupRuleKey,
+      rule.ruleKey,
     );
 
     if (!("includedChildIds" in evaluation)) {
-      throw performanceErrors.ruleEvaluationFailed(parent.rollupRuleKey);
+      throw performanceErrors.ruleEvaluationFailed(rule.ruleKey);
     }
 
     // The method is read off the rule document rather than decided here, so the
@@ -403,7 +488,7 @@ export class RecomputeService {
         parentKpiId,
         scopeNodeId: request.scopeNodeId,
         period: request.period,
-        ruleKey: parent.rollupRuleKey,
+        ruleKey: rule.ruleKey,
         ruleVersionUsed: rule.id,
         ruleVersion: rule.version,
         method,
@@ -445,6 +530,39 @@ export class RecomputeService {
         alreadyComputed: true,
       };
     }
+  }
+
+  private async requirePublishedRuleById(
+    ruleId: string,
+  ): Promise<RuleDefinitionView> {
+    const stored = await this.prisma.ruleDefinition.findUnique({
+      where: { id: ruleId },
+      select: {
+        id: true,
+        ruleKey: true,
+        version: true,
+        status: true,
+      },
+    });
+
+    if (!stored || stored.status !== "PUBLISHED") {
+      throw performanceErrors.ruleNotFound(ruleId);
+    }
+
+    const rule = await this.rules.getVersion(
+      stored.ruleKey,
+      stored.version,
+    );
+
+    if (
+      !rule ||
+      rule.id !== ruleId ||
+      rule.status !== "published"
+    ) {
+      throw performanceErrors.ruleNotFound(ruleId);
+    }
+
+    return rule;
   }
 
   private async requirePublishedRule(

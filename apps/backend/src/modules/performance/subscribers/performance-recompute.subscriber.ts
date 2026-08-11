@@ -56,12 +56,11 @@ export class PerformanceRecomputeSubscriber implements EventSubscriber {
     try {
       await this.recompute.recompute(request);
     } catch (error: unknown) {
-      // A KPI with no binding or no published rule cannot be fixed by
-      // retrying; burning attempts on it would only delay the dead letter.
+      // A missing published rule cannot be fixed by retrying; burning
+      // attempts on it would only delay the dead letter.
       if (
         isPerformanceError(error) &&
-        (error.code === "KPI_BINDING_NOT_FOUND" ||
-          error.code === "RULE_NOT_FOUND")
+        error.code === "RULE_NOT_FOUND"
       ) {
         this.logger.warn("Skipping recompute: KPI is not evaluable", {
           eventId: envelope.eventId,

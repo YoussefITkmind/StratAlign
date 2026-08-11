@@ -93,9 +93,9 @@ nothing.
 
 ### Recall cutoff
 
-No workflow or approval module exists in this repository yet, so recall cannot
-be gated on an approval decision. The narrowest explicit cutoff is used, with
-two independent arms:
+Performance does not yet have a production ApprovalCase integration for recall.
+The explicit downstream-consumption cutoff is therefore used, with two
+independent arms:
 
 1. **`consumedAt`** — set by `CaptureSessionService.markConsumed`, the hook a
    downstream consumer calls when it takes the submission. Once set, recall is
@@ -125,11 +125,18 @@ only has to supply the producer.
 
 Performance implements no threshold or aggregation logic. `RecomputeService`:
 
-1. resolves the KPI's evaluation binding,
-2. resolves the currently effective measurement,
-3. resolves the **published** rule for the bound rule key via `RulesService`,
-4. calls `RulesService.evaluate`, which runs `@spm/rules`,
-5. persists the result.
+1. resolves the KPI version from Registry,
+2. verifies that it is the KPI definition's active version,
+3. resolves the currently effective measurement,
+4. resolves the temporary threshold-rule binding,
+5. resolves the **published** rule via `RulesService`,
+6. calls `RulesService.evaluate`, which runs `@spm/rules`,
+7. persists the result.
+
+Registry is the source of truth for KPI identity, active versions and hierarchy.
+The temporary `performance.kpi_bindings` table now contains only
+`kpiVersionId -> thresholdRuleKey` until Prompt 2.6 supplies the permanent
+threshold-rule binding.
 
 `StatusResult.status` is the band label the engine returned — the engine chooses
 it, not this module. `RollupResult.method` is read off the rule document.
@@ -137,9 +144,11 @@ it, not this module. `RollupResult.method` is read off the rule document.
 produced the result, and that row *is* the immutable rule version, so every
 stored result is traceable to exact rule text.
 
-For a KPI with a hierarchy parent, the parent's rollup rule is evaluated over
-every active child's currently effective measurement; children with no
-measurement are excluded by the engine, not here.
+For a KPI with a hierarchy parent, parentage comes from the real Registry
+`KpiHierarchyNode` records. The Registry edge's `rollupMethodRuleId` selects the
+published roll-up rule. Every active child's currently effective measurement is
+passed to the Rule Engine; hierarchy and roll-up configuration are not duplicated
+inside Performance.
 
 ## Events and worker
 
@@ -158,7 +167,8 @@ Emitted:
 
 Breach semantics: `on_track -> off_track` breaches; `off_track -> off_track`
 does not; `off_track -> on_track` does not; crossing back into `off_track`
-breaches again. A first-ever `off_track` status counts as a crossing.
+breaches again. A first-ever `off_track` status does **not** count as a crossing
+because there is no previous status.
 
 Recompute is registered as an ordinary `EventSubscriber`, so it rides the
 existing outbox relay, dispatch worker, retry backoff and dead-letter handling
@@ -179,27 +189,31 @@ reference. The repository has no object-storage abstraction, so none is invented
 here and no upload workflow is implemented — that is Phase 2.8. The column and
 its validation exist now so evidence handling has somewhere to land.
 
-## Blockers and assumptions
+## Remaining dependency and assumptions
 
-**The KPI/OKR registry (Prompt 2.4) does not exist in this repository.** There is
-no `KpiDefinition`, `KpiVersion`, `ScopeNode`, `Alignment`, KPI hierarchy or
-plan/version model anywhere in the schema. Consequences:
+**Registry Prompt 2.4 is integrated.**
 
-- `kpi_version_id`, `scope_node_id`, `parent_kpi_id` and `plan_version_id` are
-  unconstrained `TEXT`. They are indexed but carry no foreign key, because there
-  is no table to reference. They become foreign keys when 2.4 lands.
-- Active-version resolution, KPI→rule binding and hierarchy parentage have no
-  source of truth. `performance.kpi_bindings` (`KpiBindingService`) is a
-  **temporary bridge** holding exactly those three facts and nothing else — no
-  name, owner, unit, definition or version history. It is not a KPI registry and
-  must be replaced by, or reduced to an adapter over, the real one.
-- `TargetSeries.planVersionId` defaults to `"baseline"`, standing for the
-  original plan, because no planning module defines plan-version semantics.
+Performance now uses the real Registry/Strategy/Plan models:
 
-**No approval/workflow infrastructure exists**, hence the explicit recall cutoff
-described above rather than an approval gate.
+- KPI-version references point to `registry.kpi_versions`;
+- scope references point to real Strategy nodes;
+- target-series plan references point to real Plan versions;
+- active-version resolution comes from `KpiDefinition.activeVersionId`;
+- KPI hierarchy comes from Registry `KpiHierarchyNode`;
+- roll-up rule selection comes from `rollupMethodRuleId`.
+
+Performance therefore does not maintain a parallel KPI registry.
+
+The remaining architectural dependency is **Prompt 2.6 Rule Builder**.
+Until 2.6 provides the permanent KPI-to-threshold-rule binding,
+`performance.kpi_bindings` remains a narrow temporary seam containing only the
+KPI version and threshold rule key.
+
+Performance does not yet have a production ApprovalCase integration, so
+`consumedAt` and `recallDeadlineAt` provide the documented recall cutoff.
 
 **No object-storage abstraction exists**, hence the opaque `evidenceRef`.
+Prompt 2.7 stores the stable reference; it does not implement the upload system.
 
 The off-track label is `off_track`, matching the repository's golden threshold
 fixtures (`packages/rules/test/fixtures/golden-rules.ts`). It is named in

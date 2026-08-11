@@ -9,11 +9,7 @@ import { QueueConnectionProvider } from "./queue/queue-connection";
 import { QueueService } from "./queue/queue.service";
 import { DeadLetterService } from "./queue/dead-letter.service";
 import { WorkerFactory } from "./queue/worker.factory";
-import {
-  JOB_NAMES,
-  QUEUE_NAMES,
-  REPEATABLE_JOB_IDS,
-} from "./queue/queue.constants";
+import { JOB_NAMES, QUEUE_NAMES, REPEATABLE_JOB_IDS } from "./queue/queue.constants";
 
 import { EventSubscriberRegistry } from "./events/event-subscriber.registry";
 import { EventDispatcherService } from "./events/event-dispatcher.service";
@@ -23,6 +19,10 @@ import { EventBusService } from "./events/event-bus.service";
 import { JournalService } from "./modules/audit/journal.service";
 import { AuditEventSubscriber } from "./modules/audit/audit-event.subscriber";
 import { StubSiemForwarder } from "./modules/audit/siem-forwarder";
+import { StrategyActivationService } from "./modules/strategy/strategy-activation.service";
+import { StrategyApprovalSubscriber } from "./modules/strategy/strategy-approval.subscriber";
+import { StrategyTraversalService } from "./modules/strategy/strategy-traversal.service";
+import { TraceabilityRefreshSubscriber } from "./modules/strategy/traceability-refresh.subscriber";
 
 import { CadenceEngine } from "./modules/cadence/cadence.engine";
 import { PeriodCalendarEngine } from "./modules/cadence/period-calendar.engine";
@@ -45,20 +45,10 @@ import { KpiBindingService } from "./modules/performance/kpi-binding.service";
 import { RecomputeService } from "./modules/performance/recompute.service";
 import { PerformanceRecomputeSubscriber } from "./modules/performance/subscribers/performance-recompute.subscriber";
 
-import {
-  createEventDispatchWorker,
-  createOutboxRelayWorker,
-} from "./workers/event.workers";
+import { createEventDispatchWorker, createOutboxRelayWorker } from "./workers/event.workers";
 import { createAuditVerificationWorker } from "./workers/audit.workers";
-import {
-  createMaterializeWorker,
-  createSchedulerTickWorker,
-  createTransitionWorker,
-} from "./workers/scheduler.workers";
-import {
-  createDigestSweepWorker,
-  createNotificationDeliveryWorker,
-} from "./workers/notification.workers";
+import { createMaterializeWorker, createSchedulerTickWorker, createTransitionWorker } from "./workers/scheduler.workers";
+import { createDigestSweepWorker, createNotificationDeliveryWorker } from "./workers/notification.workers";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -66,46 +56,30 @@ async function bootstrap(): Promise<void> {
 
   const prisma = new PrismaService(environment.DATABASE_URL);
   const redis = new RedisService(environment.REDIS_URL);
-
-  const queueConnectionProvider = new QueueConnectionProvider(
-    environment.REDIS_URL,
-  );
-
+  const queueConnectionProvider = new QueueConnectionProvider(environment.REDIS_URL);
   const queueService = new QueueService(
     queueConnectionProvider,
     environment.QUEUE_PREFIX,
     logger.child("queue"),
   );
-
   const deadLetterService = new DeadLetterService(
     queueService,
     logger.child("dead-letter"),
   );
-
   const workerFactory = new WorkerFactory(
     queueConnectionProvider,
     environment.QUEUE_PREFIX,
     deadLetterService,
     logger,
   );
-
   const eventBus = new EventBusService(
     queueService,
     logger.child("event-bus"),
   );
-
   const subscriberRegistry = new EventSubscriberRegistry();
 
-  // ---------------------------------------------------------------------------
-  // Audit
-  // ---------------------------------------------------------------------------
-
   const journal = new JournalService(prisma);
-
-  const siemForwarder = new StubSiemForwarder(
-    logger.child("siem"),
-  );
-
+  const siemForwarder = new StubSiemForwarder(logger.child("siem"));
   subscriberRegistry.register(
     new AuditEventSubscriber(
       journal,
@@ -114,57 +88,44 @@ async function bootstrap(): Promise<void> {
     ),
   );
 
-  // ---------------------------------------------------------------------------
-  // Scheduler
-  // ---------------------------------------------------------------------------
+  const strategyActivation = new StrategyActivationService(prisma, eventBus);
+  const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
+  subscriberRegistry.register(new StrategyApprovalSubscriber(strategyActivation));
+  subscriberRegistry.register(new TraceabilityRefreshSubscriber(strategyTraversal));
 
   const cadenceEngine = new CadenceEngine();
   const periodCalendarEngine = new PeriodCalendarEngine();
-
   const transitionService = new ScheduleTransitionService(
     prisma,
     eventBus,
     queueService,
     logger.child("scheduler-transition"),
   );
-
   const cadenceGenerator = new CadenceGeneratorService(
     prisma,
     cadenceEngine,
     periodCalendarEngine,
     queueService,
     {
-      maxCatchUpOccurrences:
-        environment.SCHEDULER_MAX_CATCHUP_OCCURRENCES,
-      tickIntervalMs:
-        environment.SCHEDULER_TICK_INTERVAL_MS,
+      maxCatchUpOccurrences: environment.SCHEDULER_MAX_CATCHUP_OCCURRENCES,
+      tickIntervalMs: environment.SCHEDULER_TICK_INTERVAL_MS,
     },
     logger.child("cadence-generator"),
   );
-
   const tickService = new SchedulerTickService(
     prisma,
     queueService,
     transitionService,
     {
-      lookaheadSeconds:
-        environment.SCHEDULER_LOOKAHEAD_SECONDS,
-      batchSize:
-        environment.SCHEDULER_TICK_BATCH_SIZE,
-      tickIntervalMs:
-        environment.SCHEDULER_TICK_INTERVAL_MS,
-      maxWaitingMaterializeJobs:
-        environment.SCHEDULER_TICK_BATCH_SIZE * 4,
+      lookaheadSeconds: environment.SCHEDULER_LOOKAHEAD_SECONDS,
+      batchSize: environment.SCHEDULER_TICK_BATCH_SIZE,
+      tickIntervalMs: environment.SCHEDULER_TICK_INTERVAL_MS,
+      maxWaitingMaterializeJobs: environment.SCHEDULER_TICK_BATCH_SIZE * 4,
     },
     logger.child("scheduler-tick"),
   );
 
-  // ---------------------------------------------------------------------------
-  // Notifications
-  // ---------------------------------------------------------------------------
-
   const templateRenderer = new TemplateRenderer();
-
   const templateService = new NotificationTemplateService(
     prisma,
     templateRenderer,
@@ -174,7 +135,6 @@ async function bootstrap(): Promise<void> {
     },
     logger.child("notification-template"),
   );
-
   const preferenceService = new NotificationPreferenceService(
     prisma,
     {
@@ -183,12 +143,10 @@ async function bootstrap(): Promise<void> {
       digestIntervalMinutes: 1440,
     },
   );
-
   const senderRegistry = createSenderRegistry(
     environment,
     logger.child("notification-senders"),
   );
-
   const notificationService = new NotificationService(
     prisma,
     preferenceService,
@@ -200,13 +158,11 @@ async function bootstrap(): Promise<void> {
     },
     logger.child("notification"),
   );
-
   const notificationDispatcher = new NotificationDispatcher(
     prisma,
     senderRegistry,
     logger.child("notification-dispatcher"),
   );
-
   const digestService = new DigestService(
     prisma,
     preferenceService,
@@ -219,7 +175,6 @@ async function bootstrap(): Promise<void> {
     },
     logger.child("notification-digest"),
   );
-
   subscriberRegistry.register(
     new ScheduleNotificationSubscriber(
       notificationService,
@@ -227,14 +182,8 @@ async function bootstrap(): Promise<void> {
     ),
   );
 
-  // ---------------------------------------------------------------------------
-  // Performance recompute
-  //
-  // Registered as an ordinary event subscriber: the existing relay and dispatch
-  // workers carry it, so it inherits their retry, dead-letter and idempotency
-  // behaviour rather than introducing a queue of its own.
-  // ---------------------------------------------------------------------------
-
+  // Performance recompute is carried by the existing event/outbox
+  // infrastructure so it inherits retry, DLQ and idempotency behaviour.
   subscriberRegistry.register(
     new PerformanceRecomputeSubscriber(
       new RecomputeService(
@@ -253,15 +202,10 @@ async function bootstrap(): Promise<void> {
     ),
   );
 
-  // ---------------------------------------------------------------------------
-  // Event/outbox infrastructure
-  // ---------------------------------------------------------------------------
-
   const eventDispatcher = new EventDispatcherService(
     subscriberRegistry,
     logger.child("event-dispatcher"),
   );
-
   const outboxRelay = new OutboxRelayService(
     prisma,
     queueService,
@@ -270,16 +214,8 @@ async function bootstrap(): Promise<void> {
     logger.child("outbox-relay"),
   );
 
-  await Promise.all([
-    prisma.connect(),
-    redis.connect(),
-  ]);
-
+  await Promise.all([prisma.connect(), redis.connect()]);
   const concurrency = environment.WORKER_CONCURRENCY;
-
-  // ---------------------------------------------------------------------------
-  // Workers
-  // ---------------------------------------------------------------------------
 
   workerFactory.create(
     createAuditVerificationWorker(
@@ -287,18 +223,8 @@ async function bootstrap(): Promise<void> {
       logger.child("audit-verification"),
     ),
   );
-
-  workerFactory.create(
-    createSchedulerTickWorker(tickService),
-  );
-
-  workerFactory.create(
-    createMaterializeWorker(
-      cadenceGenerator,
-      concurrency,
-    ),
-  );
-
+  workerFactory.create(createSchedulerTickWorker(tickService));
+  workerFactory.create(createMaterializeWorker(cadenceGenerator, concurrency));
   workerFactory.create(
     createTransitionWorker(
       transitionService,
@@ -306,32 +232,17 @@ async function bootstrap(): Promise<void> {
       concurrency,
     ),
   );
-
+  workerFactory.create(createOutboxRelayWorker(outboxRelay));
   workerFactory.create(
-    createOutboxRelayWorker(outboxRelay),
+    createEventDispatchWorker(eventDispatcher, concurrency * 2),
   );
-
-  workerFactory.create(
-    createEventDispatchWorker(
-      eventDispatcher,
-      concurrency * 2,
-    ),
-  );
-
   workerFactory.create(
     createNotificationDeliveryWorker(
       notificationDispatcher,
       concurrency * 2,
     ),
   );
-
-  workerFactory.create(
-    createDigestSweepWorker(digestService),
-  );
-
-  // ---------------------------------------------------------------------------
-  // Repeatable jobs
-  // ---------------------------------------------------------------------------
+  workerFactory.create(createDigestSweepWorker(digestService));
 
   if (environment.SCHEDULER_ENABLED) {
     await queueService.registerRepeatable(
@@ -341,14 +252,12 @@ async function bootstrap(): Promise<void> {
       REPEATABLE_JOB_IDS.schedulerTick,
     );
   }
-
   await queueService.registerRepeatable(
     QUEUE_NAMES.eventsRelay,
     JOB_NAMES.relayOutbox,
     environment.EVENT_RELAY_INTERVAL_MS,
     REPEATABLE_JOB_IDS.eventsRelay,
   );
-
   if (environment.DIGEST_ENABLED) {
     await queueService.registerRepeatable(
       QUEUE_NAMES.notificationDigest,
@@ -359,28 +268,18 @@ async function bootstrap(): Promise<void> {
   }
 
   logger.info(
-    "SPM audit, scheduler, event and notification workers started",
+    "SPM audit, strategy, scheduler, performance, event and notification workers started",
   );
 
   async function shutdown(signal: string): Promise<void> {
     logger.info(`Received ${signal}. Shutting down worker.`);
-
     await workerFactory.closeAll();
     await queueService.close();
-
-    await Promise.all([
-      prisma.disconnect(),
-      redis.disconnect(),
-    ]);
+    await Promise.all([strategyTraversal.destroy(), prisma.disconnect(), redis.disconnect()]);
   }
 
-  process.once("SIGINT", () => {
-    void shutdown("SIGINT");
-  });
-
-  process.once("SIGTERM", () => {
-    void shutdown("SIGTERM");
-  });
+  process.once("SIGINT", () => { void shutdown("SIGINT"); });
+  process.once("SIGTERM", () => { void shutdown("SIGTERM"); });
 }
 
 bootstrap().catch((error: unknown) => {

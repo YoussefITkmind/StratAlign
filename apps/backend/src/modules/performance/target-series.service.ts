@@ -14,15 +14,9 @@ export interface SetTargetInput {
   scopeNodeId: string;
   period: string;
   targetValue: number;
-  /**
-   * Distinguishes the original plan from a revision (FR-B12). No planning
-   * module exists in this repository yet, so this is an opaque identifier and
-   * "baseline" stands for the original plan. See the module README.
-   */
-  planVersionId?: string;
+  /** Real Strategy PlanVersion that owns this target series. */
+  planVersionId: string;
 }
-
-export const BASELINE_PLAN_VERSION_ID = "baseline";
 
 /**
  * Target values per KPI/scope/period and plan version.
@@ -35,8 +29,7 @@ export class TargetSeriesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async setTarget(input: SetTargetInput): Promise<TargetSeriesView> {
-    const planVersionId =
-      input.planVersionId ?? BASELINE_PLAN_VERSION_ID;
+    const planVersionId = input.planVersionId;
 
     const record = await this.prisma.targetSeries.upsert({
       where: {
@@ -71,7 +64,7 @@ export class TargetSeriesService {
     kpiVersionId: string;
     scopeNodeId: string;
     period: string;
-    planVersionId?: string;
+    planVersionId: string;
   }): Promise<TargetSeriesView | null> {
     const record = await this.prisma.targetSeries.findUnique({
       where: {
@@ -79,8 +72,7 @@ export class TargetSeriesService {
           kpiVersionId: input.kpiVersionId,
           scopeNodeId: input.scopeNodeId,
           period: input.period,
-          planVersionId:
-            input.planVersionId ?? BASELINE_PLAN_VERSION_ID,
+          planVersionId: input.planVersionId,
         },
       },
     });

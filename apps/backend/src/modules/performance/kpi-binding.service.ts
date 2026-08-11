@@ -2,35 +2,24 @@ import type { PrismaService } from "../../database/prisma.service";
 
 export interface KpiBindingView {
   id: string;
-  kpiId: string;
   kpiVersionId: string;
-  isActive: boolean;
   thresholdRuleKey: string | null;
-  rollupRuleKey: string | null;
-  parentKpiId: string | null;
 }
 
 export interface UpsertKpiBindingInput {
-  kpiId: string;
   kpiVersionId: string;
   thresholdRuleKey?: string | null;
-  rollupRuleKey?: string | null;
-  parentKpiId?: string | null;
-  isActive?: boolean;
 }
 
 /**
- * TEMPORARY BRIDGE — see the module README, "Blockers".
+ * TEMPORARY THRESHOLD-RULE SEAM.
  *
- * The recompute worker needs three facts that belong to the KPI/OKR registry
- * (Prompt 2.4): which version of a KPI is active, which published rule
- * evaluates it, and which KPI is its hierarchy parent. That registry does not
- * exist in this repository, so those bindings are held here and nowhere else.
+ * Registry 2.4 now owns KPI identity, active-version selection and hierarchy.
+ * This adapter deliberately stores none of those facts.
  *
- * This is not a KPI registry: it stores no name, owner, unit, definition or
- * version history, and it has no lifecycle of its own. When Prompt 2.4 lands,
- * this service becomes a thin adapter over the registry — or is deleted, with
- * `RecomputeService` reading the registry directly.
+ * It exists only because Prompt 2.6 has not yet supplied the permanent
+ * KPI -> threshold-rule binding. Once 2.6 lands, RecomputeService should read
+ * that binding and this service/table should be removed.
  */
 export class KpiBindingService {
   constructor(private readonly prisma: PrismaService) {}
@@ -38,54 +27,33 @@ export class KpiBindingService {
   async upsert(
     input: UpsertKpiBindingInput,
   ): Promise<KpiBindingView> {
-    const record = await this.prisma.performanceKpiBinding.upsert({
+    return this.prisma.performanceKpiBinding.upsert({
       where: { kpiVersionId: input.kpiVersionId },
       update: {
-        kpiId: input.kpiId,
         thresholdRuleKey: input.thresholdRuleKey ?? null,
-        rollupRuleKey: input.rollupRuleKey ?? null,
-        parentKpiId: input.parentKpiId ?? null,
-        isActive: input.isActive ?? true,
       },
       create: {
-        kpiId: input.kpiId,
         kpiVersionId: input.kpiVersionId,
         thresholdRuleKey: input.thresholdRuleKey ?? null,
-        rollupRuleKey: input.rollupRuleKey ?? null,
-        parentKpiId: input.parentKpiId ?? null,
-        isActive: input.isActive ?? true,
+      },
+      select: {
+        id: true,
+        kpiVersionId: true,
+        thresholdRuleKey: true,
       },
     });
-
-    return record;
   }
 
-  /** Binding for one KPI version, active or not. */
   async findByKpiVersion(
     kpiVersionId: string,
   ): Promise<KpiBindingView | null> {
     return this.prisma.performanceKpiBinding.findUnique({
       where: { kpiVersionId },
-    });
-  }
-
-  /** The active version binding for a logical KPI. */
-  async findActiveByKpi(
-    kpiId: string,
-  ): Promise<KpiBindingView | null> {
-    return this.prisma.performanceKpiBinding.findFirst({
-      where: { kpiId, isActive: true },
-      orderBy: { createdAt: "desc" },
-    });
-  }
-
-  /** Active bindings of every child of a parent KPI. */
-  async findActiveChildren(
-    parentKpiId: string,
-  ): Promise<KpiBindingView[]> {
-    return this.prisma.performanceKpiBinding.findMany({
-      where: { parentKpiId, isActive: true },
-      orderBy: { kpiId: "asc" },
+      select: {
+        id: true,
+        kpiVersionId: true,
+        thresholdRuleKey: true,
+      },
     });
   }
 }

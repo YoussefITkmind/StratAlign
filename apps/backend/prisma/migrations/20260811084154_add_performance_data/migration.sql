@@ -11,7 +11,7 @@ CREATE TYPE "performance"."CaptureSessionState" AS ENUM ('draft', 'submitted', '
 CREATE TABLE "performance"."measurements" (
     "id" TEXT NOT NULL,
     "kpi_version_id" TEXT NOT NULL,
-    "scope_node_id" TEXT NOT NULL,
+    "scope_node_id" UUID NOT NULL,
     "period" TEXT NOT NULL,
     "value" DECIMAL(20,6) NOT NULL,
     "source" "performance"."MeasurementSource" NOT NULL,
@@ -28,10 +28,10 @@ CREATE TABLE "performance"."measurements" (
 CREATE TABLE "performance"."target_series" (
     "id" TEXT NOT NULL,
     "kpi_version_id" TEXT NOT NULL,
-    "scope_node_id" TEXT NOT NULL,
+    "scope_node_id" UUID NOT NULL,
     "period" TEXT NOT NULL,
     "target_value" DECIMAL(20,6) NOT NULL,
-    "plan_version_id" TEXT NOT NULL DEFAULT 'baseline',
+    "plan_version_id" UUID NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -42,7 +42,7 @@ CREATE TABLE "performance"."target_series" (
 CREATE TABLE "performance"."status_results" (
     "id" TEXT NOT NULL,
     "kpi_version_id" TEXT NOT NULL,
-    "scope_node_id" TEXT NOT NULL,
+    "scope_node_id" UUID NOT NULL,
     "period" TEXT NOT NULL,
     "status" TEXT NOT NULL,
     "computed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -56,7 +56,7 @@ CREATE TABLE "performance"."status_results" (
 CREATE TABLE "performance"."rollup_results" (
     "id" TEXT NOT NULL,
     "parent_kpi_id" TEXT NOT NULL,
-    "scope_node_id" TEXT NOT NULL,
+    "scope_node_id" UUID NOT NULL,
     "period" TEXT NOT NULL,
     "aggregated_value" DECIMAL(20,6),
     "method" TEXT NOT NULL,
@@ -71,7 +71,7 @@ CREATE TABLE "performance"."rollup_results" (
 CREATE TABLE "performance"."commentary" (
     "id" TEXT NOT NULL,
     "kpi_version_id" TEXT NOT NULL,
-    "scope_node_id" TEXT NOT NULL,
+    "scope_node_id" UUID NOT NULL,
     "period" TEXT NOT NULL,
     "author_id" TEXT NOT NULL,
     "body_en" TEXT,
@@ -86,7 +86,7 @@ CREATE TABLE "performance"."commentary" (
 CREATE TABLE "performance"."capture_sessions" (
     "id" TEXT NOT NULL,
     "kpi_version_id" TEXT NOT NULL,
-    "scope_node_id" TEXT NOT NULL,
+    "scope_node_id" UUID NOT NULL,
     "period" TEXT NOT NULL,
     "state" "performance"."CaptureSessionState" NOT NULL DEFAULT 'draft',
     "owner_id" TEXT NOT NULL,
@@ -104,12 +104,8 @@ CREATE TABLE "performance"."capture_sessions" (
 -- CreateTable
 CREATE TABLE "performance"."kpi_bindings" (
     "id" TEXT NOT NULL,
-    "kpi_id" TEXT NOT NULL,
     "kpi_version_id" TEXT NOT NULL,
-    "is_active" BOOLEAN NOT NULL DEFAULT true,
     "threshold_rule_key" TEXT,
-    "rollup_rule_key" TEXT,
-    "parent_kpi_id" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -186,10 +182,7 @@ CREATE INDEX "capture_sessions_state_idx" ON "performance"."capture_sessions"("s
 CREATE UNIQUE INDEX "kpi_bindings_kpi_version_id_key" ON "performance"."kpi_bindings"("kpi_version_id");
 
 -- CreateIndex
-CREATE INDEX "kpi_bindings_kpi_id_is_active_idx" ON "performance"."kpi_bindings"("kpi_id", "is_active");
-
--- CreateIndex
-CREATE INDEX "kpi_bindings_parent_kpi_id_idx" ON "performance"."kpi_bindings"("parent_kpi_id");
+CREATE INDEX "kpi_bindings_threshold_rule_key_idx" ON "performance"."kpi_bindings"("threshold_rule_key");
 
 -- AddForeignKey
 ALTER TABLE "performance"."measurements" ADD CONSTRAINT "measurements_submitted_by_fkey" FOREIGN KEY ("submitted_by") REFERENCES "iam"."users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -208,3 +201,91 @@ ALTER TABLE "performance"."commentary" ADD CONSTRAINT "commentary_author_id_fkey
 
 -- AddForeignKey
 ALTER TABLE "performance"."capture_sessions" ADD CONSTRAINT "capture_sessions_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "iam"."users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- Performance -> Registry / Strategy foreign keys
+ALTER TABLE "performance"."measurements"
+ADD CONSTRAINT "measurements_kpi_version_id_fkey"
+FOREIGN KEY ("kpi_version_id")
+REFERENCES "registry"."kpi_versions"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "performance"."measurements"
+ADD CONSTRAINT "measurements_scope_node_id_fkey"
+FOREIGN KEY ("scope_node_id")
+REFERENCES "strategy"."strategy_nodes"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "performance"."target_series"
+ADD CONSTRAINT "target_series_kpi_version_id_fkey"
+FOREIGN KEY ("kpi_version_id")
+REFERENCES "registry"."kpi_versions"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "performance"."target_series"
+ADD CONSTRAINT "target_series_scope_node_id_fkey"
+FOREIGN KEY ("scope_node_id")
+REFERENCES "strategy"."strategy_nodes"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "performance"."target_series"
+ADD CONSTRAINT "target_series_plan_version_id_fkey"
+FOREIGN KEY ("plan_version_id")
+REFERENCES "strategy"."plan_versions"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "performance"."status_results"
+ADD CONSTRAINT "status_results_kpi_version_id_fkey"
+FOREIGN KEY ("kpi_version_id")
+REFERENCES "registry"."kpi_versions"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "performance"."status_results"
+ADD CONSTRAINT "status_results_scope_node_id_fkey"
+FOREIGN KEY ("scope_node_id")
+REFERENCES "strategy"."strategy_nodes"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "performance"."rollup_results"
+ADD CONSTRAINT "rollup_results_parent_kpi_id_fkey"
+FOREIGN KEY ("parent_kpi_id")
+REFERENCES "registry"."kpi_definitions"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "performance"."rollup_results"
+ADD CONSTRAINT "rollup_results_scope_node_id_fkey"
+FOREIGN KEY ("scope_node_id")
+REFERENCES "strategy"."strategy_nodes"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "performance"."commentary"
+ADD CONSTRAINT "commentary_kpi_version_id_fkey"
+FOREIGN KEY ("kpi_version_id")
+REFERENCES "registry"."kpi_versions"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "performance"."commentary"
+ADD CONSTRAINT "commentary_scope_node_id_fkey"
+FOREIGN KEY ("scope_node_id")
+REFERENCES "strategy"."strategy_nodes"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "performance"."capture_sessions"
+ADD CONSTRAINT "capture_sessions_kpi_version_id_fkey"
+FOREIGN KEY ("kpi_version_id")
+REFERENCES "registry"."kpi_versions"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE "performance"."capture_sessions"
+ADD CONSTRAINT "capture_sessions_scope_node_id_fkey"
+FOREIGN KEY ("scope_node_id")
+REFERENCES "strategy"."strategy_nodes"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;
+
+
+
+-- Temporary threshold binding -> Registry KPI version
+ALTER TABLE "performance"."kpi_bindings"
+ADD CONSTRAINT "kpi_bindings_kpi_version_id_fkey"
+FOREIGN KEY ("kpi_version_id")
+REFERENCES "registry"."kpi_versions"("id")
+ON DELETE RESTRICT ON UPDATE CASCADE;

@@ -17,7 +17,6 @@ export type PerformanceErrorCode =
   | "INVALID_SUPERSESSION"
   | "MEASUREMENT_NOT_FOUND"
   | "COMMENTARY_CONTENT_REQUIRED"
-  | "KPI_BINDING_NOT_FOUND"
   | "RULE_NOT_FOUND"
   | "RULE_EVALUATION_FAILED";
 
@@ -110,14 +109,6 @@ export const performanceErrors = {
     return new PerformanceError(
       "COMMENTARY_CONTENT_REQUIRED",
       "Commentary must contain English or Arabic content",
-    );
-  },
-
-  kpiBindingNotFound(kpiVersionId: string): PerformanceError {
-    return new PerformanceError(
-      "KPI_BINDING_NOT_FOUND",
-      "No evaluation binding is configured for this KPI version",
-      { kpiVersionId },
     );
   },
 
