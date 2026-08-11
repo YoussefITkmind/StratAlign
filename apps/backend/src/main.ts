@@ -63,6 +63,7 @@ async function bootstrap(): Promise<void> {
   const governance = new GovernanceService(
     prisma,
     eventBus,
+    rules,
   );
   const strategy = new StrategyService(prisma);
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);

@@ -23,6 +23,7 @@ export const APPROVAL_EVENT_TYPES = [
 
 export const APPROVAL_GUARD_REFS = [
   "separationOfDuties",
+  "ruleGate",
 ] as const;
 
 export const APPROVAL_ACTION_REFS = [
@@ -83,10 +84,34 @@ export type ApprovalMachineEvent =
       actorUserId: string;
     };
 
+export const approvalRuleGuardDefinitionSchema =
+  z.object({
+    type: z.literal("ruleGate"),
+    ruleId: z.string().uuid(),
+    inputSource: z
+      .enum([
+        "proposedChange.before",
+        "proposedChange.after",
+        "proposedChange.impactSummary",
+      ])
+      .default("proposedChange.after"),
+  })
+  .strict();
+
+export type ApprovalRuleGuardDefinition =
+  z.infer<
+    typeof approvalRuleGuardDefinitionSchema
+  >;
+
 export const approvalTransitionDefinitionSchema =
   z.object({
     target: z.enum(APPROVAL_STATES),
-    guard: z.enum(APPROVAL_GUARD_REFS).optional(),
+    guard: z
+      .union([
+        z.literal("separationOfDuties"),
+        approvalRuleGuardDefinitionSchema,
+      ])
+      .optional(),
     actions: z
       .array(z.enum(APPROVAL_ACTION_REFS))
       .default([]),
@@ -230,6 +255,7 @@ const approvalSetup = setup({
 
   guards: {
     separationOfDuties: () => false,
+    ruleGate: () => false,
   },
 
   actions: {
@@ -259,7 +285,10 @@ function compileTransition(
 
     ...(transition.guard
       ? {
-          guard: transition.guard,
+          guard:
+            typeof transition.guard === "string"
+              ? transition.guard
+              : transition.guard.type,
         }
       : {}),
 
@@ -284,6 +313,9 @@ function compactTransitions<
   );
 }
 
+export type RuleGateCheck =
+  () => boolean;
+
 export function createApprovalMachine(input: {
   definition:
     | WorkflowMachineDefinition
@@ -291,6 +323,8 @@ export function createApprovalMachine(input: {
 
   separationOfDutiesCheck:
     SeparationOfDutiesCheck;
+
+  ruleGateCheck?: RuleGateCheck;
 
   actions?: ApprovalActionImplementations;
 }) {
@@ -529,6 +563,10 @@ export function createApprovalMachine(input: {
             event.actorUserId,
           );
       },
+
+      ruleGate: () =>
+        input.ruleGateCheck?.() ??
+        false,
     },
 
     actions: {
@@ -590,6 +628,8 @@ export function createApprovalActor(input: {
   separationOfDutiesCheck:
     SeparationOfDutiesCheck;
 
+  ruleGateCheck?: RuleGateCheck;
+
   definition?:
     | WorkflowMachineDefinition
     | unknown;
@@ -606,6 +646,9 @@ export function createApprovalActor(input: {
 
       separationOfDutiesCheck:
         input.separationOfDutiesCheck,
+
+      ruleGateCheck:
+        input.ruleGateCheck,
 
       actions: input.actions,
     });

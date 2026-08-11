@@ -5,6 +5,7 @@ import {
 } from "../../generated/prisma/client";
 import type { PrismaService } from "../../database/prisma.service";
 import type { EventBusService } from "../../events/event-bus.service";
+import type { RulesService } from "../rules/rules.service";
 
 import {
   enforceSeparationOfDuties,
@@ -18,6 +19,7 @@ import {
   type ApprovalActionImplementations,
   type ApprovalMachineEvent,
   type ApprovalMachineSnapshot,
+  type ApprovalState,
   type ProposedChange,
 } from "@spm/machines";
 
@@ -76,6 +78,27 @@ function stateValueToPrisma(
 }
 
 
+function prismaStateToMachine(
+  state: ApprovalCaseState,
+): ApprovalState {
+  switch (state) {
+    case ApprovalCaseState.DRAFT:
+      return "draft";
+
+    case ApprovalCaseState.PENDING_APPROVAL:
+      return "pending_approval";
+
+    case ApprovalCaseState.APPROVED:
+      return "approved";
+
+    case ApprovalCaseState.REJECTED:
+      return "rejected";
+
+    case ApprovalCaseState.CHANGES_REQUESTED:
+      return "changes_requested";
+  }
+}
+
 export interface CreateApprovalCaseInput {
   workflowKey?: string;
   entityType: string;
@@ -101,6 +124,7 @@ export class GovernanceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventBus: EventBusService,
+    private readonly rules?: RulesService,
   ) {}
 
   async ensureDefaultWorkflowDefinition() {
@@ -243,6 +267,83 @@ export class GovernanceService {
                 .definitionJson,
             );
 
+          const proposedChange =
+            (
+              approvalCase
+                .xstateContextSnapshot as {
+                context?: {
+                  proposedChange?: ProposedChange;
+                };
+              }
+            ).context?.proposedChange ?? {
+              before: null,
+              after: null,
+            };
+
+          const machineState =
+            prismaStateToMachine(
+              approvalCase.currentState,
+            );
+
+          const transitionDefinition =
+            definition.states[
+              machineState
+            ].on?.[
+              input.event.type
+            ];
+
+          const configuredGuard =
+            transitionDefinition?.guard;
+
+          let ruleGatePassed:
+            boolean | undefined;
+
+          if (
+            configuredGuard &&
+            typeof configuredGuard !==
+              "string" &&
+            configuredGuard.type ===
+              "ruleGate"
+          ) {
+            if (!this.rules) {
+              throw new Error(
+                "Rule-backed workflow guard cannot be evaluated because RulesService is unavailable",
+              );
+            }
+
+            const ruleInput =
+              configuredGuard.inputSource ===
+                "proposedChange.before"
+                ? proposedChange.before
+                : configuredGuard.inputSource ===
+                    "proposedChange.impactSummary"
+                  ? proposedChange
+                      .impactSummary
+                  : proposedChange.after;
+
+            const ruleResult =
+              await this.rules.evaluate(
+                configuredGuard.ruleId,
+                ruleInput,
+              );
+
+            if (
+              typeof ruleResult !==
+                "object" ||
+              ruleResult === null ||
+              !("passed" in ruleResult) ||
+              typeof ruleResult.passed !==
+                "boolean"
+            ) {
+              throw new Error(
+                "Workflow ruleGate must reference a gate_criteria rule that returns passed:boolean",
+              );
+            }
+
+            ruleGatePassed =
+              ruleResult.passed;
+          }
+
           const effects =
             new Set<
               (typeof APPROVAL_ACTION_REFS)[number]
@@ -266,18 +367,7 @@ export class GovernanceService {
                 submittedBy:
                   approvalCase.submittedBy,
 
-                proposedChange:
-                  (
-                    approvalCase
-                      .xstateContextSnapshot as {
-                      context?: {
-                        proposedChange?: ProposedChange;
-                      };
-                    }
-                  ).context?.proposedChange ?? {
-                    before: null,
-                    after: null,
-                  },
+                proposedChange,
               },
 
               definition,
@@ -286,6 +376,15 @@ export class GovernanceService {
                 submittedBy,
                 actorUserId,
               ) => submittedBy !== actorUserId,
+
+              ...(ruleGatePassed ===
+              undefined
+                ? {}
+                : {
+                    ruleGateCheck:
+                      () =>
+                        ruleGatePassed,
+                  }),
 
               actions,
 

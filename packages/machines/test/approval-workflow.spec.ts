@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_APPROVAL_WORKFLOW_DEFINITION,
   createApprovalActor,
+  parseWorkflowDefinition,
   workflowMachineDefinitionSchema,
 } from "../src";
 
@@ -246,3 +247,167 @@ describe("generic approval workflow", () => {
     expect(restored.getSnapshot().value).toBe("approved");
   });
 });
+
+describe(
+  "rule-backed workflow guards",
+  () => {
+    const RULE_ID =
+      "11111111-1111-4111-8111-111111111111";
+
+    function ruleGuardDefinition() {
+      const definition =
+        structuredClone(
+          DEFAULT_APPROVAL_WORKFLOW_DEFINITION,
+        );
+
+      const approve =
+        definition.states
+          .pending_approval
+          .on?.APPROVE;
+
+      if (!approve) {
+        throw new Error(
+          "Default APPROVE transition is missing",
+        );
+      }
+
+      approve.guard = {
+        type: "ruleGate",
+        ruleId: RULE_ID,
+        inputSource:
+          "proposedChange.after",
+      };
+
+      return parseWorkflowDefinition(
+        definition,
+      );
+    }
+
+    function createRuleGuardActor(
+      rulePassed: boolean,
+    ) {
+      return createApprovalActor({
+        context: {
+          submittedBy:
+            "submitter-user",
+
+          proposedChange: {
+            before: {
+              approved: false,
+            },
+
+            after: {
+              approved: true,
+            },
+          },
+        },
+
+        definition:
+          ruleGuardDefinition(),
+
+        separationOfDutiesCheck:
+          (
+            submittedBy,
+            actorUserId,
+          ) =>
+            submittedBy !==
+            actorUserId,
+
+        ruleGateCheck:
+          () => rulePassed,
+      }).start();
+    }
+
+    it(
+      "blocks a transition when a configured rule guard fails",
+      () => {
+        const actor =
+          createRuleGuardActor(
+            false,
+          );
+
+        actor.send({
+          type: "SUBMIT",
+          actorUserId:
+            "submitter-user",
+        });
+
+        expect(
+          actor.getSnapshot().value,
+        ).toBe(
+          "pending_approval",
+        );
+
+        actor.send({
+          type: "APPROVE",
+          actorUserId:
+            "different-approver",
+        });
+
+        expect(
+          actor.getSnapshot().value,
+        ).toBe(
+          "pending_approval",
+        );
+      },
+    );
+
+    it(
+      "allows a transition when a configured rule guard passes",
+      () => {
+        const actor =
+          createRuleGuardActor(
+            true,
+          );
+
+        actor.send({
+          type: "SUBMIT",
+          actorUserId:
+            "submitter-user",
+        });
+
+        actor.send({
+          type: "APPROVE",
+          actorUserId:
+            "different-approver",
+        });
+
+        expect(
+          actor.getSnapshot().value,
+        ).toBe(
+          "approved",
+        );
+      },
+    );
+
+    it(
+      "stores the rule id and input source in versioned workflow JSON",
+      () => {
+        const definition =
+          ruleGuardDefinition();
+
+        expect(
+          definition.states
+            .pending_approval
+            .on?.APPROVE
+            ?.guard,
+        ).toEqual({
+          type: "ruleGate",
+          ruleId: RULE_ID,
+          inputSource:
+            "proposedChange.after",
+        });
+
+        expect(
+          JSON.parse(
+            JSON.stringify(
+              definition,
+            ),
+          ),
+        ).toEqual(
+          definition,
+        );
+      },
+    );
+  },
+);
