@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
-  ChevronRight, Search, Download, Share2, Sparkles, Plus,
+  Search, Download, Share2, Sparkles, Plus,
   Maximize2, Minimize2, LayoutList, Network,
 } from "lucide-react";
 import { StrategyNode, NodeType, NodeStatus } from "@/types/strategy";
@@ -11,7 +11,6 @@ import { initialStrategyData } from "@/data/mockStrategyData";
 import { addChild, collectIds, filterTree, flatten, isFiltering, Filters } from "@/lib/treeUtils";
 import TreeRow from "./TreeRow";
 import AddNodeModal from "./AddNodeModal";
-import Topbar from "@/components/layout/Topbar";
 
 export default function StrategyHierarchyPage() {
   const [tree, setTree] = useState<StrategyNode>(initialStrategyData);
@@ -58,17 +57,7 @@ export default function StrategyHierarchyPage() {
   const listRows = useMemo(() => (filteredTree ? flatten(filteredTree) : []), [filteredTree]);
 
   return (
-    <div className="w-full">
-      <Topbar />
-
-      <div className="p-6">
-      {/* breadcrumb */}
-      <div className="mb-4 flex items-center gap-1.5 text-sm text-gray-500">
-        <span>Home</span>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <span className="font-medium text-gray-900">Strategy Hierarchy</span>
-      </div>
-
+    <div className="p-4 sm:p-6">
       {/* header */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -77,7 +66,7 @@ export default function StrategyHierarchyPage() {
             Manage your complete organizational strategy · {totalNodes} nodes
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button onClick={exportJson} className="flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
             <Download className="h-4 w-4" /> Export
           </button>
@@ -158,7 +147,7 @@ export default function StrategyHierarchyPage() {
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
           <span>Name</span>
-          <div className="flex items-center gap-6">
+          <div className="hidden items-center gap-6 md:flex">
             <span className="w-20">Own</span>
             <span className="w-36">Progress</span>
           </div>
@@ -187,7 +176,7 @@ export default function StrategyHierarchyPage() {
             const statusCfg = STATUS_CONFIG[node.status];
             const Icon = typeCfg.icon;
             return (
-              <div key={node.id} className="flex h-[52px] items-center justify-between border-b border-gray-100 px-4 hover:bg-gray-50">
+              <div key={node.id} className="flex flex-col gap-1.5 border-b border-gray-100 px-4 py-2.5 hover:bg-gray-50 md:h-[52px] md:flex-row md:items-center md:justify-between md:gap-4 md:py-0">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${typeCfg.bg}`}>
                     <Icon className={`h-3.5 w-3.5 ${typeCfg.text}`} />
@@ -195,24 +184,23 @@ export default function StrategyHierarchyPage() {
                   <span className="truncate text-[15px] text-gray-900">{node.name}</span>
                   <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">{typeCfg.label}</span>
                 </div>
-                <div className="flex shrink-0 items-center gap-6">
-                  <div className="flex w-20 items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${statusCfg.dot}`} />
-                    <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white ${node.owner.color}`}>
+                <div className="flex items-center gap-3 pl-9 sm:gap-4 md:shrink-0 md:gap-6 md:pl-0">
+                  <div className="flex items-center gap-2 md:w-20">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${statusCfg.dot}`} />
+                    <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${node.owner.color}`}>
                       {node.owner.initials}
                     </span>
                   </div>
-                  <div className="flex w-36 items-center gap-2">
-                    <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-100">
+                  <div className="flex min-w-0 flex-1 items-center gap-2 md:w-36 md:flex-none">
+                    <div className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-gray-100 sm:w-16 md:w-24">
                       <div className={`h-full rounded-full ${statusCfg.bar}`} style={{ width: `${node.progress}%` }} />
                     </div>
-                    <span className="w-9 text-right text-sm text-gray-600">{node.progress}%</span>
+                    <span className="w-9 shrink-0 text-right text-sm text-gray-600">{node.progress}%</span>
                   </div>
                 </div>
               </div>
             );
           })}
-      </div>
       </div>
 
       {modalParentId && (

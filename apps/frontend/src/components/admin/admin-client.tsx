@@ -210,8 +210,8 @@ export function AdminClient({
 
       {tab === "mappings" && (
         <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1.3fr_1fr]">
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <table className="w-full text-start text-[13px]">
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+            <table className="w-full min-w-[600px] text-start text-[13px]">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   <th className="px-4 py-2.5 text-start font-medium">{t("admin.mappingGroup")}</th>
@@ -401,7 +401,8 @@ export function AdminClient({
             <div className="border-b border-slate-100 px-4 py-2.5 text-[13px] font-semibold text-slate-700">
               {t("admin.grantsHistory")}
             </div>
-            <table className="w-full text-start text-[13px]">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[520px] text-start text-[13px]">
               <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   <th className="px-4 py-2.5 text-start font-medium">{t("common.role")}</th>
@@ -430,6 +431,7 @@ export function AdminClient({
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}

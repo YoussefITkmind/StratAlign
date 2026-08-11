@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import {
-  ChevronRight, Search, Download, Plus, BookOpen,
+  Search, Download, Plus, BookOpen,
   Network, LayoutList,
 } from "lucide-react";
 import { Scorecard, Filters } from "@/types/scorecard";
@@ -50,16 +50,7 @@ export default function BalancedScorecardsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-[1400px] p-6">
-      {/* breadcrumb */}
-      <div className="mb-4 flex items-center gap-1.5 text-sm text-gray-500">
-        <span>Home</span>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <span>Strategy</span>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <span className="font-medium text-gray-900">Balanced Scorecards</span>
-      </div>
-
+    <div className="mx-auto max-w-[1400px] p-4 sm:p-6">
       {/* header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -74,7 +65,7 @@ export default function BalancedScorecardsPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center rounded-full border border-gray-200 bg-gray-50 p-1">
             <button
               onClick={() => setView("tree")}
@@ -152,9 +143,9 @@ export default function BalancedScorecardsPage() {
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
           <span>Scorecard / Perspective / KPI</span>
-          <div className="flex items-center gap-6">
-            <span className="w-28 text-right">Score</span>
-            <span className="w-6 text-right">Owner</span>
+          <div className="hidden items-center gap-4 md:flex">
+            <span className="w-24 text-right">Score</span>
+            <span className="w-9 text-center">Owner</span>
           </div>
         </div>
 
@@ -177,13 +168,13 @@ export default function BalancedScorecardsPage() {
             const statusCfg = SCORECARD_STATUS_CONFIG[sc.status];
             const color = scoreColor(sc.score);
             return (
-              <div key={sc.id} className="flex h-16 items-center justify-between border-b border-gray-100 px-4 last:border-b-0 hover:bg-gray-50">
+              <div key={sc.id} className="flex flex-col gap-2 border-b border-gray-100 px-4 py-3 last:border-b-0 hover:bg-gray-50 md:h-16 md:flex-row md:items-center md:justify-between md:py-0">
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50">
                     <BookOpen className="h-4 w-4 text-blue-600" />
                   </span>
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="truncate text-[15px] font-semibold text-gray-900">{sc.name}</span>
                       <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusCfg.badgeBg} ${statusCfg.badgeText}`}>
                         {statusCfg.label}
@@ -194,11 +185,14 @@ export default function BalancedScorecardsPage() {
                     </p>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <div className="h-1.5 w-28 overflow-hidden rounded-full bg-gray-100">
-                    <div className={`h-full rounded-full ${color.bar}`} style={{ width: `${sc.score}%` }} />
+                <div className="flex items-center gap-4 pl-[48px] md:pl-0 md:shrink-0">
+                  <div className="flex items-center gap-2 md:w-24 md:justify-end">
+                    <div className="h-1.5 w-16 shrink-0 overflow-hidden rounded-full bg-gray-100 md:w-14">
+                      <div className={`h-full rounded-full ${color.bar}`} style={{ width: `${sc.score}%` }} />
+                    </div>
+                    <span className={`shrink-0 text-right text-sm font-semibold ${color.text}`}>{sc.score}%</span>
                   </div>
-                  <span className={`w-10 text-right text-sm font-semibold ${color.text}`}>{sc.score}%</span>
+                  <div className="hidden w-9 shrink-0 md:block" aria-hidden="true" />
                 </div>
               </div>
             );
