@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "scheduling"]
+  schemas  = ["public", "iam", "rules", "audit", "scheduling", "strategy"]
 }
 
 model SystemSetting {
@@ -21,22 +21,26 @@ model SystemSetting {
 }
 
 model User {
-  id                      String                   @id @default(uuid())
-  email                   String                   @unique
-  displayName             String?                  @map("display_name")
-  emailVerifiedAt         DateTime?                @map("email_verified_at")
-  preferredLocale         String                   @default("en") @map("preferred_locale")
-  createdAt               DateTime                 @default(now()) @map("created_at")
-  updatedAt               DateTime                 @updatedAt @map("updated_at")
-  localCredential         LocalCredential?
-  oidcIdentities          OidcIdentity[]
-  scopeGrants             ScopeGrant[]             @relation("ScopeGrantUser")
-  grantsGiven             ScopeGrant[]             @relation("ScopeGrantGrantor")
-  mappingsCreated         GroupRoleMapping[]       @relation("MappingCreator")
-  rulesCreated            RuleDefinition[]         @relation("RuleDefinitionCreator")
-  notificationPreferences NotificationPreference[] @relation("NotificationPreferenceRecipient")
-  notificationDeliveries  NotificationDelivery[]   @relation("NotificationDeliveryRecipient")
-  notificationDigests     NotificationDigest[]     @relation("NotificationDigestRecipient")
+  id                               String                   @id @default(uuid())
+  email                            String                   @unique
+  displayName                      String?                  @map("display_name")
+  emailVerifiedAt                  DateTime?                @map("email_verified_at")
+  preferredLocale                  String                   @default("en") @map("preferred_locale")
+  createdAt                        DateTime                 @default(now()) @map("created_at")
+  updatedAt                        DateTime                 @updatedAt @map("updated_at")
+  localCredential                  LocalCredential?
+  oidcIdentities                   OidcIdentity[]
+  scopeGrants                      ScopeGrant[]             @relation("ScopeGrantUser")
+  grantsGiven                      ScopeGrant[]             @relation("ScopeGrantGrantor")
+  mappingsCreated                  GroupRoleMapping[]       @relation("MappingCreator")
+  rulesCreated                     RuleDefinition[]         @relation("RuleDefinitionCreator")
+  notificationPreferences          NotificationPreference[] @relation("NotificationPreferenceRecipient")
+  notificationDeliveries           NotificationDelivery[]   @relation("NotificationDeliveryRecipient")
+  notificationDigests              NotificationDigest[]     @relation("NotificationDigestRecipient")
+  strategyNodesCreated             StrategyNode[]           @relation("StrategyNodeCreator")
+  strategyOwnerAssignments         OwnerAssignment[]        @relation("StrategyOwner")
+  strategyOwnerAssignmentsAssigned OwnerAssignment[]        @relation("StrategyAssigner")
+  strategyStagedChangesRequested   StagedChange[]           @relation("StrategyStagedChangeRequester")
 
   @@map("users")
   @@schema("iam")
@@ -259,6 +263,171 @@ model EntitySnapshot {
   @@index([aggregateType, aggregateId, validFrom, validTo])
   @@map("entity_snapshots")
   @@schema("audit")
+}
+
+// ---------------------------------------------------------------------------
+// Strategy model
+// ---------------------------------------------------------------------------
+
+enum StrategyNodeType {
+  CORPORATE_STRATEGY @map("corporate_strategy")
+  THEME              @map("theme")
+  OBJECTIVE          @map("objective")
+  STRATEGIC_PLAY     @map("strategic_play")
+  PORTFOLIO          @map("portfolio")
+  AREA_OF_FOCUS      @map("area_of_focus")
+
+  @@schema("strategy")
+}
+
+enum StrategyNodeState {
+  DRAFT   @map("draft")
+  ACTIVE  @map("active")
+  RETIRED @map("retired")
+
+  @@schema("strategy")
+}
+
+enum StrategyEdgeType {
+  CONTAINS             @map("contains")
+  EXECUTED_BY          @map("executed_by")
+  BELONGS_TO_PORTFOLIO @map("belongs_to_portfolio")
+  ALIGNS_TO            @map("aligns_to")
+
+  @@schema("strategy")
+}
+
+enum PlanVersionStatus {
+  DRAFT  @map("draft")
+  ACTIVE @map("active")
+  CLOSED @map("closed")
+
+  @@schema("strategy")
+}
+
+enum StagedChangeKind {
+  NODE_CREATE @map("node_create")
+  NODE_UPDATE @map("node_update")
+  NODE_RETIRE @map("node_retire")
+  EDGE_LINK   @map("edge_link")
+  EDGE_UNLINK @map("edge_unlink")
+
+  @@schema("strategy")
+}
+
+enum StagedChangeStatus {
+  PENDING   @map("pending")
+  APPLIED   @map("applied")
+  CANCELLED @map("cancelled")
+
+  @@schema("strategy")
+}
+
+model PlanVersion {
+  id                     String            @id @default(uuid()) @db.Uuid
+  name                   String
+  status                 PlanVersionStatus @default(DRAFT)
+  opensAt                DateTime?         @map("opens_at")
+  closesAt               DateTime?         @map("closes_at")
+  sourcePlanVersionId    String?           @map("source_plan_version_id") @db.Uuid
+  sourcePlanVersion      PlanVersion?      @relation("PlanVersionCarryForward", fields: [sourcePlanVersionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  carriedForwardVersions PlanVersion[]     @relation("PlanVersionCarryForward")
+  nodes                  StrategyNode[]
+  edges                  StrategyEdge[]
+  stagedChanges          StagedChange[]
+
+  @@index([status])
+  @@index([sourcePlanVersionId])
+  @@map("plan_versions")
+  @@schema("strategy")
+}
+
+model StrategyNode {
+  id               String            @id @default(uuid()) @db.Uuid
+  type             StrategyNodeType
+  nameEn           String            @map("name_en")
+  nameAr           String            @map("name_ar")
+  planVersionId    String            @map("plan_version_id") @db.Uuid
+  state            StrategyNodeState @default(DRAFT)
+  createdBy        String            @map("created_by")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  planVersion      PlanVersion       @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creator          User              @relation("StrategyNodeCreator", fields: [createdBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  outgoingEdges    StrategyEdge[]    @relation("StrategyEdgeFrom")
+  incomingEdges    StrategyEdge[]    @relation("StrategyEdgeTo")
+  ownerAssignments OwnerAssignment[]
+
+  @@index([planVersionId, type])
+  @@index([planVersionId, state])
+  @@map("strategy_nodes")
+  @@schema("strategy")
+}
+
+model StrategyEdge {
+  id            String           @id @default(uuid()) @db.Uuid
+  fromNodeId    String           @map("from_node_id") @db.Uuid
+  toNodeId      String           @map("to_node_id") @db.Uuid
+  edgeType      StrategyEdgeType @map("edge_type")
+  planVersionId String           @map("plan_version_id") @db.Uuid
+  fromNode      StrategyNode     @relation("StrategyEdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  toNode        StrategyNode     @relation("StrategyEdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  planVersion   PlanVersion      @relation(fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([fromNodeId, toNodeId, edgeType, planVersionId])
+  @@index([fromNodeId])
+  @@index([toNodeId])
+  @@index([planVersionId])
+  @@map("strategy_edges")
+  @@schema("strategy")
+}
+
+model RelationshipRule {
+  id       String           @id @default(uuid()) @db.Uuid
+  fromType StrategyNodeType @map("from_type")
+  toType   StrategyNodeType @map("to_type")
+  edgeType StrategyEdgeType @map("edge_type")
+  minCount Int              @default(0) @map("min_count")
+  maxCount Int?             @map("max_count")
+
+  @@unique([fromType, toType, edgeType])
+  @@map("relationship_rules")
+  @@schema("strategy")
+}
+
+model OwnerAssignment {
+  id          String       @id @default(uuid()) @db.Uuid
+  nodeId      String       @map("node_id") @db.Uuid
+  ownerUserId String       @map("owner_user_id")
+  assignedBy  String       @map("assigned_by")
+  assignedAt  DateTime     @default(now()) @map("assigned_at")
+  node        StrategyNode @relation(fields: [nodeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  owner       User         @relation("StrategyOwner", fields: [ownerUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  assigner    User         @relation("StrategyAssigner", fields: [assignedBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([nodeId, ownerUserId])
+  @@index([ownerUserId])
+  @@map("owner_assignments")
+  @@schema("strategy")
+}
+
+model StagedChange {
+  id             String             @id @default(uuid()) @db.Uuid
+  approvalCaseId String             @map("approval_case_id") @db.Uuid
+  planVersionId  String             @map("plan_version_id") @db.Uuid
+  kind           StagedChangeKind
+  targetId       String?            @map("target_id") @db.Uuid
+  payload        Json
+  status         StagedChangeStatus @default(PENDING)
+  requestedBy    String             @map("requested_by")
+  requestedAt    DateTime           @default(now()) @map("requested_at")
+  appliedAt      DateTime?          @map("applied_at")
+  planVersion    PlanVersion        @relation(fields: [planVersionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  requester      User               @relation("StrategyStagedChangeRequester", fields: [requestedBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([approvalCaseId, status])
+  @@index([planVersionId, status])
+  @@map("staged_changes")
+  @@schema("strategy")
 }
 
 // ---------------------------------------------------------------------------
