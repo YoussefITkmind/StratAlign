@@ -26,7 +26,9 @@ import {
   GOVERNANCE_EVENT_TYPES,
   GOVERNANCE_EVENT_VERSION,
   governanceDecisionDedupeKey,
+  governancePendingDedupeKey,
   type GovernanceDecisionPayload,
+  type GovernanceApprovalPendingPayload,
 } from "./governance.events";
 
 import {
@@ -79,6 +81,8 @@ export interface CreateApprovalCaseInput {
   entityType: string;
   entityId: string;
   submittedBy: string;
+  approvalParticipantId: string;
+  approvalSlaMs?: number;
   proposedChange: ProposedChange;
 }
 
@@ -178,6 +182,11 @@ export class GovernanceService {
         entityType: input.entityType,
         entityId: input.entityId,
         submittedBy: input.submittedBy,
+        approvalParticipantId:
+          input.approvalParticipantId,
+        approvalSlaMs:
+          input.approvalSlaMs ??
+          86_400_000,
         currentState: stateValueToPrisma(
           actor.getSnapshot().value,
         ),
@@ -348,6 +357,77 @@ export class GovernanceService {
             });
           }
 
+          if (
+            effects.has(
+              "scheduleEscalation",
+            )
+          ) {
+            if (
+              !approvalCase
+                .approvalParticipantId
+            ) {
+              throw new Error(
+                "Approval case has no assigned approval participant.",
+              );
+            }
+
+            const deadline =
+              new Date(
+                Date.now() +
+                  approvalCase
+                    .approvalSlaMs,
+              );
+
+            const payload:
+              GovernanceApprovalPendingPayload = {
+                approvalCaseId:
+                  approvalCase.id,
+
+                entityType:
+                  approvalCase.entityType,
+
+                entityId:
+                  approvalCase.entityId,
+
+                participantUserId:
+                  approvalCase
+                    .approvalParticipantId,
+
+                deadline:
+                  deadline.toISOString(),
+              };
+
+            await this.eventBus.publishWithin(
+              tx,
+              [
+                {
+                  eventType:
+                    GOVERNANCE_EVENT_TYPES
+                      .approvalPending,
+
+                  eventVersion:
+                    GOVERNANCE_EVENT_VERSION,
+
+                  aggregateType:
+                    GOVERNANCE_AGGREGATE_TYPE,
+
+                  aggregateId:
+                    approvalCase.id,
+
+                  dedupeKey:
+                    governancePendingDedupeKey(
+                      approvalCase.id,
+                      deadline,
+                    ),
+
+                  payload,
+                },
+              ],
+            );
+
+            publishedEvent = true;
+          }
+
           const eventType =
             effects.has(
               "emitApprovalGranted",
@@ -466,6 +546,9 @@ export class GovernanceService {
       where: {
         currentState:
           ApprovalCaseState.PENDING_APPROVAL,
+
+        approvalParticipantId:
+          viewerUserId,
 
         submittedBy: {
           not: viewerUserId,

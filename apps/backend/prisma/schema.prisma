@@ -47,6 +47,7 @@ model User {
   commentaryAuthored                Commentary[]             @relation("CommentaryAuthor")
   captureSessionsOwned              CaptureSession[]         @relation("CaptureSessionOwner")
   approvalCasesSubmitted            ApprovalCase[]           @relation("ApprovalCaseSubmitter")
+  approvalCasesAssigned             ApprovalCase[]           @relation("ApprovalCaseParticipant")
   governanceEscalationsAssigned     EscalationCase[]         @relation("EscalationParticipant")
   governanceEscalationsAcknowledged EscalationCase[]         @relation("EscalationAcknowledgedBy")
   governanceDecisionsMade           DecisionLogEntry[]       @relation("DecisionLogActor")
@@ -293,19 +294,23 @@ model ApprovalCase {
   entityType            String            @map("entity_type")
   entityId              String            @map("entity_id")
   submittedBy           String            @map("submitted_by")
+  approvalParticipantId String?           @map("approval_participant_id")
+  approvalSlaMs         Int               @default(86400000) @map("approval_sla_ms")
   currentState          ApprovalCaseState @default(DRAFT) @map("current_state")
   xstateContextSnapshot Json              @map("xstate_context_snapshot")
   createdAt             DateTime          @default(now()) @map("created_at")
   updatedAt             DateTime          @updatedAt @map("updated_at")
 
-  workflowDefinition WorkflowDefinition @relation(fields: [workflowDefinitionId], references: [id], onDelete: Restrict)
-  submitter          User               @relation("ApprovalCaseSubmitter", fields: [submittedBy], references: [id], onDelete: Restrict)
-  escalations        EscalationCase[]
-  decisionLog        DecisionLogEntry?
+  workflowDefinition  WorkflowDefinition @relation(fields: [workflowDefinitionId], references: [id], onDelete: Restrict)
+  submitter           User               @relation("ApprovalCaseSubmitter", fields: [submittedBy], references: [id], onDelete: Restrict)
+  approvalParticipant User?              @relation("ApprovalCaseParticipant", fields: [approvalParticipantId], references: [id], onDelete: Restrict)
+  escalations         EscalationCase[]
+  decisionLog         DecisionLogEntry?
 
   @@index([workflowDefinitionId])
   @@index([entityType, entityId])
   @@index([submittedBy])
+  @@index([approvalParticipantId, currentState])
   @@index([currentState])
   @@map("approval_cases")
   @@schema("governance")
@@ -325,6 +330,7 @@ model EscalationCase {
   participantUser User         @relation("EscalationParticipant", fields: [participant], references: [id], onDelete: Restrict)
   acknowledger    User?        @relation("EscalationAcknowledgedBy", fields: [acknowledgedBy], references: [id], onDelete: Restrict)
 
+  @@unique([caseId, participant, deadline])
   @@index([caseId])
   @@index([participant, acknowledgedAt])
   @@index([deadline, acknowledgedAt])

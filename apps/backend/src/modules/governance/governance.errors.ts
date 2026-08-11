@@ -39,3 +39,21 @@ export class GovernanceApprovalReferenceError extends Error {
     this.name = "GovernanceApprovalReferenceError";
   }
 }
+
+export class GovernanceEscalationNotFoundError extends Error {
+  readonly code = "GOVERNANCE_ESCALATION_NOT_FOUND";
+
+  constructor(escalationId: string) {
+    super(`Escalation case ${escalationId} was not found.`);
+    this.name = "GovernanceEscalationNotFoundError";
+  }
+}
+
+export class GovernanceEscalationParticipantError extends Error {
+  readonly code = "GOVERNANCE_ESCALATION_PARTICIPANT_MISMATCH";
+
+  constructor() {
+    super("Only the assigned escalation participant can acknowledge this escalation.");
+    this.name = "GovernanceEscalationParticipantError";
+  }
+}

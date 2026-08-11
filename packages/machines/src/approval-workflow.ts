@@ -30,6 +30,7 @@ export const APPROVAL_ACTION_REFS = [
   "recordDecision",
   "recordChangesRequested",
   "recordResubmission",
+  "scheduleEscalation",
   "emitApprovalGranted",
   "emitApprovalRejected",
 ] as const;
@@ -130,7 +131,10 @@ export const DEFAULT_APPROVAL_WORKFLOW_DEFINITION =
         on: {
           SUBMIT: {
             target: "pending_approval",
-            actions: ["recordSubmission"],
+            actions: [
+              "recordSubmission",
+              "scheduleEscalation",
+            ],
           },
         },
       },
@@ -176,7 +180,10 @@ export const DEFAULT_APPROVAL_WORKFLOW_DEFINITION =
         on: {
           RESUBMIT: {
             target: "pending_approval",
-            actions: ["recordResubmission"],
+            actions: [
+              "recordResubmission",
+              "scheduleEscalation",
+            ],
           },
         },
       },
@@ -230,6 +237,7 @@ const approvalSetup = setup({
     recordDecision: () => undefined,
     recordChangesRequested: () => undefined,
     recordResubmission: () => undefined,
+    scheduleEscalation: () => undefined,
     emitApprovalGranted: () => undefined,
     emitApprovalRejected: () => undefined,
   },
@@ -544,6 +552,12 @@ export function createApprovalMachine(input: {
 
       recordResubmission: ({ context, event }) =>
         input.actions?.recordResubmission?.({
+          context,
+          event,
+        }),
+
+      scheduleEscalation: ({ context, event }) =>
+        input.actions?.scheduleEscalation?.({
           context,
           event,
         }),

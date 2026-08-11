@@ -18,6 +18,7 @@ import { AuthenticationFreshnessService } from "./modules/iam/authentication-fre
 import { IamAuthorizationService } from "./modules/iam/iam-authorization.service";
 import { IamAdminService } from "./modules/iam/iam-admin.service";
 import { RulesService } from "./modules/rules/rules.service";
+import { GovernanceService } from "./modules/governance/governance.service";
 import { SnapshotService } from "./modules/audit/snapshot.service";
 import { ApiAuditTapService } from "./modules/audit/api-audit-tap.service";
 import { StrategyService } from "./modules/strategy/strategy.service";
@@ -59,6 +60,10 @@ async function bootstrap(): Promise<void> {
   const authorization = new IamAuthorizationService(prisma, authenticationFreshness);
   const iam = new IamAdminService(prisma);
   const rules = new RulesService(prisma);
+  const governance = new GovernanceService(
+    prisma,
+    eventBus,
+  );
   const strategy = new StrategyService(prisma);
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
 
@@ -114,6 +119,7 @@ async function bootstrap(): Promise<void> {
         authorization,
         iam,
         rules,
+        governance,
         strategy,
         strategyTraversal,
         registry,

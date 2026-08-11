@@ -187,6 +187,12 @@ describe.sequential(
         submittedBy:
           submitterId,
 
+        approvalParticipantId:
+          approverId,
+
+        approvalSlaMs:
+          60_000,
+
         proposedChange: {
           before: {
             status: "draft",
