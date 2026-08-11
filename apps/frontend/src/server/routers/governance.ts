@@ -1,61 +1,363 @@
-import { z } from "zod";
-import { TRPCError } from "@trpc/server";
-import { OwnSubmissionError, adminProcedure, router } from "@/server/trpc";
-import { governanceCases, recordAudit } from "@/server/mock-db";
+import {
+  z,
+} from "zod";
 
-export const governanceRouter = router({
-  /**
-   * Cases pending a decision from this approver. Excludes the viewer's own
-   * submissions up front (separation of duties) — `decide` enforces the same
-   * rule again server-side so a direct call can't bypass it via a stale list.
+import {
+  authenticatedProcedure,
+  router,
+} from "@/server/trpc";
+
+import {
+  createBackendGovernanceClient,
+  translateBackendGovernanceError,
+} from "@/server/backend-governance-client";
+
+type BackendGovernanceState =
+  | "DRAFT"
+  | "PENDING_APPROVAL"
+  | "APPROVED"
+  | "REJECTED"
+  | "CHANGES_REQUESTED";
+
+interface BackendGovernanceCase {
+  id: string;
+  workflowDefinitionId: string;
+  entityType: string;
+  entityId: string;
+  submittedBy: string;
+  approvalParticipantId:
+    string | null;
+  approvalSlaMs: number;
+  currentState:
+    BackendGovernanceState;
+  xstateContextSnapshot:
+    unknown;
+  createdAt:
+    string | Date;
+  updatedAt:
+    string | Date;
+}
+
+function backend(
+  ctx: {
+    cookieHeader:
+      string | null;
+  },
+) {
+  return createBackendGovernanceClient(
+    ctx.cookieHeader,
+  );
+}
+
+function asRecord(
+  value: unknown,
+): Record<string, unknown> {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  ) {
+    return value as
+      Record<string, unknown>;
+  }
+
+  return {};
+}
+
+function diffValue(
+  value: unknown,
+): Record<string, unknown> {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  ) {
+    return value as
+      Record<string, unknown>;
+  }
+
+  if (value === undefined) {
+    return {};
+  }
+
+  return {
+    value,
+  };
+}
+
+function extractProposedChange(
+  snapshot: unknown,
+) {
+  const root =
+    asRecord(snapshot);
+
+  const context =
+    asRecord(
+      root.context,
+    );
+
+  const proposedChange =
+    asRecord(
+      context.proposedChange,
+    );
+
+  return {
+    before:
+      diffValue(
+        proposedChange.before,
+      ),
+
+    after:
+      diffValue(
+        proposedChange.after,
+      ),
+
+    impactSummary:
+      proposedChange
+        .impactSummary,
+  };
+}
+
+function mapStatus(
+  state:
+    BackendGovernanceState,
+) {
+  switch (state) {
+    case "DRAFT":
+      return "draft" as const;
+
+    case "PENDING_APPROVAL":
+      return "pending" as const;
+
+    case "APPROVED":
+      return "approved" as const;
+
+    case "REJECTED":
+      return "rejected" as const;
+
+    case "CHANGES_REQUESTED":
+      return "changes_requested" as const;
+  }
+}
+
+function toFrontendCase(
+  item:
+    BackendGovernanceCase,
+) {
+  /*
+   * getCase currently returns richer runtime data
+   * from GovernanceService than the public contract
+   * requires. Use it when present without making
+   * the frontend depend on those extra fields.
    */
-  myPendingApprovals: adminProcedure.query(({ ctx }) => {
-    return governanceCases
-      .filter((c) => c.status === "pending" && c.submittedBy !== ctx.user.email)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }),
+  const runtime =
+    item as BackendGovernanceCase & {
+      escalations?: unknown[];
+      decisionLog?: {
+        decidedBy?: string;
+        decidedAt?:
+          string | Date;
+        rationale?:
+          string | null;
+      } | null;
+    };
 
-  getCase: adminProcedure.input(z.object({ id: z.string() })).query(({ input }) => {
-    const found = governanceCases.find((c) => c.id === input.id);
-    if (!found) throw new TRPCError({ code: "NOT_FOUND", message: "Case not found." });
-    return found;
-  }),
+  return {
+    id:
+      item.id,
 
-  decide: adminProcedure
-    .input(
-      z.object({
-        id: z.string(),
-        decision: z.enum(["approved", "rejected"]),
-        reason: z.string().optional(),
-      })
-    )
-    .mutation(({ ctx, input }) => {
-      const item = governanceCases.find((c) => c.id === input.id);
-      if (!item) throw new TRPCError({ code: "NOT_FOUND", message: "Case not found." });
-      if (item.status !== "pending") {
-        throw new TRPCError({ code: "CONFLICT", message: "Case already decided." });
-      }
-      // Separation of duties: enforced here regardless of what the list
-      // endpoint returned, so a direct procedure call can't bypass it.
-      if (item.submittedBy === ctx.user.email) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "You cannot approve or reject your own submission.",
-          cause: new OwnSubmissionError(),
-        });
-      }
+    caseType:
+      item.entityType,
 
-      item.status = input.decision;
-      item.decidedBy = ctx.user.email;
-      item.decidedAt = new Date().toISOString();
-      item.decisionReason = input.reason;
+    entityType:
+      item.entityType,
 
-      recordAudit(
-        `governance.case.${input.decision}`,
-        ctx.user.email,
-        `Case ${item.id} (${item.caseType}) submitted by ${item.submittedBy}`
-      );
+    entityId:
+      item.entityId,
 
-      return item;
-    }),
-});
+    status:
+      mapStatus(
+        item.currentState,
+      ),
+
+    submittedBy:
+      item.submittedBy,
+
+    approvalParticipantId:
+      item.approvalParticipantId,
+
+    createdAt:
+      String(
+        item.createdAt,
+      ),
+
+    updatedAt:
+      String(
+        item.updatedAt,
+      ),
+
+    escalated:
+      Array.isArray(
+        runtime.escalations,
+      ) &&
+      runtime.escalations
+        .length > 0,
+
+    proposedChange:
+      extractProposedChange(
+        item.xstateContextSnapshot,
+      ),
+
+    decidedBy:
+      runtime.decisionLog
+        ?.decidedBy,
+
+    decidedAt:
+      runtime.decisionLog
+        ?.decidedAt
+        ? String(
+            runtime
+              .decisionLog
+              .decidedAt,
+          )
+        : undefined,
+
+    decisionReason:
+      runtime.decisionLog
+        ?.rationale ??
+      undefined,
+  };
+}
+
+const caseIdSchema =
+  z.string().uuid();
+
+export const governanceRouter =
+  router({
+    myPendingApprovals:
+      authenticatedProcedure
+        .query(
+          async ({ ctx }) => {
+            try {
+              const cases =
+                await backend(
+                  ctx,
+                )
+                  .governance
+                  .myPendingApprovals
+                  .query();
+
+              return cases.map(
+                (item) =>
+                  toFrontendCase(
+                    item as
+                      BackendGovernanceCase,
+                  ),
+              );
+            } catch (error) {
+              translateBackendGovernanceError(
+                error,
+              );
+            }
+          },
+        ),
+
+    getCase:
+      authenticatedProcedure
+        .input(
+          z.object({
+            id:
+              caseIdSchema,
+          }).strict(),
+        )
+        .query(
+          async ({
+            ctx,
+            input,
+          }) => {
+            try {
+              const item =
+                await backend(
+                  ctx,
+                )
+                  .governance
+                  .getCase
+                  .query({
+                    caseId:
+                      input.id,
+                  });
+
+              return toFrontendCase(
+                item as
+                  BackendGovernanceCase,
+              );
+            } catch (error) {
+              translateBackendGovernanceError(
+                error,
+              );
+            }
+          },
+        ),
+
+    decide:
+      authenticatedProcedure
+        .input(
+          z.object({
+            id:
+              caseIdSchema,
+
+            decision:
+              z.enum([
+                "approved",
+                "rejected",
+              ]),
+
+            reason:
+              z.string()
+                .trim()
+                .max(4000)
+                .optional(),
+          }).strict(),
+        )
+        .mutation(
+          async ({
+            ctx,
+            input,
+          }) => {
+            try {
+              const item =
+                await backend(
+                  ctx,
+                )
+                  .governance
+                  .decide
+                  .mutate({
+                    caseId:
+                      input.id,
+
+                    decision:
+                      input.decision ===
+                        "approved"
+                        ? "approve"
+                        : "reject",
+
+                    ...(input.reason
+                      ? {
+                          rationale:
+                            input.reason,
+                        }
+                      : {}),
+                  });
+
+              return toFrontendCase(
+                item as
+                  BackendGovernanceCase,
+              );
+            } catch (error) {
+              translateBackendGovernanceError(
+                error,
+              );
+            }
+          },
+        ),
+  });

@@ -65,8 +65,7 @@ export function CaseDetailClient({ caseId }: { caseId: string }) {
       utils.governance.myPendingApprovals.invalidate();
     },
     onError: (err) => {
-      const isOwnSubmission = (err.data as { ownSubmission?: boolean } | undefined)?.ownSubmission;
-      setError(isOwnSubmission ? t("approvals.ownCaseBlocked") : err.message);
+      setError(err.message);
     },
   });
 

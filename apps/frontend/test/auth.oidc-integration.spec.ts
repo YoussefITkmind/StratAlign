@@ -190,7 +190,7 @@ describe("canonical Auth.js OIDC reconciliation", () => {
     expect(session).not.toHaveProperty("sessionId");
   });
 
-  it("accepts any non-empty credentials without checking the backend (demo mode)", async () => {
+  it("authenticates credentials through the backend and uses the platform user ID", async () => {
     const provider = authConfig.providers.find(
       (candidate) =>
         typeof candidate !== "function" && candidate.id === "credentials",
@@ -208,18 +208,61 @@ describe("canonical Auth.js OIDC reconciliation", () => {
 
     expect(authorize).toBeTypeOf("function");
 
+    const platformUser = {
+      id: "4d2b619c-246a-4dde-a479-31179ed049ad",
+      email: "credential-user@example.test",
+      displayName: "Credential User",
+    };
+
+    login.mockResolvedValue(platformUser);
+
+    await expect(
+      authorize!({
+        email: "credential-user@example.test",
+        password: "correct-password",
+      }),
+    ).resolves.toEqual({
+      id: platformUser.id,
+      email: platformUser.email,
+      name: platformUser.displayName,
+    });
+
+    expect(login).toHaveBeenCalledOnce();
+    expect(login).toHaveBeenCalledWith({
+      email: "credential-user@example.test",
+      password: "correct-password",
+    });
+  });
+
+  it("rejects credentials when backend authentication fails", async () => {
+    const provider = authConfig.providers.find(
+      (candidate) =>
+        typeof candidate !== "function" && candidate.id === "credentials",
+    );
+
+    const authorize = (
+      provider as {
+        authorize?: (
+          credentials: Record<string, unknown>,
+        ) => unknown | Promise<unknown>;
+      }
+    ).authorize;
+
+    login.mockRejectedValue(
+      new Error("Invalid credentials"),
+    );
+
     await expect(
       authorize!({
         email: "credential-user@example.test",
         password: "wrong-password",
       }),
-    ).resolves.toEqual({
-      id: "credential-user@example.test",
-      email: "credential-user@example.test",
-      name: "credential-user",
-    });
+    ).resolves.toBeNull();
 
-    expect(login).not.toHaveBeenCalled();
+    expect(login).toHaveBeenCalledWith({
+      email: "credential-user@example.test",
+      password: "wrong-password",
+    });
   });
 
   it("rejects credentials with an empty email or password", async () => {

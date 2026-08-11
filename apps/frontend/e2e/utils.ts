@@ -15,7 +15,10 @@ export async function loginWithCredentials(
     // The submit handler awaits signIn() client-side before router.push —
     // wait for that navigation so the session cookie is actually set before
     // the caller's next action (e.g. a direct API call) runs.
-    await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 10_000 });
+    await page.waitForURL(
+      (url) => !url.pathname.startsWith("/login"),
+      { timeout: 30_000 },
+    );
   }
 }
 

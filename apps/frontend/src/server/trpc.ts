@@ -29,14 +29,10 @@ const t = initTRPC.context<Context>().create({
         actionClass: error.cause instanceof StepUpRequiredError
           ? error.cause.actionClass
           : undefined,
-        ownSubmission: error.cause instanceof OwnSubmissionError,
       },
     };
   },
 });
-
-/** Separation-of-duties: submitter tried to decide their own governance case. */
-export class OwnSubmissionError extends Error {}
 
 export const router = t.router;
 export const publicProcedure = t.procedure;
