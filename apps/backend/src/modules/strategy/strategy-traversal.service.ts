@@ -1,5 +1,6 @@
+import { Kysely, PostgresDialect, sql } from "kysely";
+import { Pool } from "pg";
 import type { StrategyEdgeType, StrategyNodeState, StrategyNodeType } from "../../generated/prisma/enums";
-import type { PrismaService } from "../../database/prisma.service";
 
 export const MAX_STRATEGY_TRAVERSAL_DEPTH = 8;
 
@@ -31,94 +32,102 @@ interface TraversalRow {
   edge_type: StrategyEdgeType | null;
 }
 
-/**
- * Recursive CTE read service for Prompt 2.2.
- *
- * TSD-09 asks traversal code to share Prisma-generated database types rather
- * than maintaining a second generated schema. The row contracts above use the
- * Prisma-generated strategy enums, while the recursive SQL is kept as a
- * parameterized CTE because Prisma itself does not expose recursive traversal.
- * The query shape is intentionally compatible with Kysely's sql/CTE model so
- * it can be moved behind the shared Kysely adapter without changing callers.
- */
+interface StrategyDatabase {
+  // Recursive statements use Kysely's typed `sql` escape hatch because CTE row
+  // types are dynamic. Domain enum types still come from the Prisma generator,
+  // so Prisma and Kysely share one source of database truth per TSD-09.
+  __strategy_type_anchor: {
+    node_type: StrategyNodeType;
+    node_state: StrategyNodeState;
+    edge_type: StrategyEdgeType;
+  };
+}
+
+/** Kysely-backed recursive CTE traversal, bounded to ADR-03's depth of eight. */
 export class StrategyTraversalService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly db: Kysely<StrategyDatabase>;
+
+  constructor(connectionString: string) {
+    this.db = new Kysely<StrategyDatabase>({
+      dialect: new PostgresDialect({
+        pool: new Pool({ connectionString, max: 4 }),
+      }),
+    });
+  }
 
   async getCascade(nodeId: string, maxDepth = MAX_STRATEGY_TRAVERSAL_DEPTH): Promise<StrategyTraversalNode[]> {
     this.assertDepth(maxDepth);
-    const rows = await this.prisma.$queryRawUnsafe<TraversalRow[]>(`
+    const result = await sql<TraversalRow>`
       WITH RECURSIVE descendants AS (
         SELECT
-          n.id, n.type, n.name_en, n.name_ar, n.plan_version_id, n.state,
-          0::integer AS depth,
-          NULL::strategy."StrategyEdgeType" AS edge_type,
-          ARRAY[n.id]::uuid[] AS path
-        FROM strategy.strategy_nodes n
-        WHERE n.id = $1::uuid
+          e.to_node_id AS id,
+          e.plan_version_id,
+          e.edge_type,
+          1::integer AS depth
+        FROM strategy.strategy_edges e
+        WHERE e.from_node_id = ${nodeId}::uuid
 
         UNION ALL
 
         SELECT
-          child.id, child.type, child.name_en, child.name_ar,
-          child.plan_version_id, child.state,
-          d.depth + 1,
+          e.to_node_id AS id,
+          e.plan_version_id,
           e.edge_type,
-          d.path || child.id
+          d.depth + 1
         FROM descendants d
         JOIN strategy.strategy_edges e
           ON e.from_node_id = d.id
          AND e.plan_version_id = d.plan_version_id
-        JOIN strategy.strategy_nodes child
-          ON child.id = e.to_node_id
-         AND child.plan_version_id = d.plan_version_id
-        WHERE d.depth < $2::integer
-          AND child.state <> 'retired'
-          AND NOT child.id = ANY(d.path)
+        WHERE d.depth < ${maxDepth}::integer
       )
-      SELECT id, type, name_en, name_ar, plan_version_id, state, depth, edge_type
-      FROM descendants
-      WHERE depth > 0
-      ORDER BY depth, id
-    `, nodeId, maxDepth);
-    return rows.map(this.mapRow);
+      SELECT
+        n.id, n.type, n.name_en, n.name_ar, n.plan_version_id, n.state,
+        d.depth, d.edge_type
+      FROM descendants d
+      JOIN strategy.strategy_nodes n
+        ON n.id = d.id
+       AND n.plan_version_id = d.plan_version_id
+      WHERE n.state <> 'retired'
+      ORDER BY d.depth, n.id
+    `.execute(this.db);
+    return result.rows.map(this.mapRow);
   }
 
   async getAncestry(nodeId: string): Promise<StrategyTraversalNode[]> {
-    const rows = await this.prisma.$queryRawUnsafe<TraversalRow[]>(`
+    const result = await sql<TraversalRow>`
       WITH RECURSIVE ancestors AS (
         SELECT
-          n.id, n.type, n.name_en, n.name_ar, n.plan_version_id, n.state,
-          0::integer AS depth,
-          NULL::strategy."StrategyEdgeType" AS edge_type,
-          ARRAY[n.id]::uuid[] AS path
-        FROM strategy.strategy_nodes n
-        WHERE n.id = $1::uuid
+          e.from_node_id AS id,
+          e.plan_version_id,
+          e.edge_type,
+          1::integer AS depth
+        FROM strategy.strategy_edges e
+        WHERE e.to_node_id = ${nodeId}::uuid
 
         UNION ALL
 
         SELECT
-          parent.id, parent.type, parent.name_en, parent.name_ar,
-          parent.plan_version_id, parent.state,
-          a.depth + 1,
+          e.from_node_id AS id,
+          e.plan_version_id,
           e.edge_type,
-          a.path || parent.id
+          a.depth + 1
         FROM ancestors a
         JOIN strategy.strategy_edges e
           ON e.to_node_id = a.id
          AND e.plan_version_id = a.plan_version_id
-        JOIN strategy.strategy_nodes parent
-          ON parent.id = e.from_node_id
-         AND parent.plan_version_id = a.plan_version_id
-        WHERE a.depth < 8
-          AND parent.state <> 'retired'
-          AND NOT parent.id = ANY(a.path)
+        WHERE a.depth < ${MAX_STRATEGY_TRAVERSAL_DEPTH}::integer
       )
-      SELECT id, type, name_en, name_ar, plan_version_id, state, depth, edge_type
-      FROM ancestors
-      WHERE depth > 0
-      ORDER BY depth DESC, id
-    `, nodeId);
-    return rows.map(this.mapRow);
+      SELECT
+        n.id, n.type, n.name_en, n.name_ar, n.plan_version_id, n.state,
+        a.depth, a.edge_type
+      FROM ancestors a
+      JOIN strategy.strategy_nodes n
+        ON n.id = a.id
+       AND n.plan_version_id = a.plan_version_id
+      WHERE n.state <> 'retired'
+      ORDER BY a.depth DESC, n.id
+    `.execute(this.db);
+    return result.rows.map(this.mapRow);
   }
 
   async getFullTrace(nodeId: string): Promise<StrategyFullTrace> {
@@ -127,6 +136,14 @@ export class StrategyTraversalService {
       this.getCascade(nodeId),
     ]);
     return { nodeId, ancestry, cascade };
+  }
+
+  async refreshTraceability(): Promise<void> {
+    await sql`REFRESH MATERIALIZED VIEW CONCURRENTLY strategy.traceability_edges`.execute(this.db);
+  }
+
+  async destroy(): Promise<void> {
+    await this.db.destroy();
   }
 
   private assertDepth(maxDepth: number): void {
