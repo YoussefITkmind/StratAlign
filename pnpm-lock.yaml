@@ -20,6 +20,9 @@ importers:
       globals:
         specifier: ^17.8.0
         version: 17.8.0
+      prisma:
+        specifier: ^7.9.1
+        version: 7.9.1(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3)
       turbo:
         specifier: ^2.5.0
         version: 2.10.8
@@ -181,9 +184,6 @@ importers:
       '@spm/domain-iam':
         specifier: workspace:*
         version: link:../domain-iam
-      '@spm/domain-strategy':
-        specifier: workspace:*
-        version: link:../domain-strategy
       '@spm/rules':
         specifier: workspace:*
         version: link:../rules
@@ -213,8 +213,6 @@ importers:
       vitest:
         specifier: 3.2.7
         version: 3.2.7(@types/node@26.1.2)(jiti@2.7.0)(supports-color@8.1.1)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0)
-
-  packages/domain-strategy: {}
 
   packages/eslint-config: {}
 

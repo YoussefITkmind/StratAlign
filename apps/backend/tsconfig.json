@@ -3,7 +3,9 @@
     "module": "commonjs",
     "moduleResolution": "node",
     "target": "ES2023",
-    "lib": ["ES2023"],
+    "lib": [
+      "ES2023"
+    ],
     "outDir": "./dist",
     "rootDir": "./src",
     "sourceMap": true,
@@ -14,8 +16,16 @@
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "ignoreDeprecations": "5.0"
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts"]
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test",
+    "**/*.spec.ts"
+  ]
 }

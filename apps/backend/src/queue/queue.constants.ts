@@ -13,6 +13,7 @@ export const QUEUE_NAMES = {
   eventsDispatch: "events.dispatch",
   notificationDelivery: "notification.delivery",
   notificationDigest: "notification.digest",
+  performanceRecompute: "performance.recompute",
   deadLetter: "dead-letter",
 } as const;
 
@@ -27,6 +28,7 @@ export const JOB_NAMES = {
   dispatchEvent: "events.dispatch-event",
   deliverNotification: "notification.deliver",
   sweepDigests: "notification.sweep-digests",
+  recomputePerformance: "performance.recompute",
   deadLetter: "dead-letter.record",
 } as const;
 

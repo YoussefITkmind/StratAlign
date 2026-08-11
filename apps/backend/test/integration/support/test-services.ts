@@ -48,24 +48,38 @@ if (!isCi && existingDatabaseUrl && existingRedisUrl) {
     return started.urls;
   }
 
-  const postgres = await new PostgreSqlContainer("postgres:17-alpine")
-    .withDatabase("spm_platform")
-    .withUsername("spm")
-    .withPassword("spm_test_password")
-    .start();
+  try {
+    const postgres = await new PostgreSqlContainer("postgres:17-alpine")
+      .withDatabase("spm_platform")
+      .withUsername("spm")
+      .withPassword("spm_test_password")
+      .start();
 
-  const redis = await new RedisContainer("redis:7-alpine").start();
+    const redis = await new RedisContainer("redis:7-alpine").start();
 
-  const urls: TestServiceUrls = {
-    databaseUrl: postgres.getConnectionUri(),
-    redisUrl: redis.getConnectionUrl(),
-  };
+    const urls: TestServiceUrls = {
+      databaseUrl: postgres.getConnectionUri(),
+      redisUrl: redis.getConnectionUrl(),
+    };
 
-  applyMigrations(urls.databaseUrl);
+    applyMigrations(urls.databaseUrl);
 
-  started = { urls, postgres, redis };
+    started = { urls, postgres, redis };
 
-  return urls;
+    return urls;
+  } catch (error) {
+    if (existingDatabaseUrl) {
+      started = {
+        urls: {
+          databaseUrl: existingDatabaseUrl,
+          redisUrl: existingRedisUrl ?? "redis://localhost:6379",
+        },
+      };
+      applyMigrations(existingDatabaseUrl);
+      return started.urls;
+    }
+    throw error;
+  }
 }
 
 export async function stopTestServices(): Promise<void> {
