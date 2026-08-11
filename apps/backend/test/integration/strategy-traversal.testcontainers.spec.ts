@@ -9,6 +9,7 @@ import { StrategyActivationService } from "../../src/modules/strategy/strategy-a
 import { StrategyApprovalSubscriber } from "../../src/modules/strategy/strategy-approval.subscriber";
 import { StrategyService } from "../../src/modules/strategy/strategy.service";
 import { MAX_STRATEGY_TRAVERSAL_DEPTH, StrategyTraversalService } from "../../src/modules/strategy/strategy-traversal.service";
+import { TraceabilityRefreshSubscriber } from "../../src/modules/strategy/traceability-refresh.subscriber";
 
 const execFileAsync = promisify(execFile);
 
@@ -84,10 +85,40 @@ describe.sequential("Prompt 2.2 traversal and activation with PostgreSQL Testcon
 
   it("enforces the ADR-03 depth boundary", async () => {
     const plan = await strategy.createPlanVersion("Depth boundary");
-    const root = await objective(plan.id, "Depth root");
-    await expect(traversal.getCascade(root, MAX_STRATEGY_TRAVERSAL_DEPTH)).resolves.toEqual([]);
-    await expect(traversal.getCascade(root, MAX_STRATEGY_TRAVERSAL_DEPTH + 1)).rejects.toThrow(/between 1 and 8/i);
-    await expect(traversal.getCascade(root, 0)).rejects.toThrow(/between 1 and 8/i);
+    const ids: string[] = [];
+
+    for (let i = 0; i < 11; i += 1) {
+      ids.push(await objective(plan.id, `Depth ${i}`));
+    }
+
+    for (let i = 0; i < ids.length - 1; i += 1) {
+      await strategy.linkEdge({
+        fromNodeId: ids[i]!,
+        toNodeId: ids[i + 1]!,
+        edgeType: "aligns_to",
+        planVersionId: plan.id,
+        actorUserId: actorId,
+      });
+    }
+
+    const cascade = await traversal.getCascade(
+      ids[0]!,
+      MAX_STRATEGY_TRAVERSAL_DEPTH,
+    );
+
+    expect(cascade).toHaveLength(8);
+    expect(cascade.map((node) => node.depth))
+      .toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(cascade.at(-1)?.id).toBe(ids[8]);
+    expect(cascade.some((node) => node.id === ids[9])).toBe(false);
+
+    await expect(
+      traversal.getCascade(ids[0]!, MAX_STRATEGY_TRAVERSAL_DEPTH + 1),
+    ).rejects.toThrow(/between 1 and 8/i);
+
+    await expect(
+      traversal.getCascade(ids[0]!, 0),
+    ).rejects.toThrow(/between 1 and 8/i);
   });
 
   it("activates exactly the staged change referenced by approval", async () => {
@@ -138,6 +169,65 @@ describe.sequential("Prompt 2.2 traversal and activation with PostgreSQL Testcon
     })]);
   });
 
+  it("refreshes the traceability read model from the edge-change outbox event", async () => {
+    const plan = await strategy.createPlanVersion("Traceability refresh");
+    const parent = await objective(plan.id, "Trace parent");
+    const child = await objective(plan.id, "Trace child");
+
+    const edge = await strategy.linkEdge({
+      fromNodeId: parent,
+      toNodeId: child,
+      edgeType: "aligns_to",
+      planVersionId: plan.id,
+      actorUserId: actorId,
+    }) as { id: string };
+
+    const before = await prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM strategy.traceability_edges
+      WHERE ancestor_id = ${parent}::uuid
+        AND descendant_id = ${child}::uuid
+    `;
+    expect(before[0]?.count).toBe(0);
+
+    const events = await prisma.$queryRaw<Array<{
+      id: string;
+      aggregate_id: string;
+      payload: Record<string, unknown>;
+    }>>`
+      SELECT id, aggregate_id, payload
+      FROM public.domain_events
+      WHERE event_type = 'strategy.edge.changed'
+        AND aggregate_id = ${edge.id}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+
+    expect(events).toHaveLength(1);
+
+    const event = events[0]!;
+    const subscriber = new TraceabilityRefreshSubscriber(traversal);
+
+    await subscriber.handle({
+      eventId: event.id,
+      eventType: "strategy.edge.changed",
+      eventVersion: 1,
+      aggregateType: "strategy_edge",
+      aggregateId: event.aggregate_id,
+      occurredAt: new Date().toISOString(),
+      payload: event.payload,
+    });
+
+    const after = await prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM strategy.traceability_edges
+      WHERE ancestor_id = ${parent}::uuid
+        AND descendant_id = ${child}::uuid
+    `;
+
+    expect(after[0]?.count).toBe(1);
+  });
+
   it("measures a ~500-node cascade query against the current phase target", async () => {
     const plan = await strategy.createPlanVersion("Performance fixture");
     const root = await objective(plan.id, "Perf root");
@@ -159,6 +249,7 @@ describe.sequential("Prompt 2.2 traversal and activation with PostgreSQL Testcon
     const result = await traversal.getCascade(root, 8);
     const elapsedMs = performance.now() - started;
     expect(result).toHaveLength(499);
+    expect(elapsedMs).toBeLessThan(100);
     console.info(`[strategy traversal] 500-node cascade: ${elapsedMs.toFixed(2)}ms`);
   }, 30_000);
 });

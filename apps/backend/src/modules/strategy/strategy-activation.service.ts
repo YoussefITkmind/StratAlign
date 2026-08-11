@@ -29,14 +29,14 @@ export class StrategyActivationService {
 
   async activate(stagedChangeId: string, approvalCaseId: string): Promise<ActivationResult | null> {
     const result = await this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRawUnsafe<StageRow[]>(`
+      const rows = await tx.$queryRaw<StageRow[]>`
         SELECT id, approval_case_id, plan_version_id, kind, target_id, payload, requested_by
         FROM strategy.staged_changes
-        WHERE id = $1::uuid
-          AND approval_case_id = $2::uuid
+        WHERE id = ${stagedChangeId}::uuid
+          AND approval_case_id = ${approvalCaseId}::uuid
           AND status = 'pending'
         FOR UPDATE
-      `, stagedChangeId, approvalCaseId);
+      `;
       const change = rows[0];
       if (!change) return null;
 
@@ -45,45 +45,69 @@ export class StrategyActivationService {
       let eventType: ActivationResult["eventType"];
 
       if (change.kind === "node_create") {
-        await tx.$executeRawUnsafe(`
+        await tx.$executeRaw`
           INSERT INTO strategy.strategy_nodes
             (id,type,name_en,name_ar,plan_version_id,state,created_by)
-          VALUES ($1::uuid,$2::strategy."StrategyNodeType",$3,$4,$5::uuid,'active',$6)
-        `, aggregateId, String(payload.type), String(payload.nameEn), String(payload.nameAr), change.plan_version_id, change.requested_by);
+          VALUES (
+            ${aggregateId}::uuid,
+            ${String(payload.type)}::strategy."StrategyNodeType",
+            ${String(payload.nameEn)},
+            ${String(payload.nameAr)},
+            ${change.plan_version_id}::uuid,
+            'active',
+            ${change.requested_by}
+          )
+        `;
         eventType = "strategy.node.activated";
       } else if (change.kind === "node_update") {
         if (!change.target_id) throw new Error("Staged node update is missing target_id");
-        await tx.$executeRawUnsafe(`
+        await tx.$executeRaw`
           UPDATE strategy.strategy_nodes
-          SET name_en=COALESCE($2,name_en), name_ar=COALESCE($3,name_ar), state='active'
-          WHERE id=$1::uuid
-        `, change.target_id, typeof payload.nameEn === "string" ? payload.nameEn : null, typeof payload.nameAr === "string" ? payload.nameAr : null);
+          SET
+            name_en=COALESCE(${typeof payload.nameEn === "string" ? payload.nameEn : null},name_en),
+            name_ar=COALESCE(${typeof payload.nameAr === "string" ? payload.nameAr : null},name_ar),
+            state='active'
+          WHERE id=${change.target_id}::uuid
+        `;
         aggregateId = change.target_id;
         eventType = "strategy.node.activated";
       } else if (change.kind === "node_retire") {
         if (!change.target_id) throw new Error("Staged node retirement is missing target_id");
-        await tx.$executeRawUnsafe(`UPDATE strategy.strategy_nodes SET state='retired' WHERE id=$1::uuid`, change.target_id);
+        await tx.$executeRaw`
+          UPDATE strategy.strategy_nodes
+          SET state='retired'
+          WHERE id=${change.target_id}::uuid
+        `;
         aggregateId = change.target_id;
         eventType = "strategy.node.activated";
       } else if (change.kind === "edge_link") {
-        await tx.$executeRawUnsafe(`
+        await tx.$executeRaw`
           INSERT INTO strategy.strategy_edges
             (id,from_node_id,to_node_id,edge_type,plan_version_id)
-          VALUES ($1::uuid,$2::uuid,$3::uuid,$4::strategy."StrategyEdgeType",$5::uuid)
-        `, aggregateId, String(payload.fromNodeId), String(payload.toNodeId), String(payload.edgeType), change.plan_version_id);
+          VALUES (
+            ${aggregateId}::uuid,
+            ${String(payload.fromNodeId)}::uuid,
+            ${String(payload.toNodeId)}::uuid,
+            ${String(payload.edgeType)}::strategy."StrategyEdgeType",
+            ${change.plan_version_id}::uuid
+          )
+        `;
         eventType = "strategy.edge.activated";
       } else {
         if (!change.target_id) throw new Error("Staged edge unlink is missing target_id");
-        await tx.$executeRawUnsafe(`DELETE FROM strategy.strategy_edges WHERE id=$1::uuid`, change.target_id);
+        await tx.$executeRaw`
+          DELETE FROM strategy.strategy_edges
+          WHERE id=${change.target_id}::uuid
+        `;
         aggregateId = change.target_id;
         eventType = "strategy.edge.activated";
       }
 
-      await tx.$executeRawUnsafe(`
+      await tx.$executeRaw`
         UPDATE strategy.staged_changes
         SET status='applied', applied_at=CURRENT_TIMESTAMP
-        WHERE id=$1::uuid AND status='pending'
-      `, change.id);
+        WHERE id=${change.id}::uuid AND status='pending'
+      `;
 
       await this.eventBus.publishWithin(tx, [{
         eventType,

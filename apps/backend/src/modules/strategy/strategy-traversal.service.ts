@@ -1,6 +1,14 @@
 import { Kysely, PostgresDialect, sql } from "kysely";
 import { Pool } from "pg";
-import type { StrategyEdgeType, StrategyNodeState, StrategyNodeType } from "../../generated/prisma/enums";
+import type {
+  StrategyEdgeType as PrismaStrategyEdgeType,
+  StrategyNodeState as PrismaStrategyNodeState,
+  StrategyNodeType as PrismaStrategyNodeType,
+} from "../../generated/prisma/enums";
+
+type StrategyNodeType = Lowercase<PrismaStrategyNodeType>;
+type StrategyNodeState = Lowercase<PrismaStrategyNodeState>;
+type StrategyEdgeType = Lowercase<PrismaStrategyEdgeType>;
 
 export const MAX_STRATEGY_TRAVERSAL_DEPTH = 8;
 

@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { createHTTPServer } from "@trpc/server/adapters/standalone";
-import { appRouter, mergeRouters, router, strategyRouter } from "@spm/api";
+import { rootRouter } from "@spm/api/root";
 import { validateEnvironment } from "./config/env.validation";
 import { PrismaService } from "./database/prisma.service";
 import { HealthService } from "./modules/health/health.service";
@@ -52,8 +52,6 @@ async function bootstrap(): Promise<void> {
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
   const audit = new SnapshotService(prisma);
   const auditTap = new ApiAuditTapService(prisma, eventBus);
-
-  const rootRouter = mergeRouters(appRouter, router({ strategy: strategyRouter }));
 
   const server = createHTTPServer({
     router: rootRouter,

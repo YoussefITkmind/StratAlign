@@ -12,6 +12,10 @@
     "./strategy": {
       "types": "./dist/strategy.d.ts",
       "default": "./dist/strategy.js"
+    },
+    "./root": {
+      "types": "./dist/root.d.ts",
+      "default": "./dist/root.js"
     }
   },
   "scripts": {
@@ -21,6 +25,7 @@
   },
   "dependencies": {
     "@spm/domain-iam": "workspace:*",
+    "@spm/domain-strategy": "workspace:*",
     "@spm/rules": "workspace:*",
     "@trpc/server": "^11.18.0",
     "zod": "^4.4.3"
@@ -28,5 +33,15 @@
   "devDependencies": {
     "typescript": "^5.9.3",
     "vitest": "3.2.7"
+  },
+  "typesVersions": {
+    "*": {
+      "root": [
+        "dist/root.d.ts"
+      ],
+      "strategy": [
+        "dist/strategy.d.ts"
+      ]
+    }
   }
 }

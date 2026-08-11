@@ -56,6 +56,46 @@ describe.sequential("Prompt 2.1 strategy model with PostgreSQL Testcontainers", 
     await expect(strategy.linkEdge({ fromNodeId: b.id, toNodeId: a.id, edgeType: "aligns_to", planVersionId: plan.id, actorUserId: actorId })).rejects.toThrow(/cycle/i);
   });
 
+  it("allows incomplete drafts but enforces minimum cardinality before activation", async () => {
+    const plan = await strategy.createPlanVersion("Minimum cardinality");
+
+    const corporate = await addNode(plan.id, "corporate_strategy", "Corporate") as { id: string };
+    const theme = await addNode(plan.id, "theme", "Theme") as { id: string };
+
+    await strategy.linkEdge({
+      fromNodeId: corporate.id,
+      toNodeId: theme.id,
+      edgeType: "contains",
+      planVersionId: plan.id,
+      actorUserId: actorId,
+    });
+
+    await expect(strategy.openPlanVersion(plan.id))
+      .rejects.toThrow(/minimum relationship cardinality/i);
+
+    const objective = await addNode(plan.id, "objective", "Objective") as { id: string };
+    const play = await addNode(plan.id, "strategic_play", "Play") as { id: string };
+
+    await strategy.linkEdge({
+      fromNodeId: theme.id,
+      toNodeId: objective.id,
+      edgeType: "contains",
+      planVersionId: plan.id,
+      actorUserId: actorId,
+    });
+
+    await strategy.linkEdge({
+      fromNodeId: objective.id,
+      toNodeId: play.id,
+      edgeType: "executed_by",
+      planVersionId: plan.id,
+      actorUserId: actorId,
+    });
+
+    await expect(strategy.openPlanVersion(plan.id))
+      .resolves.toMatchObject({ status: "active" });
+  });
+
   it("keeps staged active changes invisible until approval then applies the referenced change", async () => {
     const plan = await strategy.createPlanVersion("Approval test");
     const corporate = await addNode(plan.id, "corporate_strategy", "Corporate") as { id: string };

@@ -19,7 +19,7 @@ export class StrategyApprovalSubscriber implements EventSubscriber {
     const approvalCaseId = envelope.payload.approvalCaseId;
 
     // Governance events for other domains share the same event type.
-    if (domain !== "strategy" && typeof stagedChangeId !== "string") return;
+    if (domain !== "strategy") return;
     if (typeof stagedChangeId !== "string" || stagedChangeId.length === 0) {
       throw new Error("Strategy approval event is missing stagedChangeId");
     }

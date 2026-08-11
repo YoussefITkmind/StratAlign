@@ -556,5 +556,4 @@ export const appRouter = router({
   }),
 });
 
-export type AppRouter = typeof appRouter;
-export { strategyRouter } from "./strategy";
+export type { AppRouter } from "./root";
