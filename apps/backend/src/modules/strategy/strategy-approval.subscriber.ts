@@ -1,23 +1,32 @@
 import type { DomainEventEnvelope, EventSubscriber } from "../../events/event.types";
-import type { StrategyService } from "./strategy.service";
+import type { StrategyActivationService } from "./strategy-activation.service";
 
 /**
- * Applies staged strategy mutations only after Prompt 1.5 publishes
- * governance.approval.granted. The outbox is at-least-once, and the service
- * selects only pending staged changes, so duplicate delivery is idempotent.
+ * Applies exactly the staged strategy mutation referenced by an approval event.
+ * Duplicate delivery is idempotent because activation selects status='pending'.
  */
 export class StrategyApprovalSubscriber implements EventSubscriber {
   readonly id = "strategy-approval-granted";
   readonly eventTypes = ["governance.approval.granted"] as const;
 
-  constructor(private readonly strategy: StrategyService) {}
+  constructor(private readonly activation: StrategyActivationService) {}
 
   async handle(envelope: DomainEventEnvelope): Promise<void> {
     if (envelope.eventType !== "governance.approval.granted") return;
+
+    const domain = envelope.payload.domain;
+    const stagedChangeId = envelope.payload.stagedChangeId;
     const approvalCaseId = envelope.payload.approvalCaseId;
-    if (typeof approvalCaseId !== "string" || approvalCaseId.length === 0) {
-      throw new Error("governance.approval.granted is missing approvalCaseId");
+
+    // Governance events for other domains share the same event type.
+    if (domain !== "strategy" && typeof stagedChangeId !== "string") return;
+    if (typeof stagedChangeId !== "string" || stagedChangeId.length === 0) {
+      throw new Error("Strategy approval event is missing stagedChangeId");
     }
-    await this.strategy.applyApprovedChanges(approvalCaseId);
+    if (typeof approvalCaseId !== "string" || approvalCaseId.length === 0) {
+      throw new Error("Strategy approval event is missing approvalCaseId");
+    }
+
+    await this.activation.activate(stagedChangeId, approvalCaseId);
   }
 }
