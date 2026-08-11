@@ -293,26 +293,41 @@ enum StrategyEdgeType {
   @@schema("strategy")
 }
 
-enum PlanVersionState {
-  DRAFT   @map("draft")
-  ACTIVE  @map("active")
-  RETIRED @map("retired")
+enum PlanVersionStatus {
+  DRAFT  @map("draft")
+  ACTIVE @map("active")
+  CLOSED @map("closed")
+
+  @@schema("strategy")
+}
+
+enum StagedChangeKind {
+  NODE_CREATE @map("node_create")
+  NODE_UPDATE @map("node_update")
+  NODE_RETIRE @map("node_retire")
+  EDGE_LINK   @map("edge_link")
+  EDGE_UNLINK @map("edge_unlink")
+
+  @@schema("strategy")
+}
+
+enum StagedChangeStatus {
+  PENDING   @map("pending")
+  APPLIED   @map("applied")
+  CANCELLED @map("cancelled")
 
   @@schema("strategy")
 }
 
 model PlanVersion {
-  id                  String           @id @default(uuid()) @db.Uuid
-  version             Int              @unique
+  id                  String            @id @default(uuid()) @db.Uuid
   name                String
-  state               PlanVersionState @default(DRAFT)
-  effectiveFrom       DateTime?        @map("effective_from")
-  effectiveTo         DateTime?        @map("effective_to")
-  sourcePlanVersionId String?          @map("source_plan_version_id") @db.Uuid
-  createdBy           String           @map("created_by")
-  createdAt           DateTime         @default(now()) @map("created_at")
+  status              PlanVersionStatus @default(DRAFT)
+  opensAt             DateTime?         @map("opens_at")
+  closesAt            DateTime?         @map("closes_at")
+  sourcePlanVersionId String?           @map("source_plan_version_id") @db.Uuid
 
-  @@index([state])
+  @@index([status])
   @@index([sourcePlanVersionId])
   @@map("plan_versions")
   @@schema("strategy")
@@ -330,7 +345,6 @@ model StrategyNode {
 
   @@index([planVersionId, type])
   @@index([planVersionId, state])
-  @@index([createdBy])
   @@map("strategy_nodes")
   @@schema("strategy")
 }
@@ -364,18 +378,33 @@ model RelationshipRule {
 }
 
 model OwnerAssignment {
-  id            String   @id @default(uuid()) @db.Uuid
-  nodeId        String   @map("node_id") @db.Uuid
-  userId        String   @map("user_id")
-  planVersionId String   @map("plan_version_id") @db.Uuid
-  createdBy     String   @map("created_by")
-  createdAt     DateTime @default(now()) @map("created_at")
+  id          String   @id @default(uuid()) @db.Uuid
+  nodeId      String   @map("node_id") @db.Uuid
+  ownerUserId String   @map("owner_user_id")
+  assignedBy  String   @map("assigned_by")
+  assignedAt  DateTime @default(now()) @map("assigned_at")
 
-  @@unique([nodeId, userId, planVersionId])
-  @@index([userId])
-  @@index([planVersionId])
-  @@index([createdBy])
+  @@unique([nodeId, ownerUserId])
+  @@index([ownerUserId])
   @@map("owner_assignments")
+  @@schema("strategy")
+}
+
+model StagedChange {
+  id             String             @id @default(uuid()) @db.Uuid
+  approvalCaseId String             @map("approval_case_id") @db.Uuid
+  planVersionId  String             @map("plan_version_id") @db.Uuid
+  kind           StagedChangeKind
+  targetId       String?            @map("target_id") @db.Uuid
+  payload        Json
+  status         StagedChangeStatus @default(PENDING)
+  requestedBy    String             @map("requested_by")
+  requestedAt    DateTime           @default(now()) @map("requested_at")
+  appliedAt      DateTime?          @map("applied_at")
+
+  @@index([approvalCaseId, status])
+  @@index([planVersionId, status])
+  @@map("staged_changes")
   @@schema("strategy")
 }
 
