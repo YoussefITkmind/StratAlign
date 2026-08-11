@@ -4,6 +4,16 @@
   "private": true,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./strategy": {
+      "types": "./dist/strategy.d.ts",
+      "default": "./dist/strategy.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "lint": "eslint src --max-warnings=0",
