@@ -19,19 +19,16 @@ export const STRATEGY_EDGE_TYPES = [
 ] as const;
 export type StrategyEdgeType = (typeof STRATEGY_EDGE_TYPES)[number];
 
-export const PLAN_VERSION_STATES = ["draft", "active", "retired"] as const;
+export const PLAN_VERSION_STATES = ["draft", "active", "closed"] as const;
 export type PlanVersionState = (typeof PLAN_VERSION_STATES)[number];
 
 export interface PlanVersion {
   id: string;
-  version: number;
   name: string;
-  state: PlanVersionState;
-  effectiveFrom: Date | null;
-  effectiveTo: Date | null;
+  status: PlanVersionState;
+  opensAt: Date | null;
+  closesAt: Date | null;
   sourcePlanVersionId: string | null;
-  createdBy: string;
-  createdAt: Date;
 }
 
 export interface StrategyNode {
@@ -65,10 +62,9 @@ export interface RelationshipRule {
 export interface OwnerAssignment {
   id: string;
   nodeId: string;
-  userId: string;
-  planVersionId: string;
-  createdBy: string;
-  createdAt: Date;
+  ownerUserId: string;
+  assignedBy: string;
+  assignedAt: Date;
 }
 
 function enumParser<T extends readonly string[]>(values: T) {
@@ -87,13 +83,18 @@ export const strategyNodeStateSchema = enumParser(STRATEGY_NODE_STATES);
 export const strategyEdgeTypeSchema = enumParser(STRATEGY_EDGE_TYPES);
 export const planVersionStateSchema = enumParser(PLAN_VERSION_STATES);
 
+/**
+ * Authoritative TSD-03 relationship set.
+ * objective -> strategic_play is represented only by executed_by. We do not
+ * duplicate the same pair with aligns_to. Area of Focus alignment belongs to
+ * Strategic Play, which keeps the graph unambiguous for cardinality checks.
+ */
 export const DEFAULT_RELATIONSHIP_RULES: readonly RelationshipRule[] = [
   { fromType: "corporate_strategy", toType: "theme", edgeType: "contains", minCount: 1, maxCount: null },
   { fromType: "theme", toType: "objective", edgeType: "contains", minCount: 1, maxCount: null },
-  { fromType: "objective", toType: "strategic_play", edgeType: "executed_by", minCount: 0, maxCount: null },
+  { fromType: "objective", toType: "strategic_play", edgeType: "executed_by", minCount: 1, maxCount: null },
   { fromType: "strategic_play", toType: "portfolio", edgeType: "belongs_to_portfolio", minCount: 0, maxCount: 1 },
   { fromType: "strategic_play", toType: "area_of_focus", edgeType: "aligns_to", minCount: 0, maxCount: null },
-  { fromType: "objective", toType: "area_of_focus", edgeType: "aligns_to", minCount: 0, maxCount: null },
 ] as const;
 
 export class InvalidStrategyRelationshipError extends Error {
@@ -186,12 +187,12 @@ export type DirectedEdge = Pick<StrategyEdge, "fromNodeId" | "toNodeId">;
 export function hasDirectedCycle(edges: readonly DirectedEdge[]): boolean {
   const adjacency = new Map<string, string[]>();
   const nodes = new Set<string>();
-  for (const edge of edges) {
-    nodes.add(edge.fromNodeId);
-    nodes.add(edge.toNodeId);
-    const targets = adjacency.get(edge.fromNodeId) ?? [];
-    targets.push(edge.toNodeId);
-    adjacency.set(edge.fromNodeId, targets);
+  for (const current of edges) {
+    nodes.add(current.fromNodeId);
+    nodes.add(current.toNodeId);
+    const targets = adjacency.get(current.fromNodeId) ?? [];
+    targets.push(current.toNodeId);
+    adjacency.set(current.fromNodeId, targets);
   }
 
   const visiting = new Set<string>();
@@ -208,7 +209,7 @@ export function hasDirectedCycle(edges: readonly DirectedEdge[]): boolean {
     return false;
   };
 
-  return [...nodes].some((value) => visit(value));
+  return [...nodes].some(visit);
 }
 
 export function assertAcyclic(edges: readonly DirectedEdge[]): void {
@@ -221,23 +222,23 @@ export function validateGraph(
   rules: readonly RelationshipRule[] = DEFAULT_RELATIONSHIP_RULES,
 ): void {
   const nodeById = new Map(nodes.map((value) => [value.id, value]));
-  for (const edge of edges) {
-    const from = nodeById.get(edge.fromNodeId);
-    const to = nodeById.get(edge.toNodeId);
-    if (!from || !to || from.planVersionId !== edge.planVersionId || to.planVersionId !== edge.planVersionId) {
+  for (const current of edges) {
+    const from = nodeById.get(current.fromNodeId);
+    const to = nodeById.get(current.toNodeId);
+    if (!from || !to || from.planVersionId !== current.planVersionId || to.planVersionId !== current.planVersionId) {
       throw new CrossPlanVersionRelationshipError();
     }
-    validateEdge(from, to, edge.edgeType, rules);
+    validateEdge(from, to, current.edgeType, rules);
   }
   assertAcyclic(edges);
 
   for (const currentNode of nodes) {
-    for (const rule of rules.filter((candidate) => candidate.fromType === currentNode.type)) {
-      const count = edges.filter((edge) => {
-        if (edge.fromNodeId !== currentNode.id || edge.edgeType !== rule.edgeType) return false;
-        return nodeById.get(edge.toNodeId)?.type === rule.toType;
+    for (const currentRule of rules.filter((candidate) => candidate.fromType === currentNode.type)) {
+      const count = edges.filter((current) => {
+        if (current.fromNodeId !== currentNode.id || current.edgeType !== currentRule.edgeType) return false;
+        return nodeById.get(current.toNodeId)?.type === currentRule.toType;
       }).length;
-      assertRelationshipCardinality(rule, count);
+      assertRelationshipCardinality(currentRule, count);
     }
   }
 }
@@ -256,8 +257,7 @@ export function assertNodeStateTransition(from: StrategyNodeState, to: StrategyN
 
 export function canTransitionPlanVersionState(from: PlanVersionState, to: PlanVersionState): boolean {
   if (from === to) return true;
-  return (from === "draft" && (to === "active" || to === "retired")) ||
-    (from === "active" && to === "retired");
+  return (from === "draft" && to === "active") || (from === "active" && to === "closed");
 }
 
 export function assertPlanVersionStateTransition(from: PlanVersionState, to: PlanVersionState): void {
