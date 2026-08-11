@@ -1,0 +1,517 @@
+import {
+  ApprovalCaseState,
+  ApprovalDecision,
+  Prisma,
+} from "../../generated/prisma/client";
+import type { PrismaService } from "../../database/prisma.service";
+import type { EventBusService } from "../../events/event-bus.service";
+
+import {
+  enforceSeparationOfDuties,
+} from "@spm/domain-iam";
+
+import {
+  APPROVAL_ACTION_REFS,
+  DEFAULT_APPROVAL_WORKFLOW_DEFINITION,
+  createApprovalActor,
+  parseWorkflowDefinition,
+  type ApprovalActionImplementations,
+  type ApprovalMachineEvent,
+  type ApprovalMachineSnapshot,
+  type ProposedChange,
+} from "@spm/machines";
+
+import {
+  GOVERNANCE_AGGREGATE_TYPE,
+  GOVERNANCE_EVENT_TYPES,
+  GOVERNANCE_EVENT_VERSION,
+  governanceDecisionDedupeKey,
+  type GovernanceDecisionPayload,
+} from "./governance.events";
+
+import {
+  GovernanceApprovalReferenceError,
+  GovernanceCaseNotFoundError,
+  GovernanceIllegalTransitionError,
+  GovernanceWorkflowNotFoundError,
+} from "./governance.errors";
+
+const DEFAULT_WORKFLOW_KEY =
+  DEFAULT_APPROVAL_WORKFLOW_DEFINITION.key;
+
+function toJson(
+  value: unknown,
+): Prisma.InputJsonValue {
+  return JSON.parse(
+    JSON.stringify(value),
+  ) as Prisma.InputJsonValue;
+}
+
+function stateValueToPrisma(
+  value: unknown,
+): ApprovalCaseState {
+  switch (value) {
+    case "draft":
+      return ApprovalCaseState.DRAFT;
+
+    case "pending_approval":
+      return ApprovalCaseState.PENDING_APPROVAL;
+
+    case "approved":
+      return ApprovalCaseState.APPROVED;
+
+    case "rejected":
+      return ApprovalCaseState.REJECTED;
+
+    case "changes_requested":
+      return ApprovalCaseState.CHANGES_REQUESTED;
+
+    default:
+      throw new Error(
+        `Unsupported approval state: ${String(value)}`,
+      );
+  }
+}
+
+
+export interface CreateApprovalCaseInput {
+  workflowKey?: string;
+  entityType: string;
+  entityId: string;
+  submittedBy: string;
+  proposedChange: ProposedChange;
+}
+
+export interface TransitionApprovalCaseInput {
+  caseId: string;
+  event: ApprovalMachineEvent;
+}
+
+export interface ApprovalReferenceInput {
+  approvalCaseId: string;
+  entityType: string;
+  entityId: string;
+}
+
+export class GovernanceService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventBus: EventBusService,
+  ) {}
+
+  async ensureDefaultWorkflowDefinition() {
+    return this.prisma.workflowDefinition.upsert({
+      where: {
+        workflowKey_version: {
+          workflowKey: DEFAULT_WORKFLOW_KEY,
+          version:
+            DEFAULT_APPROVAL_WORKFLOW_DEFINITION.version,
+        },
+      },
+
+      create: {
+        workflowKey: DEFAULT_WORKFLOW_KEY,
+        version:
+          DEFAULT_APPROVAL_WORKFLOW_DEFINITION.version,
+        definitionJson: toJson(
+          DEFAULT_APPROVAL_WORKFLOW_DEFINITION,
+        ),
+        isCurrent: true,
+      },
+
+      update: {},
+    });
+  }
+
+  async createCase(
+    input: CreateApprovalCaseInput,
+  ) {
+    const workflowKey =
+      input.workflowKey ?? DEFAULT_WORKFLOW_KEY;
+
+    if (workflowKey === DEFAULT_WORKFLOW_KEY) {
+      await this.ensureDefaultWorkflowDefinition();
+    }
+
+    const definition =
+      await this.prisma.workflowDefinition.findFirst({
+        where: {
+          workflowKey,
+          isCurrent: true,
+        },
+        orderBy: {
+          version: "desc",
+        },
+      });
+
+    if (!definition) {
+      throw new GovernanceWorkflowNotFoundError(
+        workflowKey,
+      );
+    }
+
+    const parsedDefinition =
+      parseWorkflowDefinition(
+        definition.definitionJson,
+      );
+
+    const actor = createApprovalActor({
+      context: {
+        submittedBy: input.submittedBy,
+        proposedChange: input.proposedChange,
+      },
+
+      definition: parsedDefinition,
+
+      separationOfDutiesCheck: (
+        submittedBy,
+        actorUserId,
+      ) => submittedBy !== actorUserId,
+    }).start();
+
+    const persisted =
+      actor.getPersistedSnapshot();
+
+    return this.prisma.approvalCase.create({
+      data: {
+        workflowDefinitionId: definition.id,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        submittedBy: input.submittedBy,
+        currentState: stateValueToPrisma(
+          actor.getSnapshot().value,
+        ),
+        xstateContextSnapshot:
+          toJson(persisted),
+      },
+    });
+  }
+
+  async transition(
+    input: TransitionApprovalCaseInput,
+  ) {
+    let publishedEvent = false;
+
+    const result =
+      await this.prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw`
+            SELECT pg_advisory_xact_lock(
+              hashtext(${`governance.approval:${input.caseId}`})
+            )
+          `;
+
+          const approvalCase =
+            await tx.approvalCase.findUnique({
+              where: {
+                id: input.caseId,
+              },
+
+              include: {
+                workflowDefinition: true,
+              },
+            });
+
+          if (!approvalCase) {
+            throw new GovernanceCaseNotFoundError(
+              input.caseId,
+            );
+          }
+
+          if (
+            input.event.type === "APPROVE" ||
+            input.event.type === "REJECT"
+          ) {
+            enforceSeparationOfDuties(
+              input.event.actorUserId,
+              approvalCase.submittedBy,
+            );
+          }
+
+          const definition =
+            parseWorkflowDefinition(
+              approvalCase.workflowDefinition
+                .definitionJson,
+            );
+
+          const effects =
+            new Set<
+              (typeof APPROVAL_ACTION_REFS)[number]
+            >();
+
+          const actions =
+            Object.fromEntries(
+              APPROVAL_ACTION_REFS.map(
+                (actionName) => [
+                  actionName,
+                  () => {
+                    effects.add(actionName);
+                  },
+                ],
+              ),
+            ) as ApprovalActionImplementations;
+
+          const actor =
+            createApprovalActor({
+              context: {
+                submittedBy:
+                  approvalCase.submittedBy,
+
+                proposedChange:
+                  (
+                    approvalCase
+                      .xstateContextSnapshot as {
+                      context?: {
+                        proposedChange?: ProposedChange;
+                      };
+                    }
+                  ).context?.proposedChange ?? {
+                    before: null,
+                    after: null,
+                  },
+              },
+
+              definition,
+
+              separationOfDutiesCheck: (
+                submittedBy,
+                actorUserId,
+              ) => submittedBy !== actorUserId,
+
+              actions,
+
+              snapshot:
+                approvalCase.xstateContextSnapshot as unknown as ApprovalMachineSnapshot,
+            }).start();
+
+          const before =
+            actor.getSnapshot().value;
+
+          actor.send(input.event);
+
+          const after =
+            actor.getSnapshot().value;
+
+          if (before === after) {
+            throw new GovernanceIllegalTransitionError(
+              approvalCase.id,
+              String(before),
+              input.event.type,
+            );
+          }
+
+          const persisted =
+            actor.getPersistedSnapshot();
+
+          const updated =
+            await tx.approvalCase.update({
+              where: {
+                id: approvalCase.id,
+              },
+
+              data: {
+                currentState:
+                  stateValueToPrisma(after),
+
+                xstateContextSnapshot:
+                  toJson(persisted),
+              },
+            });
+
+          if (
+            effects.has("recordDecision")
+          ) {
+            if (
+              input.event.type !== "APPROVE" &&
+              input.event.type !== "REJECT"
+            ) {
+              throw new Error(
+                "recordDecision action executed for a non-decision event",
+              );
+            }
+
+            await tx.decisionLogEntry.create({
+              data: {
+                caseId: approvalCase.id,
+
+                decision:
+                  input.event.type === "APPROVE"
+                    ? ApprovalDecision.APPROVED
+                    : ApprovalDecision.REJECTED,
+
+                decidedBy:
+                  input.event.actorUserId,
+
+                rationale:
+                  input.event.rationale ?? null,
+              },
+            });
+          }
+
+          const eventType =
+            effects.has(
+              "emitApprovalGranted",
+            )
+              ? GOVERNANCE_EVENT_TYPES.approvalGranted
+              : effects.has(
+                    "emitApprovalRejected",
+                  )
+                ? GOVERNANCE_EVENT_TYPES.approvalRejected
+                : null;
+
+          if (eventType) {
+            if (
+              input.event.type !== "APPROVE" &&
+              input.event.type !== "REJECT"
+            ) {
+              throw new Error(
+                "Approval decision event emitted for a non-decision transition",
+              );
+            }
+
+            const context =
+              actor.getSnapshot().context;
+
+            const payload: GovernanceDecisionPayload =
+              {
+                approvalCaseId:
+                  approvalCase.id,
+
+                entityType:
+                  approvalCase.entityType,
+
+                entityId:
+                  approvalCase.entityId,
+
+                submittedBy:
+                  approvalCase.submittedBy,
+
+                decidedBy:
+                  input.event.actorUserId,
+
+                rationale:
+                  input.event.rationale ??
+                  null,
+
+                proposedChange:
+                  context.proposedChange,
+              };
+
+            await this.eventBus.publishWithin(
+              tx,
+              [
+                {
+                  eventType,
+                  eventVersion:
+                    GOVERNANCE_EVENT_VERSION,
+
+                  aggregateType:
+                    GOVERNANCE_AGGREGATE_TYPE,
+
+                  aggregateId:
+                    approvalCase.id,
+
+                  dedupeKey:
+                    governanceDecisionDedupeKey(
+                      eventType,
+                      approvalCase.id,
+                    ),
+
+                  payload,
+                },
+              ],
+            );
+
+            publishedEvent = true;
+          }
+
+          return updated;
+        },
+      );
+
+    if (publishedEvent) {
+      await this.eventBus.nudgeRelay();
+    }
+
+    return result;
+  }
+
+  async getCase(caseId: string) {
+    const result =
+      await this.prisma.approvalCase.findUnique({
+        where: {
+          id: caseId,
+        },
+
+        include: {
+          workflowDefinition: true,
+          decisionLog: true,
+          escalations: true,
+        },
+      });
+
+    if (!result) {
+      throw new GovernanceCaseNotFoundError(
+        caseId,
+      );
+    }
+
+    return result;
+  }
+
+  async myPendingApprovals(
+    viewerUserId: string,
+  ) {
+    return this.prisma.approvalCase.findMany({
+      where: {
+        currentState:
+          ApprovalCaseState.PENDING_APPROVAL,
+
+        submittedBy: {
+          not: viewerUserId,
+        },
+      },
+
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+  }
+
+  async assertApproved(
+    input: ApprovalReferenceInput,
+  ): Promise<void> {
+    const approvalCase =
+      await this.prisma.approvalCase.findUnique({
+        where: {
+          id: input.approvalCaseId,
+        },
+      });
+
+    if (!approvalCase) {
+      throw new GovernanceApprovalReferenceError(
+        `Approval case ${input.approvalCaseId} does not exist.`,
+      );
+    }
+
+    if (
+      approvalCase.currentState !==
+      ApprovalCaseState.APPROVED
+    ) {
+      throw new GovernanceApprovalReferenceError(
+        `Approval case ${input.approvalCaseId} is not approved.`,
+      );
+    }
+
+    if (
+      approvalCase.entityType !==
+        input.entityType ||
+      approvalCase.entityId !==
+        input.entityId
+    ) {
+      throw new GovernanceApprovalReferenceError(
+        `Approval case ${input.approvalCaseId} governs a different entity.`,
+      );
+    }
+  }
+}

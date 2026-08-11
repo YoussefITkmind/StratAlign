@@ -50,6 +50,9 @@ importers:
       '@spm/domain-iam':
         specifier: workspace:*
         version: link:../../packages/domain-iam
+      '@spm/machines':
+        specifier: workspace:*
+        version: link:../../packages/machines
       '@spm/rules':
         specifier: workspace:*
         version: link:../../packages/rules

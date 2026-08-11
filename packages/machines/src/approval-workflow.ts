@@ -188,6 +188,19 @@ export type SeparationOfDutiesCheck = (
   actorUserId: string,
 ) => boolean;
 
+export interface ApprovalActionArgs {
+  context: ApprovalMachineContext;
+  event: ApprovalMachineEvent;
+}
+
+export type ApprovalActionImplementation = (
+  args: ApprovalActionArgs,
+) => void;
+
+export type ApprovalActionImplementations = Partial<
+  Record<ApprovalActionRef, ApprovalActionImplementation>
+>;
+
 export function parseWorkflowDefinition(
   input: unknown,
 ): WorkflowMachineDefinition {
@@ -270,6 +283,8 @@ export function createApprovalMachine(input: {
 
   separationOfDutiesCheck:
     SeparationOfDutiesCheck;
+
+  actions?: ApprovalActionImplementations;
 }) {
   const definition =
     parseWorkflowDefinition(
@@ -507,6 +522,44 @@ export function createApprovalMachine(input: {
           );
       },
     },
+
+    actions: {
+      recordSubmission: ({ context, event }) =>
+        input.actions?.recordSubmission?.({
+          context,
+          event,
+        }),
+
+      recordDecision: ({ context, event }) =>
+        input.actions?.recordDecision?.({
+          context,
+          event,
+        }),
+
+      recordChangesRequested: ({ context, event }) =>
+        input.actions?.recordChangesRequested?.({
+          context,
+          event,
+        }),
+
+      recordResubmission: ({ context, event }) =>
+        input.actions?.recordResubmission?.({
+          context,
+          event,
+        }),
+
+      emitApprovalGranted: ({ context, event }) =>
+        input.actions?.emitApprovalGranted?.({
+          context,
+          event,
+        }),
+
+      emitApprovalRejected: ({ context, event }) =>
+        input.actions?.emitApprovalRejected?.({
+          context,
+          event,
+        }),
+    },
   });
 }
 
@@ -527,6 +580,8 @@ export function createApprovalActor(input: {
     | WorkflowMachineDefinition
     | unknown;
 
+  actions?: ApprovalActionImplementations;
+
   snapshot?: ApprovalMachineSnapshot;
 }) {
   const machine =
@@ -537,6 +592,8 @@ export function createApprovalActor(input: {
 
       separationOfDutiesCheck:
         input.separationOfDutiesCheck,
+
+      actions: input.actions,
     });
 
   return createActor(machine, {
