@@ -151,6 +151,17 @@ export class GovernanceService {
     });
   }
 
+  async submitCase(input: CreateApprovalCaseInput) {
+    const created = await this.createCase(input);
+    return this.transition({
+      caseId: created.id,
+      event: {
+        type: "SUBMIT",
+        actorUserId: input.submittedBy,
+      },
+    });
+  }
+
   async createCase(
     input: CreateApprovalCaseInput,
   ) {

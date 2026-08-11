@@ -1,7 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "infrastructure/pulumi"
 allowBuilds:
+  '@pulumi/command': true
   '@prisma/engines': true
   argon2: true
   cpu-features: true

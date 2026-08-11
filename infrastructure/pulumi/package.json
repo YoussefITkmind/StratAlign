@@ -1,0 +1,22 @@
+{
+  "name": "@spm/infrastructure-pulumi",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "preview": "pulumi preview",
+    "up": "pulumi up",
+    "destroy": "pulumi destroy"
+  },
+  "dependencies": {
+    "@pulumi/command": "^1.2.1",
+    "@pulumi/docker": "^5.1.0",
+    "@pulumi/pulumi": "^3.256.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "^5.8.0"
+  }
+}

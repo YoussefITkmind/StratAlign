@@ -125,6 +125,7 @@ export class StrategyService {
   }
 
   async listActiveNodes(planVersionId:string):Promise<StrategyNodeRecord[]>{const r=await this.prisma.$queryRaw<NodeRow[]>`SELECT * FROM strategy.strategy_nodes WHERE plan_version_id=${planVersionId}::uuid AND state='active' ORDER BY created_at,id`;return r.map(mapNode);}
+  async listNodes():Promise<StrategyNodeRecord[]>{const r=await this.prisma.$queryRaw<NodeRow[]>`SELECT * FROM strategy.strategy_nodes WHERE state<>'retired' ORDER BY plan_version_id,created_at,id`;return r.map(mapNode);}
   async getEdges(planVersionId:string):Promise<StrategyEdgeRecord[]>{const r=await this.prisma.$queryRaw<EdgeRow[]>`SELECT * FROM strategy.strategy_edges WHERE plan_version_id=${planVersionId}::uuid ORDER BY id`;return r.map(mapEdge);}
 
   private async insertEdge(p:{fromNodeId:string;toNodeId:string;edgeType:StrategyEdgeType},planVersionId:string):Promise<StrategyEdgeRecord>{const r=await this.prisma.$queryRaw<EdgeRow[]>`INSERT INTO strategy.strategy_edges (id,from_node_id,to_node_id,edge_type,plan_version_id) VALUES (${randomUUID()}::uuid,${p.fromNodeId}::uuid,${p.toNodeId}::uuid,${p.edgeType}::strategy."StrategyEdgeType",${planVersionId}::uuid) RETURNING *`;return mapEdge(r[0]!);}

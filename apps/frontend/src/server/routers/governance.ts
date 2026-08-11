@@ -234,6 +234,26 @@ const caseIdSchema =
 
 export const governanceRouter =
   router({
+    submit:
+      authenticatedProcedure
+        .input(z.object({
+          entityType: z.string().trim().min(1).max(150),
+          entityId: z.string().trim().min(1).max(200),
+          approvalParticipantId: z.string().uuid(),
+          proposedChange: z.object({
+            before: z.unknown(),
+            after: z.unknown(),
+            impactSummary: z.unknown().optional(),
+          }).strict(),
+        }).strict())
+        .mutation(async ({ ctx, input }) => {
+          try {
+            return await backend(ctx).governance.submit.mutate(input);
+          } catch (error) {
+            translateBackendGovernanceError(error);
+          }
+        }),
+
     myPendingApprovals:
       authenticatedProcedure
         .query(

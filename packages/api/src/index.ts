@@ -220,6 +220,17 @@ export interface KpiWithVersionOutput {
   version: KpiVersionOutput;
 }
 
+export interface KpiThresholdRuleBindingOutput {
+  id: string;
+  kpiVersionId: string;
+  thresholdRuleId: string;
+  ruleKey: string;
+  ruleVersion: number;
+  createdAt: Date;
+  createdBy: string;
+  supersedesBindingId: string | null;
+}
+
 export interface KpiSimilarityMatchOutput {
   kpiDefinitionId: string;
   kpiVersionId: string;
@@ -317,6 +328,16 @@ export interface RegistryKpiServiceContract {
   ): Promise<RetirementImpactOutput>;
 
   listVersions(kpiDefinitionId: string): Promise<KpiVersionOutput[]>;
+  list(): Promise<KpiWithVersionOutput[]>;
+  getById(kpiDefinitionId: string): Promise<KpiWithVersionOutput | null>;
+  bindThresholdRule(input: {
+    kpiVersionId: string;
+    thresholdRuleId: string;
+    actorUserId: string;
+  }): Promise<KpiThresholdRuleBindingOutput>;
+  getThresholdRuleBinding(
+    kpiVersionId: string,
+  ): Promise<KpiThresholdRuleBindingOutput | null>;
 }
 
 export interface RegistryOkrServiceContract {
@@ -335,6 +356,8 @@ export interface RegistryOkrServiceContract {
     keyResultId: string;
     currentValue: number;
   }): Promise<KeyResultOutput>;
+  list(): Promise<OkrOutput[]>;
+  getById(okrId: string): Promise<OkrOutput | null>;
 }
 
 export interface RegistryAlignmentServiceContract {
@@ -531,6 +554,18 @@ export type GovernanceDecisionInput =
     };
 
 export interface GovernanceServiceContract {
+  submitCase(input: {
+    entityType: string;
+    entityId: string;
+    submittedBy: string;
+    approvalParticipantId: string;
+    proposedChange: {
+      before: unknown;
+      after: unknown;
+      impactSummary?: unknown;
+    };
+  }): Promise<GovernanceCaseOutput>;
+
   assertApproved(
     input: GovernanceApprovalReferenceInput,
   ): Promise<void>;
@@ -856,6 +891,17 @@ function toRegistryError(
 
 const governanceCaseIdInputSchema = z.object({
   caseId: z.string().uuid(),
+}).strict();
+
+const governanceSubmitInputSchema = z.object({
+  entityType: z.string().trim().min(1).max(150),
+  entityId: z.string().trim().min(1).max(200),
+  approvalParticipantId: z.string().uuid(),
+  proposedChange: z.object({
+    before: z.unknown(),
+    after: z.unknown(),
+    impactSummary: z.unknown().optional(),
+  }).strict(),
 }).strict();
 
 const governanceEscalationIdInputSchema = z.object({
@@ -1246,8 +1292,7 @@ const rulesGetVersionInputSchema = z.object({
 // Registry schemas
 //
 // `strategyNodeId` / `objectiveNodeId` are validated as bounded identifiers
-// rather than UUIDs: the Strategy module owns their format and does not exist
-// yet, so asserting a shape here would be inventing its contract.
+// because the Strategy module owns their external identifier contract.
 // ---------------------------------------------------------------------------
 
 const kpiStatusSchema = z.enum(["draft", "active", "retired"]);
@@ -1302,6 +1347,17 @@ const kpiWithVersionOutputSchema = z.object({
   version: kpiVersionOutputSchema,
 }).strict();
 
+const kpiThresholdRuleBindingOutputSchema = z.object({
+  id: z.string().uuid(),
+  kpiVersionId: z.string().uuid(),
+  thresholdRuleId: z.string().uuid(),
+  ruleKey: z.string(),
+  ruleVersion: z.number().int().positive(),
+  createdAt: z.date(),
+  createdBy: z.string().uuid(),
+  supersedesBindingId: z.string().uuid().nullable(),
+}).strict();
+
 const registryCreateDraftInputSchema = z.object({
   kpiDefinitionId: z.string().uuid().optional(),
   nameEn: shortTextSchema,
@@ -1327,6 +1383,15 @@ const registryPublishVersionInputSchema = z.object({
 
 const registryKpiIdInputSchema = z.object({
   kpiDefinitionId: z.string().uuid(),
+}).strict();
+
+const registryKpiVersionIdInputSchema = z.object({
+  kpiVersionId: z.string().uuid(),
+}).strict();
+
+const registryBindThresholdRuleInputSchema = z.object({
+  kpiVersionId: z.string().uuid(),
+  thresholdRuleId: z.string().uuid(),
 }).strict();
 
 const registryFindSimilarInputSchema = z.object({
@@ -1413,6 +1478,10 @@ const registryCreateOkrInputSchema = z.object({
   }).strict()).min(1).max(20),
 }).strict();
 
+const registryOkrIdInputSchema = z.object({
+  okrId: z.string().uuid(),
+}).strict();
+
 const registryUpdateProgressInputSchema = z.object({
   keyResultId: z.string().uuid(),
   currentValue: z.number().finite(),
@@ -1450,6 +1519,18 @@ export const appRouter = router({
       .query(({ ctx, input }) => ctx.audit.reconstructAsOf(input)),
   }),
   governance: router({
+    submit:
+      protectedProcedure
+        .input(governanceSubmitInputSchema)
+        .mutation(({ ctx, input }) =>
+          mapGovernanceErrors(() =>
+            ctx.governance.submitCase({
+              ...input,
+              submittedBy: ctx.session.user.id,
+            }),
+          ),
+        ),
+
     myPendingApprovals:
       protectedProcedure.query(
         ({ ctx }) =>
@@ -1692,6 +1773,17 @@ export const appRouter = router({
   }),
   registry: router({
     kpi: router({
+      list: protectedProcedure
+        .output(z.array(kpiWithVersionOutputSchema))
+        .query(({ ctx }) => ctx.registry.kpi.list()),
+
+      get: protectedProcedure
+        .input(registryKpiIdInputSchema)
+        .output(kpiWithVersionOutputSchema.nullable())
+        .query(({ ctx, input }) =>
+          ctx.registry.kpi.getById(input.kpiDefinitionId),
+        ),
+
       createDraft: registryAuthor()
         .input(registryCreateDraftInputSchema)
         .output(kpiWithVersionOutputSchema)
@@ -1758,9 +1850,42 @@ export const appRouter = router({
         .query(({ ctx, input }) =>
           ctx.registry.kpi.listVersions(input.kpiDefinitionId),
         ),
+
+      bindThresholdRule: registryAuthor()
+        .input(registryBindThresholdRuleInputSchema)
+        .output(kpiThresholdRuleBindingOutputSchema)
+        .mutation(async ({ ctx, input }) => {
+          try {
+            return await ctx.registry.kpi.bindThresholdRule({
+              ...input,
+              actorUserId: ctx.session.user.id,
+            });
+          } catch (error) {
+            throw toRegistryError(
+              error,
+              "Unable to bind threshold rule",
+            );
+          }
+        }),
+
+      getThresholdRuleBinding: protectedProcedure
+        .input(registryKpiVersionIdInputSchema)
+        .output(kpiThresholdRuleBindingOutputSchema.nullable())
+        .query(({ ctx, input }) =>
+          ctx.registry.kpi.getThresholdRuleBinding(input.kpiVersionId),
+        ),
     }),
 
     okr: router({
+      list: protectedProcedure
+        .output(z.array(okrOutputSchema))
+        .query(({ ctx }) => ctx.registry.okr.list()),
+
+      get: protectedProcedure
+        .input(registryOkrIdInputSchema)
+        .output(okrOutputSchema.nullable())
+        .query(({ ctx, input }) => ctx.registry.okr.getById(input.okrId)),
+
       create: registryAuthor()
         .input(registryCreateOkrInputSchema)
         .output(okrOutputSchema)

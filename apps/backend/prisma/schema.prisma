@@ -21,36 +21,37 @@ model SystemSetting {
 }
 
 model User {
-  id                                String                   @id @default(uuid())
-  email                             String                   @unique
-  displayName                       String?                  @map("display_name")
-  emailVerifiedAt                   DateTime?                @map("email_verified_at")
-  preferredLocale                   String                   @default("en") @map("preferred_locale")
-  createdAt                         DateTime                 @default(now()) @map("created_at")
-  updatedAt                         DateTime                 @updatedAt @map("updated_at")
+  id                                String                    @id @default(uuid())
+  email                             String                    @unique
+  displayName                       String?                   @map("display_name")
+  emailVerifiedAt                   DateTime?                 @map("email_verified_at")
+  preferredLocale                   String                    @default("en") @map("preferred_locale")
+  createdAt                         DateTime                  @default(now()) @map("created_at")
+  updatedAt                         DateTime                  @updatedAt @map("updated_at")
   localCredential                   LocalCredential?
   oidcIdentities                    OidcIdentity[]
-  scopeGrants                       ScopeGrant[]             @relation("ScopeGrantUser")
-  grantsGiven                       ScopeGrant[]             @relation("ScopeGrantGrantor")
-  mappingsCreated                   GroupRoleMapping[]       @relation("MappingCreator")
-  rulesCreated                      RuleDefinition[]         @relation("RuleDefinitionCreator")
-  notificationPreferences           NotificationPreference[] @relation("NotificationPreferenceRecipient")
-  notificationDeliveries            NotificationDelivery[]   @relation("NotificationDeliveryRecipient")
-  notificationDigests               NotificationDigest[]     @relation("NotificationDigestRecipient")
-  strategyNodesCreated              StrategyNode[]           @relation("StrategyNodeCreator")
-  strategyOwnerAssignments          OwnerAssignment[]        @relation("StrategyOwner")
-  strategyOwnerAssignmentsAssigned  OwnerAssignment[]        @relation("StrategyAssigner")
-  strategyStagedChangesRequested    StagedChange[]           @relation("StrategyStagedChangeRequester")
-  kpiVersionsOwned                  KpiVersion[]             @relation("KpiVersionOwner")
-  kpiVersionsStewarded              KpiVersion[]             @relation("KpiVersionSteward")
-  measurementsSubmitted             Measurement[]            @relation("MeasurementSubmitter")
-  commentaryAuthored                Commentary[]             @relation("CommentaryAuthor")
-  captureSessionsOwned              CaptureSession[]         @relation("CaptureSessionOwner")
-  approvalCasesSubmitted            ApprovalCase[]           @relation("ApprovalCaseSubmitter")
-  approvalCasesAssigned             ApprovalCase[]           @relation("ApprovalCaseParticipant")
-  governanceEscalationsAssigned     EscalationCase[]         @relation("EscalationParticipant")
-  governanceEscalationsAcknowledged EscalationCase[]         @relation("EscalationAcknowledgedBy")
-  governanceDecisionsMade           DecisionLogEntry[]       @relation("DecisionLogActor")
+  scopeGrants                       ScopeGrant[]              @relation("ScopeGrantUser")
+  grantsGiven                       ScopeGrant[]              @relation("ScopeGrantGrantor")
+  mappingsCreated                   GroupRoleMapping[]        @relation("MappingCreator")
+  rulesCreated                      RuleDefinition[]          @relation("RuleDefinitionCreator")
+  kpiThresholdBindingsCreated       KpiThresholdRuleBinding[] @relation("KpiThresholdBindingCreator")
+  notificationPreferences           NotificationPreference[]  @relation("NotificationPreferenceRecipient")
+  notificationDeliveries            NotificationDelivery[]    @relation("NotificationDeliveryRecipient")
+  notificationDigests               NotificationDigest[]      @relation("NotificationDigestRecipient")
+  strategyNodesCreated              StrategyNode[]            @relation("StrategyNodeCreator")
+  strategyOwnerAssignments          OwnerAssignment[]         @relation("StrategyOwner")
+  strategyOwnerAssignmentsAssigned  OwnerAssignment[]         @relation("StrategyAssigner")
+  strategyStagedChangesRequested    StagedChange[]            @relation("StrategyStagedChangeRequester")
+  kpiVersionsOwned                  KpiVersion[]              @relation("KpiVersionOwner")
+  kpiVersionsStewarded              KpiVersion[]              @relation("KpiVersionSteward")
+  measurementsSubmitted             Measurement[]             @relation("MeasurementSubmitter")
+  commentaryAuthored                Commentary[]              @relation("CommentaryAuthor")
+  captureSessionsOwned              CaptureSession[]          @relation("CaptureSessionOwner")
+  approvalCasesSubmitted            ApprovalCase[]            @relation("ApprovalCaseSubmitter")
+  approvalCasesAssigned             ApprovalCase[]            @relation("ApprovalCaseParticipant")
+  governanceEscalationsAssigned     EscalationCase[]          @relation("EscalationParticipant")
+  governanceEscalationsAcknowledged EscalationCase[]          @relation("EscalationAcknowledgedBy")
+  governanceDecisionsMade           DecisionLogEntry[]        @relation("DecisionLogActor")
 
   @@map("users")
   @@schema("iam")
@@ -199,9 +200,10 @@ model RuleDefinition {
   supersedes   RuleDefinition? @relation("RuleDefinitionVersions", fields: [supersedesId], references: [id], onDelete: Restrict)
   supersededBy RuleDefinition? @relation("RuleDefinitionVersions")
 
-  kpiRollupLinks         KpiHierarchyNode[] @relation("KpiHierarchyRollupRule")
-  statusResultsEvaluated StatusResult[]     @relation("StatusResultRuleVersion")
-  rollupResultsEvaluated RollupResult[]     @relation("RollupResultRuleVersion")
+  kpiRollupLinks         KpiHierarchyNode[]        @relation("KpiHierarchyRollupRule")
+  kpiThresholdBindings   KpiThresholdRuleBinding[] @relation("KpiThresholdBindingRule")
+  statusResultsEvaluated StatusResult[]            @relation("StatusResultRuleVersion")
+  rollupResultsEvaluated RollupResult[]            @relation("RollupResultRuleVersion")
 
   @@unique([ruleKey, version])
   @@index([ruleKey, isCurrent])
@@ -997,7 +999,8 @@ model KpiVersion {
   performanceCommentary   Commentary[]     @relation("PerformanceCommentaryKpiVersion")
   performanceSessions     CaptureSession[] @relation("PerformanceCaptureKpiVersion")
 
-  performanceThresholdBinding PerformanceKpiBinding? @relation("PerformanceThresholdKpiVersion")
+  performanceThresholdBinding PerformanceKpiBinding?    @relation("PerformanceThresholdKpiVersion")
+  thresholdRuleBindings       KpiThresholdRuleBinding[] @relation("KpiThresholdBindingVersion")
 
   @@unique([kpiDefinitionId, version])
   @@index([kpiDefinitionId, activeFrom])
@@ -1092,6 +1095,31 @@ model KpiHierarchyNode {
   @@index([childKpiId])
   @@index([rollupMethodRuleId])
   @@map("kpi_hierarchy_nodes")
+  @@schema("registry")
+}
+
+/// Registry-owned, append-preserving history of threshold rule assignments.
+/// Each row references an immutable KPI version and an immutable Rules-owned
+/// RuleDefinition version. Exactly one row per KPI version may be current.
+model KpiThresholdRuleBinding {
+  id              String   @id @default(uuid())
+  kpiVersionId    String   @map("kpi_version_id")
+  thresholdRuleId String   @map("threshold_rule_id")
+  isCurrent       Boolean  @default(true) @map("is_current")
+  supersedesId    String?  @unique @map("supersedes_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  createdById     String   @map("created_by")
+
+  kpiVersion    KpiVersion               @relation("KpiThresholdBindingVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  thresholdRule RuleDefinition           @relation("KpiThresholdBindingRule", fields: [thresholdRuleId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdBy     User                     @relation("KpiThresholdBindingCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  supersedes    KpiThresholdRuleBinding? @relation("KpiThresholdBindingHistory", fields: [supersedesId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  supersededBy  KpiThresholdRuleBinding? @relation("KpiThresholdBindingHistory")
+
+  @@index([kpiVersionId, isCurrent])
+  @@index([thresholdRuleId])
+  @@index([createdById])
+  @@map("kpi_threshold_rule_bindings")
   @@schema("registry")
 }
 

@@ -2,19 +2,16 @@
 
 import { useState } from "react";
 import { ChevronRight, Rocket, Target, ClipboardList } from "lucide-react";
-import KpiLibraryPage from "@/components/kpi-library/KpiLibraryPage";
-import KpiDefinitionPage from "@/components/kpi-definition/KpiDefinitionPage";
 import KpiDetailView from "@/components/kpi-detail/KpiDetailView";
 import CaptureTaskList from "@/components/capture/CaptureTaskList";
 import CaptureSessionView from "@/components/capture/CaptureSessionView";
-import OkrLibraryPlaceholder from "./OkrLibraryPlaceholder";
+import { KpiRegistryPanel, OkrRegistryPanel } from "@/components/kpi-registry/RegistryPanels";
 
 type TopTab = "okr" | "library" | "capture";
 
 type View =
   | { type: "okr" }
   | { type: "library" }
-  | { type: "definition"; kpiId: string }
   | { type: "detail"; kpiId: string }
   | { type: "capture-list" }
   | { type: "capture-session"; taskId: string };
@@ -24,7 +21,7 @@ export default function KpiWorkspacePage() {
 
   // which top-level tab reads as "active" even while drilled into a definition/detail/session view
   const activeTab: TopTab =
-    view.type === "definition" || view.type === "detail" ? "library"
+    view.type === "detail" ? "library"
       : view.type === "capture-session" ? "capture"
       : view.type === "capture-list" ? "capture"
       : view.type;
@@ -46,21 +43,10 @@ export default function KpiWorkspacePage() {
         </div>
       )}
 
-      {view.type === "okr" && <OkrLibraryPlaceholder />}
+      {view.type === "okr" && <OkrRegistryPanel />}
 
       {view.type === "library" && (
-        <KpiLibraryPage
-          onSelectKpi={(kpiId) => setView({ type: "detail", kpiId })}
-          onEditKpi={(kpiId) => setView({ type: "definition", kpiId })}
-        />
-      )}
-
-      {view.type === "definition" && (
-        <KpiDefinitionPage
-          kpiId={view.kpiId}
-          onBack={() => setView({ type: "library" })}
-          onViewDetail={(kpiId) => setView({ type: "detail", kpiId })}
-        />
+        <KpiRegistryPanel />
       )}
 
       {view.type === "detail" && (
@@ -68,7 +54,7 @@ export default function KpiWorkspacePage() {
           kpiId={view.kpiId}
           onBack={() => setView({ type: "library" })}
           onNavigateKpi={(kpiId) => setView({ type: "detail", kpiId })}
-          onEditDefinition={(kpiId) => setView({ type: "definition", kpiId })}
+          onEditDefinition={() => setView({ type: "library" })}
         />
       )}
 

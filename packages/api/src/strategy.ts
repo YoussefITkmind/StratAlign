@@ -25,6 +25,7 @@ export interface StagedChangeOutput {
 }
 
 export interface StrategyServiceContract {
+  listNodes(): Promise<StrategyNode[]>;
   createPlanVersion(name: string): Promise<PlanVersion>;
 
   createNode(input: {
@@ -146,6 +147,10 @@ const traversal = (
 
 export const strategyRouter = router({
   node: router({
+    list: protectedProcedure
+      .query(async ({ ctx }) => {
+        try { return await service(ctx).listNodes(); } catch (e) { return fail(e); }
+      }),
     cascade: protectedProcedure
       .input(
         z.object({
