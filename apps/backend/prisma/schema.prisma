@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "scheduling", "strategy", "registry", "performance"]
+  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance"]
 }
 
 model SystemSetting {
@@ -21,31 +21,35 @@ model SystemSetting {
 }
 
 model User {
-  id                               String                   @id @default(uuid())
-  email                            String                   @unique
-  displayName                      String?                  @map("display_name")
-  emailVerifiedAt                  DateTime?                @map("email_verified_at")
-  preferredLocale                  String                   @default("en") @map("preferred_locale")
-  createdAt                        DateTime                 @default(now()) @map("created_at")
-  updatedAt                        DateTime                 @updatedAt @map("updated_at")
-  localCredential                  LocalCredential?
-  oidcIdentities                   OidcIdentity[]
-  scopeGrants                      ScopeGrant[]             @relation("ScopeGrantUser")
-  grantsGiven                      ScopeGrant[]             @relation("ScopeGrantGrantor")
-  mappingsCreated                  GroupRoleMapping[]       @relation("MappingCreator")
-  rulesCreated                     RuleDefinition[]         @relation("RuleDefinitionCreator")
-  notificationPreferences          NotificationPreference[] @relation("NotificationPreferenceRecipient")
-  notificationDeliveries           NotificationDelivery[]   @relation("NotificationDeliveryRecipient")
-  notificationDigests              NotificationDigest[]     @relation("NotificationDigestRecipient")
-  strategyNodesCreated             StrategyNode[]           @relation("StrategyNodeCreator")
-  strategyOwnerAssignments         OwnerAssignment[]        @relation("StrategyOwner")
-  strategyOwnerAssignmentsAssigned OwnerAssignment[]        @relation("StrategyAssigner")
-  strategyStagedChangesRequested   StagedChange[]           @relation("StrategyStagedChangeRequester")
-  kpiVersionsOwned                 KpiVersion[]             @relation("KpiVersionOwner")
-  kpiVersionsStewarded             KpiVersion[]             @relation("KpiVersionSteward")
-  measurementsSubmitted            Measurement[]            @relation("MeasurementSubmitter")
-  commentaryAuthored               Commentary[]             @relation("CommentaryAuthor")
-  captureSessionsOwned             CaptureSession[]         @relation("CaptureSessionOwner")
+  id                                String                   @id @default(uuid())
+  email                             String                   @unique
+  displayName                       String?                  @map("display_name")
+  emailVerifiedAt                   DateTime?                @map("email_verified_at")
+  preferredLocale                   String                   @default("en") @map("preferred_locale")
+  createdAt                         DateTime                 @default(now()) @map("created_at")
+  updatedAt                         DateTime                 @updatedAt @map("updated_at")
+  localCredential                   LocalCredential?
+  oidcIdentities                    OidcIdentity[]
+  scopeGrants                       ScopeGrant[]             @relation("ScopeGrantUser")
+  grantsGiven                       ScopeGrant[]             @relation("ScopeGrantGrantor")
+  mappingsCreated                   GroupRoleMapping[]       @relation("MappingCreator")
+  rulesCreated                      RuleDefinition[]         @relation("RuleDefinitionCreator")
+  notificationPreferences           NotificationPreference[] @relation("NotificationPreferenceRecipient")
+  notificationDeliveries            NotificationDelivery[]   @relation("NotificationDeliveryRecipient")
+  notificationDigests               NotificationDigest[]     @relation("NotificationDigestRecipient")
+  strategyNodesCreated              StrategyNode[]           @relation("StrategyNodeCreator")
+  strategyOwnerAssignments          OwnerAssignment[]        @relation("StrategyOwner")
+  strategyOwnerAssignmentsAssigned  OwnerAssignment[]        @relation("StrategyAssigner")
+  strategyStagedChangesRequested    StagedChange[]           @relation("StrategyStagedChangeRequester")
+  kpiVersionsOwned                  KpiVersion[]             @relation("KpiVersionOwner")
+  kpiVersionsStewarded              KpiVersion[]             @relation("KpiVersionSteward")
+  measurementsSubmitted             Measurement[]            @relation("MeasurementSubmitter")
+  commentaryAuthored                Commentary[]             @relation("CommentaryAuthor")
+  captureSessionsOwned              CaptureSession[]         @relation("CaptureSessionOwner")
+  approvalCasesSubmitted            ApprovalCase[]           @relation("ApprovalCaseSubmitter")
+  governanceEscalationsAssigned     EscalationCase[]         @relation("EscalationParticipant")
+  governanceEscalationsAcknowledged EscalationCase[]         @relation("EscalationAcknowledgedBy")
+  governanceDecisionsMade           DecisionLogEntry[]       @relation("DecisionLogActor")
 
   @@map("users")
   @@schema("iam")
@@ -235,6 +239,115 @@ model DomainEvent {
   @@index([status, occurredAt])
   @@map("domain_events")
   @@schema("public")
+}
+
+// ---------------------------------------------------------------------------
+// Governance / Workflow
+// ---------------------------------------------------------------------------
+
+enum ApprovalCaseState {
+  DRAFT             @map("draft")
+  PENDING_APPROVAL  @map("pending_approval")
+  APPROVED          @map("approved")
+  REJECTED          @map("rejected")
+  CHANGES_REQUESTED @map("changes_requested")
+
+  @@schema("governance")
+}
+
+enum ApprovalDecision {
+  APPROVED @map("approved")
+  REJECTED @map("rejected")
+
+  @@schema("governance")
+}
+
+/// Immutable, versioned workflow-machine configuration.
+/// New versions append rows rather than mutating historical definitions.
+model WorkflowDefinition {
+  id             String   @id @default(uuid()) @db.Uuid
+  workflowKey    String   @map("workflow_key")
+  version        Int
+  definitionJson Json     @map("definition_json")
+  isCurrent      Boolean  @default(true) @map("is_current")
+  supersedesId   String?  @unique @map("supersedes_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  supersedes    WorkflowDefinition? @relation("WorkflowDefinitionVersions", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy  WorkflowDefinition? @relation("WorkflowDefinitionVersions")
+  approvalCases ApprovalCase[]
+
+  @@unique([workflowKey, version])
+  @@index([workflowKey, isCurrent])
+  @@map("workflow_definitions")
+  @@schema("governance")
+}
+
+/// Persistent instance of a configured XState workflow.
+///
+/// xstateContextSnapshot stores the complete persisted XState snapshot
+/// required to recreate an actor after a process restart.
+model ApprovalCase {
+  id                    String            @id @default(uuid()) @db.Uuid
+  workflowDefinitionId  String            @map("workflow_definition_id") @db.Uuid
+  entityType            String            @map("entity_type")
+  entityId              String            @map("entity_id")
+  submittedBy           String            @map("submitted_by")
+  currentState          ApprovalCaseState @default(DRAFT) @map("current_state")
+  xstateContextSnapshot Json              @map("xstate_context_snapshot")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  workflowDefinition WorkflowDefinition @relation(fields: [workflowDefinitionId], references: [id], onDelete: Restrict)
+  submitter          User               @relation("ApprovalCaseSubmitter", fields: [submittedBy], references: [id], onDelete: Restrict)
+  escalations        EscalationCase[]
+  decisionLog        DecisionLogEntry?
+
+  @@index([workflowDefinitionId])
+  @@index([entityType, entityId])
+  @@index([submittedBy])
+  @@index([currentState])
+  @@map("approval_cases")
+  @@schema("governance")
+}
+
+/// Escalation raised when an approval remains pending past its SLA deadline.
+model EscalationCase {
+  id             String    @id @default(uuid()) @db.Uuid
+  caseId         String    @map("case_id") @db.Uuid
+  participant    String
+  deadline       DateTime
+  acknowledgedAt DateTime? @map("acknowledged_at")
+  acknowledgedBy String?   @map("acknowledged_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  approvalCase    ApprovalCase @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  participantUser User         @relation("EscalationParticipant", fields: [participant], references: [id], onDelete: Restrict)
+  acknowledger    User?        @relation("EscalationAcknowledgedBy", fields: [acknowledgedBy], references: [id], onDelete: Restrict)
+
+  @@index([caseId])
+  @@index([participant, acknowledgedAt])
+  @@index([deadline, acknowledgedAt])
+  @@map("escalation_cases")
+  @@schema("governance")
+}
+
+/// Immutable terminal approval/rejection record.
+model DecisionLogEntry {
+  id        String           @id @default(uuid()) @db.Uuid
+  caseId    String           @unique @map("case_id") @db.Uuid
+  decision  ApprovalDecision
+  decidedBy String           @map("decided_by")
+  decidedAt DateTime         @default(now()) @map("decided_at")
+  rationale String?
+
+  approvalCase ApprovalCase @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  actor        User         @relation("DecisionLogActor", fields: [decidedBy], references: [id], onDelete: Restrict)
+
+  @@index([decidedBy])
+  @@index([decidedAt])
+  @@map("decision_log_entries")
+  @@schema("governance")
 }
 
 model JournalEntry {
