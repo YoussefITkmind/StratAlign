@@ -20,7 +20,6 @@ declare module "./index" {
 }
 
 const id = z.string().uuid();
-const approval = z.object({ approvalCaseId: id.optional() });
 const admin = () => requireRole("seo_administrator");
 const fail = (error: unknown): never => {
   throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Strategy operation failed" });
