@@ -39,6 +39,12 @@ import { DigestService } from "./modules/notifications/digest/digest.service";
 import { createSenderRegistry } from "./modules/notifications/sender/sender.registry";
 import { ScheduleNotificationSubscriber } from "./modules/notifications/subscribers/schedule-notification.subscriber";
 
+import { RulesService } from "./modules/rules/rules.service";
+import { MeasurementService } from "./modules/performance/measurement.service";
+import { KpiBindingService } from "./modules/performance/kpi-binding.service";
+import { RecomputeService } from "./modules/performance/recompute.service";
+import { PerformanceRecomputeSubscriber } from "./modules/performance/subscribers/performance-recompute.subscriber";
+
 import { createEventDispatchWorker, createOutboxRelayWorker } from "./workers/event.workers";
 import { createAuditVerificationWorker } from "./workers/audit.workers";
 import { createMaterializeWorker, createSchedulerTickWorker, createTransitionWorker } from "./workers/scheduler.workers";
@@ -176,6 +182,26 @@ async function bootstrap(): Promise<void> {
     ),
   );
 
+  // Performance recompute is carried by the existing event/outbox
+  // infrastructure so it inherits retry, DLQ and idempotency behaviour.
+  subscriberRegistry.register(
+    new PerformanceRecomputeSubscriber(
+      new RecomputeService(
+        prisma,
+        new MeasurementService(
+          prisma,
+          eventBus,
+          logger.child("performance-measurement"),
+        ),
+        new KpiBindingService(prisma),
+        new RulesService(prisma),
+        eventBus,
+        logger.child("performance-recompute"),
+      ),
+      logger.child("performance-recompute-subscriber"),
+    ),
+  );
+
   const eventDispatcher = new EventDispatcherService(
     subscriberRegistry,
     logger.child("event-dispatcher"),
@@ -242,7 +268,7 @@ async function bootstrap(): Promise<void> {
   }
 
   logger.info(
-    "SPM audit, strategy, scheduler, event and notification workers started",
+    "SPM audit, strategy, scheduler, performance, event and notification workers started",
   );
 
   async function shutdown(signal: string): Promise<void> {

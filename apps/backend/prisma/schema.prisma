@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "scheduling", "strategy", "registry"]
+  schemas  = ["public", "iam", "rules", "audit", "scheduling", "strategy", "registry", "performance"]
 }
 
 model SystemSetting {
@@ -43,6 +43,9 @@ model User {
   strategyStagedChangesRequested   StagedChange[]           @relation("StrategyStagedChangeRequester")
   kpiVersionsOwned                 KpiVersion[]             @relation("KpiVersionOwner")
   kpiVersionsStewarded             KpiVersion[]             @relation("KpiVersionSteward")
+  measurementsSubmitted            Measurement[]            @relation("MeasurementSubmitter")
+  commentaryAuthored               Commentary[]             @relation("CommentaryAuthor")
+  captureSessionsOwned             CaptureSession[]         @relation("CaptureSessionOwner")
 
   @@map("users")
   @@schema("iam")
@@ -191,7 +194,9 @@ model RuleDefinition {
   supersedes   RuleDefinition? @relation("RuleDefinitionVersions", fields: [supersedesId], references: [id], onDelete: Restrict)
   supersededBy RuleDefinition? @relation("RuleDefinitionVersions")
 
-  kpiRollupLinks KpiHierarchyNode[] @relation("KpiHierarchyRollupRule")
+  kpiRollupLinks         KpiHierarchyNode[] @relation("KpiHierarchyRollupRule")
+  statusResultsEvaluated StatusResult[]     @relation("StatusResultRuleVersion")
+  rollupResultsEvaluated RollupResult[]     @relation("RollupResultRuleVersion")
 
   @@unique([ruleKey, version])
   @@index([ruleKey, isCurrent])
@@ -340,6 +345,8 @@ model PlanVersion {
   edges                  StrategyEdge[]
   stagedChanges          StagedChange[]
 
+  performanceTargets TargetSeries[] @relation("PerformanceTargetPlan")
+
   @@index([status])
   @@index([sourcePlanVersionId])
   @@map("plan_versions")
@@ -362,6 +369,13 @@ model StrategyNode {
   ownerAssignments   OwnerAssignment[]
   registryOkrs       Okr[]             @relation("RegistryOkrObjective")
   registryAlignments Alignment[]       @relation("RegistryStrategyAlignment")
+
+  performanceMeasurements    Measurement[]    @relation("PerformanceMeasurementScope")
+  performanceTargets         TargetSeries[]   @relation("PerformanceTargetScope")
+  performanceStatuses        StatusResult[]   @relation("PerformanceStatusScope")
+  performanceRollups         RollupResult[]   @relation("PerformanceRollupScope")
+  performanceCommentary      Commentary[]     @relation("PerformanceCommentaryScope")
+  performanceCaptureSessions CaptureSession[] @relation("PerformanceCaptureScope")
 
   @@index([planVersionId, type])
   @@index([planVersionId, state])
@@ -819,6 +833,8 @@ model KpiDefinition {
   parentLinks   KpiHierarchyNode[] @relation("KpiHierarchyParent")
   childLinks    KpiHierarchyNode[] @relation("KpiHierarchyChild")
 
+  performanceRollupResults RollupResult[] @relation("PerformanceRollupParent")
+
   @@index([status])
   @@map("kpi_definitions")
   @@schema("registry")
@@ -855,6 +871,14 @@ model KpiVersion {
   steward       User?          @relation("KpiVersionSteward", fields: [stewardUserId], references: [id], onDelete: Restrict)
   supersedes    KpiVersion?    @relation("KpiVersionChain", fields: [supersedesVersionId], references: [id], onDelete: Restrict)
   supersededBy  KpiVersion?    @relation("KpiVersionChain")
+
+  performanceMeasurements Measurement[]    @relation("PerformanceMeasurementKpiVersion")
+  performanceTargets      TargetSeries[]   @relation("PerformanceTargetKpiVersion")
+  performanceStatuses     StatusResult[]   @relation("PerformanceStatusKpiVersion")
+  performanceCommentary   Commentary[]     @relation("PerformanceCommentaryKpiVersion")
+  performanceSessions     CaptureSession[] @relation("PerformanceCaptureKpiVersion")
+
+  performanceThresholdBinding PerformanceKpiBinding? @relation("PerformanceThresholdKpiVersion")
 
   @@unique([kpiDefinitionId, version])
   @@index([kpiDefinitionId, activeFrom])
@@ -950,4 +974,209 @@ model KpiHierarchyNode {
   @@index([rollupMethodRuleId])
   @@map("kpi_hierarchy_nodes")
   @@schema("registry")
+}
+
+// ---------------------------------------------------------------------------
+// Performance data (Prompt 2.7)
+//
+// Performance references the real Registry and Strategy models:
+// - kpi_version_id  -> registry.kpi_versions
+// - scope_node_id   -> strategy.strategy_nodes
+// - parent_kpi_id   -> registry.kpi_definitions
+// - plan_version_id -> strategy.plan_versions.
+// ---------------------------------------------------------------------------
+
+enum MeasurementSource {
+  MANUAL   @map("manual")
+  FEED     @map("feed")
+  TEMPLATE @map("template")
+
+  @@schema("performance")
+}
+
+enum CaptureSessionState {
+  DRAFT     @map("draft")
+  SUBMITTED @map("submitted")
+  RECALLED  @map("recalled")
+
+  @@schema("performance")
+}
+
+/// Append-only. The application database role holds SELECT and INSERT only;
+/// UPDATE and DELETE are revoked in PostgreSQL. Corrections insert a new row
+/// carrying `supersedes_id`.
+model Measurement {
+  id            String            @id @default(uuid())
+  kpiVersionId  String            @map("kpi_version_id")
+  scopeNodeId   String            @map("scope_node_id") @db.Uuid
+  period        String
+  value         Decimal           @db.Decimal(20, 6)
+  source        MeasurementSource
+  locked        Boolean           @default(false)
+  supersedesId  String?           @unique @map("supersedes_id")
+  submittedById String            @map("submitted_by")
+  /// Opaque object-storage reference. No upload workflow exists yet (2.8).
+  evidenceRef   String?           @map("evidence_ref")
+  createdAt     DateTime          @default(now()) @map("created_at")
+
+  submittedBy  User         @relation("MeasurementSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
+  supersedes   Measurement? @relation("MeasurementSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy Measurement? @relation("MeasurementSupersession")
+
+  kpiVersion KpiVersion   @relation("PerformanceMeasurementKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  scopeNode  StrategyNode @relation("PerformanceMeasurementScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([kpiVersionId, scopeNodeId, period, createdAt])
+  @@index([kpiVersionId])
+  @@index([scopeNodeId])
+  @@index([period])
+  @@index([createdAt])
+  @@index([submittedById])
+  @@map("measurements")
+  @@schema("performance")
+}
+
+model TargetSeries {
+  id            String   @id @default(uuid())
+  kpiVersionId  String   @map("kpi_version_id")
+  scopeNodeId   String   @map("scope_node_id") @db.Uuid
+  period        String
+  targetValue   Decimal  @map("target_value") @db.Decimal(20, 6)
+  planVersionId String   @map("plan_version_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  kpiVersion  KpiVersion   @relation("PerformanceTargetKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  scopeNode   StrategyNode @relation("PerformanceTargetScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  planVersion PlanVersion  @relation("PerformanceTargetPlan", fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([kpiVersionId, scopeNodeId, period, planVersionId], map: "target_series_kpi_scope_period_plan_key")
+  @@index([kpiVersionId, scopeNodeId, period])
+  @@map("target_series")
+  @@schema("performance")
+}
+
+/// Produced by the Rule Engine. Performance never derives a status itself.
+model StatusResult {
+  id              String   @id @default(uuid())
+  kpiVersionId    String   @map("kpi_version_id")
+  scopeNodeId     String   @map("scope_node_id") @db.Uuid
+  period          String
+  status          String
+  computedAt      DateTime @default(now()) @map("computed_at")
+  /// The `rules.rule_definitions` row that produced this status. That row *is*
+  /// the immutable rule version.
+  ruleVersionUsed String   @map("rule_version_used")
+  /// Stable per (result, triggering event); makes worker retries a no-op.
+  dedupeKey       String   @unique @map("dedupe_key")
+
+  ruleVersion RuleDefinition @relation("StatusResultRuleVersion", fields: [ruleVersionUsed], references: [id], onDelete: Restrict)
+
+  kpiVersion KpiVersion   @relation("PerformanceStatusKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  scopeNode  StrategyNode @relation("PerformanceStatusScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([kpiVersionId, scopeNodeId, period, computedAt])
+  @@index([computedAt])
+  @@index([ruleVersionUsed])
+  @@map("status_results")
+  @@schema("performance")
+}
+
+model RollupResult {
+  id              String   @id @default(uuid())
+  parentKpiId     String   @map("parent_kpi_id")
+  scopeNodeId     String   @map("scope_node_id") @db.Uuid
+  period          String
+  aggregatedValue Decimal? @map("aggregated_value") @db.Decimal(20, 6)
+  /// Mirrors `@spm/rules` `rollupMethodSchema`; the rule document is authoritative.
+  method          String
+  computedAt      DateTime @default(now()) @map("computed_at")
+  ruleVersionUsed String   @map("rule_version_used")
+  dedupeKey       String   @unique @map("dedupe_key")
+
+  ruleVersion RuleDefinition @relation("RollupResultRuleVersion", fields: [ruleVersionUsed], references: [id], onDelete: Restrict)
+
+  parentKpi KpiDefinition @relation("PerformanceRollupParent", fields: [parentKpiId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  scopeNode StrategyNode  @relation("PerformanceRollupScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([parentKpiId, scopeNodeId, period, computedAt])
+  @@index([computedAt])
+  @@index([ruleVersionUsed])
+  @@map("rollup_results")
+  @@schema("performance")
+}
+
+model Commentary {
+  id           String   @id @default(uuid())
+  kpiVersionId String   @map("kpi_version_id")
+  scopeNodeId  String   @map("scope_node_id") @db.Uuid
+  period       String
+  authorId     String   @map("author_id")
+  bodyEn       String?  @map("body_en")
+  bodyAr       String?  @map("body_ar")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  author User @relation("CommentaryAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  kpiVersion KpiVersion   @relation("PerformanceCommentaryKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  scopeNode  StrategyNode @relation("PerformanceCommentaryScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([kpiVersionId, scopeNodeId, period, createdAt])
+  @@index([authorId])
+  @@map("commentary")
+  @@schema("performance")
+}
+
+model CaptureSession {
+  id           String              @id @default(uuid())
+  kpiVersionId String              @map("kpi_version_id")
+  scopeNodeId  String              @map("scope_node_id") @db.Uuid
+  period       String
+  state        CaptureSessionState @default(DRAFT)
+  ownerId      String              @map("owner_id")
+
+  /// Set on submit. The measurement this session produced, so a recall knows
+  /// exactly which row a subsequent correction must supersede.
+  submittedMeasurementId String?   @map("submitted_measurement_id")
+  submittedAt            DateTime? @map("submitted_at")
+  recalledAt             DateTime? @map("recalled_at")
+  /// Recall cutoff. Past this instant the submission is final.
+  recallDeadlineAt       DateTime? @map("recall_deadline_at")
+  /// Set once a downstream consumer has taken the submission. Hard cutoff.
+  consumedAt             DateTime? @map("consumed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner User @relation("CaptureSessionOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+
+  kpiVersion KpiVersion   @relation("PerformanceCaptureKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  scopeNode  StrategyNode @relation("PerformanceCaptureScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([kpiVersionId, scopeNodeId, period, state])
+  @@index([ownerId])
+  @@index([state])
+  @@map("capture_sessions")
+  @@schema("performance")
+}
+
+/// TEMPORARY THRESHOLD-RULE SEAM.
+///
+/// Registry 2.4 is now the source of truth for KPI identity, active versions
+/// and hierarchy. This table exists only until Prompt 2.6 provides the
+/// permanent KPI -> threshold-rule binding.
+model PerformanceKpiBinding {
+  id               String  @id @default(uuid())
+  kpiVersionId     String  @unique @map("kpi_version_id")
+  thresholdRuleKey String? @map("threshold_rule_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  kpiVersion KpiVersion @relation("PerformanceThresholdKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([thresholdRuleKey])
+  @@map("kpi_bindings")
+  @@schema("performance")
 }

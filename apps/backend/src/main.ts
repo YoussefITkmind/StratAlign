@@ -28,6 +28,11 @@ import { AlignmentService } from "./modules/registry/alignment.service";
 import { KpiHierarchyService } from "./modules/registry/kpi-hierarchy.service";
 import { UnavailableApprovalGateway } from "./modules/registry/gateways/approval.gateway";
 import { PrismaStrategyNodeGateway } from "./modules/registry/gateways/strategy-node.gateway";
+import { MeasurementService } from "./modules/performance/measurement.service";
+import { CaptureSessionService } from "./modules/performance/capture-session.service";
+import { CommentaryService } from "./modules/performance/commentary.service";
+import { PerformanceResultsService } from "./modules/performance/performance-results.service";
+import { PerformanceService } from "./modules/performance/performance.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -74,6 +79,23 @@ async function bootstrap(): Promise<void> {
   const audit = new SnapshotService(prisma);
   const auditTap = new ApiAuditTapService(prisma, eventBus);
 
+  const measurements = new MeasurementService(
+    prisma,
+    eventBus,
+    logger.child("performance-measurement"),
+  );
+
+  const performance = new PerformanceService(
+    new CaptureSessionService(
+      prisma,
+      measurements,
+      logger.child("performance-capture"),
+    ),
+    measurements,
+    new CommentaryService(prisma),
+    new PerformanceResultsService(prisma),
+  );
+
   const server = createHTTPServer({
     router: rootRouter,
     basePath: "/trpc/",
@@ -97,6 +119,7 @@ async function bootstrap(): Promise<void> {
         registry,
         audit,
         auditTap,
+        performance,
       };
     },
     middleware(request, response, next) {

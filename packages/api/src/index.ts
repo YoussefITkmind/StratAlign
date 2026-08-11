@@ -362,6 +362,130 @@ export interface RegistryServicesContract {
   hierarchy: RegistryHierarchyServiceContract;
 }
 
+// ---------------------------------------------------------------------------
+// Performance data (Prompt 2.7)
+// ---------------------------------------------------------------------------
+
+export type MeasurementSourceValue = "MANUAL" | "FEED" | "TEMPLATE";
+export type CaptureSessionStateValue = "DRAFT" | "SUBMITTED" | "RECALLED";
+
+export interface MeasurementOutput {
+  id: string;
+  kpiVersionId: string;
+  scopeNodeId: string;
+  period: string;
+  value: number;
+  source: MeasurementSourceValue;
+  locked: boolean;
+  supersedesId: string | null;
+  submittedBy: string;
+  evidenceRef: string | null;
+  createdAt: Date;
+}
+
+export interface CaptureSessionOutput {
+  id: string;
+  kpiVersionId: string;
+  scopeNodeId: string;
+  period: string;
+  state: CaptureSessionStateValue;
+  ownerId: string;
+  submittedMeasurementId: string | null;
+  submittedAt: Date | null;
+  recalledAt: Date | null;
+  recallDeadlineAt: Date | null;
+  consumedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CommentaryOutput {
+  id: string;
+  kpiVersionId: string;
+  scopeNodeId: string;
+  period: string;
+  authorId: string;
+  bodyEn: string | null;
+  bodyAr: string | null;
+  createdAt: Date;
+}
+
+export interface StatusResultOutput {
+  id: string;
+  kpiVersionId: string;
+  scopeNodeId: string;
+  period: string;
+  status: string;
+  computedAt: Date;
+  ruleVersionUsed: string;
+}
+
+export interface RollupResultOutput {
+  id: string;
+  parentKpiId: string;
+  scopeNodeId: string;
+  period: string;
+  aggregatedValue: number | null;
+  method: string;
+  computedAt: Date;
+  ruleVersionUsed: string;
+}
+
+export interface PerformanceServiceContract {
+  startCaptureSession(input: {
+    kpiVersionId: string;
+    scopeNodeId: string;
+    period: string;
+    ownerId: string;
+    recallDeadlineAt?: Date | null;
+  }): Promise<CaptureSessionOutput>;
+
+  submitCaptureSession(input: {
+    sessionId: string;
+    actorId: string;
+    value: number;
+    evidenceRef?: string | null;
+  }): Promise<{
+    session: CaptureSessionOutput;
+    measurement: MeasurementOutput;
+  }>;
+
+  recallCaptureSession(input: {
+    sessionId: string;
+    actorId: string;
+    actorIsDataSteward: boolean;
+  }): Promise<CaptureSessionOutput>;
+
+  listMeasurements(input: {
+    kpiVersionId?: string;
+    scopeNodeId?: string;
+    period?: string;
+    asOf?: Date;
+    limit: number;
+  }): Promise<MeasurementOutput[]>;
+
+  addCommentary(input: {
+    kpiVersionId: string;
+    scopeNodeId: string;
+    period: string;
+    authorId: string;
+    bodyEn?: string | null;
+    bodyAr?: string | null;
+  }): Promise<CommentaryOutput>;
+
+  getStatus(input: {
+    kpiVersionId: string;
+    scopeNodeId: string;
+    period: string;
+  }): Promise<StatusResultOutput | null>;
+
+  getRollup(input: {
+    parentKpiId: string;
+    scopeNodeId: string;
+    period: string;
+  }): Promise<RollupResultOutput | null>;
+}
+
 export interface AuditTapServiceContract {
   recordCompletedCall(input: {
     procedurePath: string;
@@ -384,6 +508,7 @@ export interface TrpcContext {
   rules: RulesServiceContract;
   audit: AuditServiceContract;
   auditTap: AuditTapServiceContract;
+  performance: PerformanceServiceContract;
   registry: RegistryServicesContract;
 }
 
@@ -641,6 +766,183 @@ const auditReconstructionOutputSchema = z.object({
   version: z.number().int().positive().nullable(),
   data: z.unknown(),
 }).strict().nullable();
+
+// ---------------------------------------------------------------------------
+// Performance schemas and error mapping
+// ---------------------------------------------------------------------------
+
+const periodSchema = z.string().trim().min(1).max(50);
+const evidenceRefSchema = z.string().trim().min(1).max(1024);
+
+/**
+ * Domain failures are mapped to transport codes here, and nothing else is: an
+ * unrecognised error becomes a generic INTERNAL_SERVER_ERROR so SQL text,
+ * Prisma stack traces and worker internals can never reach a client.
+ */
+const PERFORMANCE_ERROR_CODES = {
+  INVALID_CAPTURE_TRANSITION: "CONFLICT",
+  CAPTURE_SESSION_NOT_FOUND: "NOT_FOUND",
+  DUPLICATE_ACTIVE_SESSION: "CONFLICT",
+  RECALL_CUTOFF_REACHED: "CONFLICT",
+  RECALL_NOT_PERMITTED: "FORBIDDEN",
+  MEASUREMENT_LOCKED: "CONFLICT",
+  FEED_MEASUREMENT_LOCKED: "CONFLICT",
+  INVALID_SUPERSESSION: "CONFLICT",
+  MEASUREMENT_NOT_FOUND: "NOT_FOUND",
+  COMMENTARY_CONTENT_REQUIRED: "BAD_REQUEST",
+  RULE_NOT_FOUND: "NOT_FOUND",
+  RULE_EVALUATION_FAILED: "INTERNAL_SERVER_ERROR",
+} as const satisfies Record<string, TRPCError["code"]>;
+
+type PerformanceErrorCode = keyof typeof PERFORMANCE_ERROR_CODES;
+
+function isMappedPerformanceError(
+  error: unknown,
+): error is { code: PerformanceErrorCode; message: string } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code: unknown }).code === "string" &&
+    (error as { code: string }).code in PERFORMANCE_ERROR_CODES
+  );
+}
+
+async function mapPerformanceErrors<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!isMappedPerformanceError(error)) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to complete performance operation",
+      });
+    }
+
+    const code = PERFORMANCE_ERROR_CODES[error.code];
+
+    throw new TRPCError({
+      code,
+      message:
+        code === "INTERNAL_SERVER_ERROR"
+          ? "Unable to complete performance operation"
+          : error.message,
+    });
+  }
+}
+
+const measurementOutputSchema = z.object({
+  id: z.string().uuid(),
+  kpiVersionId: boundedIdentifierSchema,
+  scopeNodeId: boundedIdentifierSchema,
+  period: periodSchema,
+  value: z.number().finite(),
+  source: z.enum(["MANUAL", "FEED", "TEMPLATE"]),
+  locked: z.boolean(),
+  supersedesId: z.string().uuid().nullable(),
+  submittedBy: z.string().uuid(),
+  evidenceRef: z.string().nullable(),
+  createdAt: z.date(),
+}).strict();
+
+const captureSessionOutputSchema = z.object({
+  id: z.string().uuid(),
+  kpiVersionId: boundedIdentifierSchema,
+  scopeNodeId: boundedIdentifierSchema,
+  period: periodSchema,
+  state: z.enum(["DRAFT", "SUBMITTED", "RECALLED"]),
+  ownerId: z.string().uuid(),
+  submittedMeasurementId: z.string().uuid().nullable(),
+  submittedAt: z.date().nullable(),
+  recalledAt: z.date().nullable(),
+  recallDeadlineAt: z.date().nullable(),
+  consumedAt: z.date().nullable(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+}).strict();
+
+const commentaryOutputSchema = z.object({
+  id: z.string().uuid(),
+  kpiVersionId: boundedIdentifierSchema,
+  scopeNodeId: boundedIdentifierSchema,
+  period: periodSchema,
+  authorId: z.string().uuid(),
+  bodyEn: z.string().nullable(),
+  bodyAr: z.string().nullable(),
+  createdAt: z.date(),
+}).strict();
+
+const statusResultOutputSchema = z.object({
+  id: z.string().uuid(),
+  kpiVersionId: boundedIdentifierSchema,
+  scopeNodeId: boundedIdentifierSchema,
+  period: periodSchema,
+  status: z.string(),
+  computedAt: z.date(),
+  ruleVersionUsed: z.string().uuid(),
+}).strict();
+
+const rollupResultOutputSchema = z.object({
+  id: z.string().uuid(),
+  parentKpiId: boundedIdentifierSchema,
+  scopeNodeId: boundedIdentifierSchema,
+  period: periodSchema,
+  aggregatedValue: z.number().finite().nullable(),
+  method: z.string(),
+  computedAt: z.date(),
+  ruleVersionUsed: z.string().uuid(),
+}).strict();
+
+const captureStartSessionInputSchema = z.object({
+  kpiVersionId: boundedIdentifierSchema,
+  scopeNodeId: boundedIdentifierSchema,
+  period: periodSchema,
+  recallDeadlineAt: z.coerce.date().optional(),
+}).strict();
+
+const captureSubmitInputSchema = z.object({
+  sessionId: z.string().uuid(),
+  value: z.number().finite(),
+  evidenceRef: evidenceRefSchema.optional(),
+}).strict();
+
+const captureRecallInputSchema = z.object({
+  sessionId: z.string().uuid(),
+}).strict();
+
+const measurementListInputSchema = z.object({
+  kpiVersionId: boundedIdentifierSchema.optional(),
+  scopeNodeId: boundedIdentifierSchema.optional(),
+  period: periodSchema.optional(),
+  /** Omitted resolves the currently effective measurement. */
+  asOf: z.coerce.date().optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+}).strict();
+
+const commentaryAddInputSchema = z.object({
+  kpiVersionId: boundedIdentifierSchema,
+  scopeNodeId: boundedIdentifierSchema,
+  period: periodSchema,
+  bodyEn: z.string().trim().min(1).max(5000).optional(),
+  bodyAr: z.string().trim().min(1).max(5000).optional(),
+}).strict().refine(
+  (input) => input.bodyEn !== undefined || input.bodyAr !== undefined,
+  { message: "Commentary must contain English or Arabic content" },
+);
+
+const statusGetInputSchema = z.object({
+  kpiVersionId: boundedIdentifierSchema,
+  scopeNodeId: boundedIdentifierSchema,
+  period: periodSchema,
+}).strict();
+
+const rollupGetInputSchema = z.object({
+  parentKpiId: boundedIdentifierSchema,
+  scopeNodeId: boundedIdentifierSchema,
+  period: periodSchema,
+}).strict();
 
 const rulesGetVersionInputSchema = z.object({
   ruleKey: z.string().trim().min(1).max(150),
@@ -905,6 +1207,93 @@ export const appRouter = router({
       .input(rulesGetVersionInputSchema)
       .output(ruleDefinitionOutputSchema.nullable())
       .query(({ ctx, input }) => ctx.rules.getVersion(input.ruleKey, input.version)),
+  }),
+  performance: router({
+    capture: router({
+      startSession: requireRole("kpi_owner", "data_steward")
+        .input(captureStartSessionInputSchema)
+        .output(captureSessionOutputSchema)
+        .mutation(({ ctx, input }) =>
+          mapPerformanceErrors(() =>
+            ctx.performance.startCaptureSession({
+              ...input,
+              ownerId: ctx.session.user.id,
+            }),
+          ),
+        ),
+
+      submit: requireRole("kpi_owner", "data_steward")
+        .input(captureSubmitInputSchema)
+        .output(z.object({
+          session: captureSessionOutputSchema,
+          measurement: measurementOutputSchema,
+        }).strict())
+        .mutation(({ ctx, input }) =>
+          mapPerformanceErrors(() =>
+            ctx.performance.submitCaptureSession({
+              ...input,
+              actorId: ctx.session.user.id,
+            }),
+          ),
+        ),
+
+      recall: requireRole("kpi_owner", "data_steward")
+        .input(captureRecallInputSchema)
+        .output(captureSessionOutputSchema)
+        .mutation(({ ctx, input }) =>
+          mapPerformanceErrors(() =>
+            ctx.performance.recallCaptureSession({
+              sessionId: input.sessionId,
+              actorId: ctx.session.user.id,
+              actorIsDataSteward:
+                ctx.authorizationState.roles.includes("data_steward"),
+            }),
+          ),
+        ),
+    }),
+
+    measurement: router({
+      list: protectedProcedure
+        .input(measurementListInputSchema)
+        .output(z.array(measurementOutputSchema))
+        .query(({ ctx, input }) =>
+          mapPerformanceErrors(() =>
+            ctx.performance.listMeasurements(input),
+          ),
+        ),
+    }),
+
+    commentary: router({
+      add: requireRole("kpi_owner", "data_steward", "strategy_analyst")
+        .input(commentaryAddInputSchema)
+        .output(commentaryOutputSchema)
+        .mutation(({ ctx, input }) =>
+          mapPerformanceErrors(() =>
+            ctx.performance.addCommentary({
+              ...input,
+              authorId: ctx.session.user.id,
+            }),
+          ),
+        ),
+    }),
+
+    status: router({
+      get: protectedProcedure
+        .input(statusGetInputSchema)
+        .output(statusResultOutputSchema.nullable())
+        .query(({ ctx, input }) =>
+          mapPerformanceErrors(() => ctx.performance.getStatus(input)),
+        ),
+    }),
+
+    rollup: router({
+      get: protectedProcedure
+        .input(rollupGetInputSchema)
+        .output(rollupResultOutputSchema.nullable())
+        .query(({ ctx, input }) =>
+          mapPerformanceErrors(() => ctx.performance.getRollup(input)),
+        ),
+    }),
   }),
   registry: router({
     kpi: router({
