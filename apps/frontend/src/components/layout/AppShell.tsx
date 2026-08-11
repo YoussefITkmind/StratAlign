@@ -1,0 +1,51 @@
+"use client";
+
+import { useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import Sidebar, { NAV_SECTIONS } from "@/components/layout/Sidebar";
+import Topbar from "@/components/layout/Topbar";
+
+type Role = "platform_administrator" | "member";
+
+const LEGACY_LABELS: Record<string, string> = {
+  dashboard: "Dashboard",
+  audit: "Audit Log",
+  admin: "Admin",
+  approvals: "Approvals",
+};
+
+function breadcrumbFor(pathname: string): string[] {
+  for (const section of NAV_SECTIONS) {
+    const item = section.items.find((i) => pathname === i.href || pathname.startsWith(i.href + "/"));
+    if (!item) continue;
+    if (section.label === "MAIN") return ["Home", item.label];
+    const sectionLabel = section.label.charAt(0) + section.label.slice(1).toLowerCase();
+    return ["Home", sectionLabel, item.label];
+  }
+  const slug = pathname.split("/").filter(Boolean)[0] ?? "";
+  return ["Home", LEGACY_LABELS[slug] ?? "Home"];
+}
+
+export function AppShell({
+  email,
+  children,
+}: {
+  role: Role;
+  email: string;
+  children: ReactNode;
+}) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const pathname = usePathname();
+
+  return (
+    <div className="flex h-dvh overflow-hidden">
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <div className="app-scroll flex h-dvh min-w-0 w-full flex-col overflow-y-auto overflow-x-hidden bg-slate-50">
+        <Topbar breadcrumb={breadcrumbFor(pathname ?? "")} email={email} onMenuClick={() => setSidebarOpen(true)} />
+        <main className="w-full max-w-none flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
