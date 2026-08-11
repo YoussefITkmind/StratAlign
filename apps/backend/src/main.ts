@@ -49,7 +49,7 @@ async function bootstrap(): Promise<void> {
   const iam = new IamAdminService(prisma);
   const rules = new RulesService(prisma);
   const strategy = new StrategyService(prisma);
-  const strategyTraversal = new StrategyTraversalService(prisma);
+  const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
   const audit = new SnapshotService(prisma);
   const auditTap = new ApiAuditTapService(prisma, eventBus);
 
@@ -101,7 +101,7 @@ async function bootstrap(): Promise<void> {
     console.log(`Received ${signal}. Shutting down.`);
     server.close();
     await queueService.close();
-    await Promise.all([prisma.disconnect(), redis.disconnect()]);
+    await Promise.all([strategyTraversal.destroy(), prisma.disconnect(), redis.disconnect()]);
   }
 
   process.once("SIGINT", () => { void shutdown("SIGINT"); });
