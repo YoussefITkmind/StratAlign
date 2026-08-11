@@ -10,7 +10,6 @@ import { AlignmentService } from "../../src/modules/registry/alignment.service";
 import { KpiHierarchyService } from "../../src/modules/registry/kpi-hierarchy.service";
 import { KpiRegistryService } from "../../src/modules/registry/kpi-registry.service";
 import { OkrService } from "../../src/modules/registry/okr.service";
-import { UnavailableApprovalGateway } from "../../src/modules/registry/gateways/approval.gateway";
 import {
   RegistryApprovalError,
   RegistryOperationError,
@@ -387,22 +386,6 @@ describe.sequential(
         ).rejects.toBeInstanceOf(RegistryOperationError);
       });
 
-      it("cannot be published at all through the production gateway", async () => {
-        const production = new KpiRegistryService(
-          prisma,
-          new UnavailableApprovalGateway(),
-          strategyNodes,
-        );
-
-        const draft = await production.createDraft(draftInput());
-
-        await expect(
-          production.publishVersion({
-            kpiVersionId: draft.version.id,
-            approvalCaseId: "any-case",
-          }),
-        ).rejects.toBeInstanceOf(RegistryApprovalError);
-      });
     });
 
     describe("retirement", () => {

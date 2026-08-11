@@ -119,7 +119,11 @@ describe.sequential("Prompt 2.1 strategy model with PostgreSQL Testcontainers", 
     const envelope = {
       eventId: randomUUID(), eventType: "governance.approval.granted", eventVersion: 1,
       aggregateType: "approval_case", aggregateId: approvalCaseId, occurredAt: new Date().toISOString(),
-      payload: { domain: "strategy", approvalCaseId, stagedChangeId: staged.id },
+      payload: {
+        entityType: "StrategyStagedChange",
+        entityId: staged.id,
+        approvalCaseId,
+      },
     };
     await expect(subscriber.handle(envelope)).resolves.toBeUndefined();
     expect((await strategy.listActiveNodes(plan.id)).find((n) => n.id === objective.id)?.nameEn).toBe("Approved objective");

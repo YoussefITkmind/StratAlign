@@ -27,7 +27,7 @@ import { KpiRegistryService } from "./modules/registry/kpi-registry.service";
 import { OkrService } from "./modules/registry/okr.service";
 import { AlignmentService } from "./modules/registry/alignment.service";
 import { KpiHierarchyService } from "./modules/registry/kpi-hierarchy.service";
-import { UnavailableApprovalGateway } from "./modules/registry/gateways/approval.gateway";
+import { GovernanceApprovalGateway } from "./modules/registry/gateways/approval.gateway";
 import { PrismaStrategyNodeGateway } from "./modules/registry/gateways/strategy-node.gateway";
 import { MeasurementService } from "./modules/performance/measurement.service";
 import { CaptureSessionService } from "./modules/performance/capture-session.service";
@@ -68,7 +68,10 @@ async function bootstrap(): Promise<void> {
   const strategy = new StrategyService(prisma);
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
 
-  const approvalGateway = new UnavailableApprovalGateway();
+  const approvalGateway =
+    new GovernanceApprovalGateway(
+      governance,
+    );
   const strategyNodeGateway = new PrismaStrategyNodeGateway(prisma);
 
   const registry = {
