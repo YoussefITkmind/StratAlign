@@ -72,9 +72,20 @@ describe.sequential("Prompt 2.1 strategy model with PostgreSQL Testcontainers", 
     expect((await strategy.listActiveNodes(plan.id)).find((n) => n.id === objective.id)?.nameEn).toBe("Objective");
 
     const subscriber = new StrategyApprovalSubscriber(strategy);
-    await expect(subscriber.handle({ eventType: "governance.approval.granted", payload: { approvalCaseId } })).resolves.toBe(1);
+    const envelope = {
+      eventId: randomUUID(),
+      eventType: "governance.approval.granted",
+      eventVersion: 1,
+      aggregateType: "approval_case",
+      aggregateId: approvalCaseId,
+      occurredAt: new Date().toISOString(),
+      payload: { approvalCaseId },
+    };
+    await expect(subscriber.handle(envelope)).resolves.toBeUndefined();
     expect((await strategy.listActiveNodes(plan.id)).find((n) => n.id === objective.id)?.nameEn).toBe("Approved objective");
-    await expect(subscriber.handle({ eventType: "governance.approval.granted", payload: { approvalCaseId } })).resolves.toBe(0);
+    await expect(subscriber.handle({ ...envelope, eventId: randomUUID() })).resolves.toBeUndefined();
+    const pending = await prisma.$queryRawUnsafe<Array<{ count: number }>>(`SELECT COUNT(*)::int AS count FROM strategy.staged_changes WHERE approval_case_id=$1::uuid AND status='pending'`, approvalCaseId);
+    expect(pending[0]?.count).toBe(0);
   });
 
   it("carry-forward produces a draft copy without mutating the source", async () => {
