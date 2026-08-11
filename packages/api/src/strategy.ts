@@ -4,9 +4,12 @@ import type {
   OwnerAssignment,
   PlanVersion,
   StrategyEdge,
+  StrategyEdgeType,
   StrategyNode,
+  StrategyNodeState,
+  StrategyNodeType,
 } from "@spm/domain-strategy";
-import { requireRole, router } from "./index";
+import { protectedProcedure, requireRole, router } from "./index";
 
 export interface StagedChangeOutput {
   id: string;
@@ -78,8 +81,43 @@ export interface StrategyServiceContract {
   ): Promise<PlanVersion>;
 }
 
+export interface StrategyTraversalNodeOutput {
+  id: string;
+  type: StrategyNodeType;
+  nameEn: string;
+  nameAr: string;
+  planVersionId: string;
+  state: StrategyNodeState;
+  depth: number;
+  edgeType: StrategyEdgeType | null;
+}
+
+export interface StrategyFullTraceOutput {
+  nodeId: string;
+  ancestry: StrategyTraversalNodeOutput[];
+  cascade: StrategyTraversalNodeOutput[];
+}
+
+export interface StrategyTraversalServiceContract {
+  getCascade(
+    nodeId: string,
+    maxDepth?: number,
+  ): Promise<StrategyTraversalNodeOutput[]>;
+
+  getAncestry(
+    nodeId: string,
+  ): Promise<StrategyTraversalNodeOutput[]>;
+
+  getFullTrace(
+    nodeId: string,
+  ): Promise<StrategyFullTraceOutput>;
+}
+
 declare module "./index" {
-  interface TrpcContext { strategy?: StrategyServiceContract; }
+  interface TrpcContext {
+    strategy?: StrategyServiceContract;
+    strategyTraversal?: StrategyTraversalServiceContract;
+  }
 }
 
 const id = z.string().uuid();
@@ -94,8 +132,54 @@ const service = (ctx: { strategy?: StrategyServiceContract }): StrategyServiceCo
   return ctx.strategy;
 };
 
+const traversal = (
+  ctx: { strategyTraversal?: StrategyTraversalServiceContract },
+): StrategyTraversalServiceContract => {
+  if (!ctx.strategyTraversal) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Strategy traversal service unavailable",
+    });
+  }
+  return ctx.strategyTraversal;
+};
+
 export const strategyRouter = router({
   node: router({
+    cascade: protectedProcedure
+      .input(
+        z.object({
+          nodeId: id,
+          maxDepth: z.number().int().min(1).max(8).default(8),
+        }).strict(),
+      )
+      .query(async ({ ctx, input }) => {
+        try {
+          return await traversal(ctx).getCascade(input.nodeId, input.maxDepth);
+        } catch (e) {
+          return fail(e);
+        }
+      }),
+
+    ancestry: protectedProcedure
+      .input(z.object({ nodeId: id }).strict())
+      .query(async ({ ctx, input }) => {
+        try {
+          return await traversal(ctx).getAncestry(input.nodeId);
+        } catch (e) {
+          return fail(e);
+        }
+      }),
+
+    trace: protectedProcedure
+      .input(z.object({ nodeId: id }).strict())
+      .query(async ({ ctx, input }) => {
+        try {
+          return await traversal(ctx).getFullTrace(input.nodeId);
+        } catch (e) {
+          return fail(e);
+        }
+      }),
     create: admin().input(z.object({
       type: z.enum(["corporate_strategy","theme","objective","strategic_play","portfolio","area_of_focus"]),
       nameEn: z.string().trim().min(1).max(300), nameAr: z.string().trim().min(1).max(300), planVersionId: id,

@@ -21,6 +21,7 @@ import { RulesService } from "./modules/rules/rules.service";
 import { SnapshotService } from "./modules/audit/snapshot.service";
 import { ApiAuditTapService } from "./modules/audit/api-audit-tap.service";
 import { StrategyService } from "./modules/strategy/strategy.service";
+import { StrategyTraversalService } from "./modules/strategy/strategy-traversal.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -48,6 +49,7 @@ async function bootstrap(): Promise<void> {
   const iam = new IamAdminService(prisma);
   const rules = new RulesService(prisma);
   const strategy = new StrategyService(prisma);
+  const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
   const audit = new SnapshotService(prisma);
   const auditTap = new ApiAuditTapService(prisma, eventBus);
 
@@ -70,6 +72,7 @@ async function bootstrap(): Promise<void> {
         iam,
         rules,
         strategy,
+        strategyTraversal,
         audit,
         auditTap,
       };
@@ -96,7 +99,7 @@ async function bootstrap(): Promise<void> {
     console.log(`Received ${signal}. Shutting down.`);
     server.close();
     await queueService.close();
-    await Promise.all([prisma.disconnect(), redis.disconnect()]);
+    await Promise.all([strategyTraversal.destroy(), prisma.disconnect(), redis.disconnect()]);
   }
 
   process.once("SIGINT", () => { void shutdown("SIGINT"); });

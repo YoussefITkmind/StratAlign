@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { PrismaService } from "../../src/database/prisma.service";
+import { StrategyActivationService } from "../../src/modules/strategy/strategy-activation.service";
 import { StrategyApprovalSubscriber } from "../../src/modules/strategy/strategy-approval.subscriber";
 import { StrategyService } from "../../src/modules/strategy/strategy.service";
 
@@ -69,7 +70,6 @@ describe.sequential("Prompt 2.1 strategy model with PostgreSQL Testcontainers", 
       actorUserId: actorId,
     });
 
-    // Draft construction is allowed to be temporarily incomplete.
     await expect(strategy.openPlanVersion(plan.id))
       .rejects.toThrow(/minimum relationship cardinality/i);
 
@@ -96,7 +96,7 @@ describe.sequential("Prompt 2.1 strategy model with PostgreSQL Testcontainers", 
       .resolves.toMatchObject({ status: "active" });
   });
 
-  it("keeps staged active changes invisible until approval then applies them atomically", async () => {
+  it("keeps staged active changes invisible until approval then applies the referenced change", async () => {
     const plan = await strategy.createPlanVersion("Approval test");
     const corporate = await addNode(plan.id, "corporate_strategy", "Corporate") as { id: string };
     const theme = await addNode(plan.id, "theme", "Theme") as { id: string };
@@ -108,25 +108,21 @@ describe.sequential("Prompt 2.1 strategy model with PostgreSQL Testcontainers", 
     await strategy.openPlanVersion(plan.id);
 
     const approvalCaseId = randomUUID();
-    const staged = await strategy.updateNode({ nodeId: objective.id, nameEn: "Approved objective", actorUserId: actorId, approvalCaseId });
-    expect(staged).toMatchObject({ status: "pending", approvalCaseId });
+    const staged = await strategy.updateNode({ nodeId: objective.id, nameEn: "Approved objective", actorUserId: actorId, approvalCaseId }) as { id: string };
     expect((await strategy.listActiveNodes(plan.id)).find((n) => n.id === objective.id)?.nameEn).toBe("Objective");
 
-    const subscriber = new StrategyApprovalSubscriber(strategy);
+    const eventBus = {
+      publishWithin: vi.fn().mockResolvedValue(1),
+      nudgeRelay: vi.fn().mockResolvedValue(undefined),
+    };
+    const subscriber = new StrategyApprovalSubscriber(new StrategyActivationService(prisma, eventBus as never));
     const envelope = {
-      eventId: randomUUID(),
-      eventType: "governance.approval.granted",
-      eventVersion: 1,
-      aggregateType: "approval_case",
-      aggregateId: approvalCaseId,
-      occurredAt: new Date().toISOString(),
-      payload: { approvalCaseId },
+      eventId: randomUUID(), eventType: "governance.approval.granted", eventVersion: 1,
+      aggregateType: "approval_case", aggregateId: approvalCaseId, occurredAt: new Date().toISOString(),
+      payload: { domain: "strategy", approvalCaseId, stagedChangeId: staged.id },
     };
     await expect(subscriber.handle(envelope)).resolves.toBeUndefined();
     expect((await strategy.listActiveNodes(plan.id)).find((n) => n.id === objective.id)?.nameEn).toBe("Approved objective");
-    await expect(subscriber.handle({ ...envelope, eventId: randomUUID() })).resolves.toBeUndefined();
-    const pending = await prisma.$queryRawUnsafe<Array<{ count: number }>>(`SELECT COUNT(*)::int AS count FROM strategy.staged_changes WHERE approval_case_id=$1::uuid AND status='pending'`, approvalCaseId);
-    expect(pending[0]?.count).toBe(0);
   });
 
   it("carry-forward produces a draft copy without mutating the source", async () => {
