@@ -84,7 +84,8 @@ export class StrategyService {
   async openPlanVersion(planVersionId: string, opensAt = new Date()): Promise<PlanVersionRecord> {
     const plan = await this.requirePlan(planVersionId); this.assertDraft(plan); await this.validateMinimumCardinality(planVersionId);
     return this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRawUnsafe<PlanRow[]>(`UPDATE strategy.plan_versions SET status='active',opens_at=$2 WHERE id=$1::uuid RETURNING *`, planVersionId, opensAt);
+      await tx.$executeRawUnsafe(`UPDATE strategy.plan_versions SET status='closed',closes_at=$2 WHERE status='active' AND id<>$1::uuid`, planVersionId, opensAt);
+      const rows = await tx.$queryRawUnsafe<PlanRow[]>(`UPDATE strategy.plan_versions SET status='active',opens_at=$2,closes_at=NULL WHERE id=$1::uuid RETURNING *`, planVersionId, opensAt);
       await tx.$executeRawUnsafe(`UPDATE strategy.strategy_nodes SET state='active' WHERE plan_version_id=$1::uuid AND state='draft'`, planVersionId);
       return mapPlan(rows[0]!);
     });
