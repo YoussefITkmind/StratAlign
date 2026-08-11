@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "scheduling"]
+  schemas  = ["public", "iam", "rules", "audit", "scheduling", "strategy"]
 }
 
 model SystemSetting {
@@ -259,6 +259,124 @@ model EntitySnapshot {
   @@index([aggregateType, aggregateId, validFrom, validTo])
   @@map("entity_snapshots")
   @@schema("audit")
+}
+
+// ---------------------------------------------------------------------------
+// Strategy model
+// ---------------------------------------------------------------------------
+
+enum StrategyNodeType {
+  CORPORATE_STRATEGY @map("corporate_strategy")
+  THEME              @map("theme")
+  OBJECTIVE          @map("objective")
+  STRATEGIC_PLAY     @map("strategic_play")
+  PORTFOLIO          @map("portfolio")
+  AREA_OF_FOCUS      @map("area_of_focus")
+
+  @@schema("strategy")
+}
+
+enum StrategyNodeState {
+  DRAFT   @map("draft")
+  ACTIVE  @map("active")
+  RETIRED @map("retired")
+
+  @@schema("strategy")
+}
+
+enum StrategyEdgeType {
+  CONTAINS             @map("contains")
+  EXECUTED_BY          @map("executed_by")
+  BELONGS_TO_PORTFOLIO @map("belongs_to_portfolio")
+  ALIGNS_TO            @map("aligns_to")
+
+  @@schema("strategy")
+}
+
+enum PlanVersionState {
+  DRAFT   @map("draft")
+  ACTIVE  @map("active")
+  RETIRED @map("retired")
+
+  @@schema("strategy")
+}
+
+model PlanVersion {
+  id                  String           @id @default(uuid()) @db.Uuid
+  version             Int              @unique
+  name                String
+  state               PlanVersionState @default(DRAFT)
+  effectiveFrom       DateTime?        @map("effective_from")
+  effectiveTo         DateTime?        @map("effective_to")
+  sourcePlanVersionId String?          @map("source_plan_version_id") @db.Uuid
+  createdBy           String           @map("created_by")
+  createdAt           DateTime         @default(now()) @map("created_at")
+
+  @@index([state])
+  @@index([sourcePlanVersionId])
+  @@map("plan_versions")
+  @@schema("strategy")
+}
+
+model StrategyNode {
+  id            String            @id @default(uuid()) @db.Uuid
+  type          StrategyNodeType
+  nameEn        String            @map("name_en")
+  nameAr        String            @map("name_ar")
+  planVersionId String            @map("plan_version_id") @db.Uuid
+  state         StrategyNodeState @default(DRAFT)
+  createdBy     String            @map("created_by")
+  createdAt     DateTime          @default(now()) @map("created_at")
+
+  @@index([planVersionId, type])
+  @@index([planVersionId, state])
+  @@index([createdBy])
+  @@map("strategy_nodes")
+  @@schema("strategy")
+}
+
+model StrategyEdge {
+  id            String           @id @default(uuid()) @db.Uuid
+  fromNodeId    String           @map("from_node_id") @db.Uuid
+  toNodeId      String           @map("to_node_id") @db.Uuid
+  edgeType      StrategyEdgeType @map("edge_type")
+  planVersionId String           @map("plan_version_id") @db.Uuid
+
+  @@unique([fromNodeId, toNodeId, edgeType, planVersionId])
+  @@index([fromNodeId])
+  @@index([toNodeId])
+  @@index([planVersionId])
+  @@map("strategy_edges")
+  @@schema("strategy")
+}
+
+model RelationshipRule {
+  id       String           @id @default(uuid()) @db.Uuid
+  fromType StrategyNodeType @map("from_type")
+  toType   StrategyNodeType @map("to_type")
+  edgeType StrategyEdgeType @map("edge_type")
+  minCount Int              @default(0) @map("min_count")
+  maxCount Int?             @map("max_count")
+
+  @@unique([fromType, toType, edgeType])
+  @@map("relationship_rules")
+  @@schema("strategy")
+}
+
+model OwnerAssignment {
+  id            String   @id @default(uuid()) @db.Uuid
+  nodeId        String   @map("node_id") @db.Uuid
+  userId        String   @map("user_id")
+  planVersionId String   @map("plan_version_id") @db.Uuid
+  createdBy     String   @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([nodeId, userId, planVersionId])
+  @@index([userId])
+  @@index([planVersionId])
+  @@index([createdBy])
+  @@map("owner_assignments")
+  @@schema("strategy")
 }
 
 // ---------------------------------------------------------------------------
