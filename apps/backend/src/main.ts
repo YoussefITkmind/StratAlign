@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { mergeRouters } from "@trpc/server";
 import { createHTTPServer } from "@trpc/server/adapters/standalone";
 import { appRouter, router } from "@spm/api";
 import { strategyRouter } from "@spm/api/strategy";
@@ -52,8 +53,7 @@ async function bootstrap(): Promise<void> {
   const audit = new SnapshotService(prisma);
   const auditTap = new ApiAuditTapService(prisma, eventBus);
 
-  // Keep the Phase 0/1 API surface intact and add the 2.1 namespace.
-  const rootRouter = router({ ...appRouter._def.record, strategy: strategyRouter });
+  const rootRouter = mergeRouters(appRouter, router({ strategy: strategyRouter }));
 
   const server = createHTTPServer({
     router: rootRouter,
@@ -83,7 +83,11 @@ async function bootstrap(): Promise<void> {
       response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
       response.setHeader("Access-Control-Allow-Credentials", "true");
-      if (request.method === "OPTIONS") { response.statusCode = 204; response.end(); return; }
+      if (request.method === "OPTIONS") {
+        response.statusCode = 204;
+        response.end();
+        return;
+      }
       next();
     },
   });
@@ -98,6 +102,7 @@ async function bootstrap(): Promise<void> {
     await queueService.close();
     await Promise.all([prisma.disconnect(), redis.disconnect()]);
   }
+
   process.once("SIGINT", () => { void shutdown("SIGINT"); });
   process.once("SIGTERM", () => { void shutdown("SIGTERM"); });
 }
