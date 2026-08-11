@@ -27,7 +27,6 @@ function breadcrumbFor(pathname: string): string[] {
 }
 
 export function AppShell({
-  role,
   email,
   children,
 }: {
