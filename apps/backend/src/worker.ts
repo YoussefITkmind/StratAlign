@@ -39,6 +39,12 @@ import { DigestService } from "./modules/notifications/digest/digest.service";
 import { createSenderRegistry } from "./modules/notifications/sender/sender.registry";
 import { ScheduleNotificationSubscriber } from "./modules/notifications/subscribers/schedule-notification.subscriber";
 
+import { RulesService } from "./modules/rules/rules.service";
+import { MeasurementService } from "./modules/performance/measurement.service";
+import { KpiBindingService } from "./modules/performance/kpi-binding.service";
+import { RecomputeService } from "./modules/performance/recompute.service";
+import { PerformanceRecomputeSubscriber } from "./modules/performance/subscribers/performance-recompute.subscriber";
+
 import {
   createEventDispatchWorker,
   createOutboxRelayWorker,
@@ -218,6 +224,32 @@ async function bootstrap(): Promise<void> {
     new ScheduleNotificationSubscriber(
       notificationService,
       logger.child("schedule-notifications"),
+    ),
+  );
+
+  // ---------------------------------------------------------------------------
+  // Performance recompute
+  //
+  // Registered as an ordinary event subscriber: the existing relay and dispatch
+  // workers carry it, so it inherits their retry, dead-letter and idempotency
+  // behaviour rather than introducing a queue of its own.
+  // ---------------------------------------------------------------------------
+
+  subscriberRegistry.register(
+    new PerformanceRecomputeSubscriber(
+      new RecomputeService(
+        prisma,
+        new MeasurementService(
+          prisma,
+          eventBus,
+          logger.child("performance-measurement"),
+        ),
+        new KpiBindingService(prisma),
+        new RulesService(prisma),
+        eventBus,
+        logger.child("performance-recompute"),
+      ),
+      logger.child("performance-recompute-subscriber"),
     ),
   );
 

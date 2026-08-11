@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "scheduling"]
+  schemas  = ["public", "iam", "rules", "audit", "scheduling", "performance"]
 }
 
 model SystemSetting {
@@ -37,6 +37,9 @@ model User {
   notificationPreferences NotificationPreference[] @relation("NotificationPreferenceRecipient")
   notificationDeliveries  NotificationDelivery[]   @relation("NotificationDeliveryRecipient")
   notificationDigests     NotificationDigest[]     @relation("NotificationDigestRecipient")
+  measurementsSubmitted   Measurement[]            @relation("MeasurementSubmitter")
+  commentaryAuthored      Commentary[]             @relation("CommentaryAuthor")
+  captureSessionsOwned    CaptureSession[]         @relation("CaptureSessionOwner")
 
   @@map("users")
   @@schema("iam")
@@ -184,6 +187,9 @@ model RuleDefinition {
   createdBy    User            @relation("RuleDefinitionCreator", fields: [createdById], references: [id], onDelete: Restrict)
   supersedes   RuleDefinition? @relation("RuleDefinitionVersions", fields: [supersedesId], references: [id], onDelete: Restrict)
   supersededBy RuleDefinition? @relation("RuleDefinitionVersions")
+
+  statusResultsEvaluated StatusResult[] @relation("StatusResultRuleVersion")
+  rollupResultsEvaluated RollupResult[] @relation("RollupResultRuleVersion")
 
   @@unique([ruleKey, version])
   @@index([ruleKey, isCurrent])
@@ -563,4 +569,196 @@ model NotificationDelivery {
   @@index([digestId])
   @@map("notification_deliveries")
   @@schema("public")
+}
+
+// ---------------------------------------------------------------------------
+// Performance data (Prompt 2.7)
+//
+// `kpi_version_id`, `scope_node_id`, `parent_kpi_id` and `plan_version_id` are
+// deliberately unconstrained TEXT: the KPI/OKR registry (Prompt 2.4) and the
+// planning module do not exist in this repository yet, so there is no table to
+// reference. See modules/performance/README.md — "Blockers".
+// ---------------------------------------------------------------------------
+
+enum MeasurementSource {
+  MANUAL   @map("manual")
+  FEED     @map("feed")
+  TEMPLATE @map("template")
+
+  @@schema("performance")
+}
+
+enum CaptureSessionState {
+  DRAFT     @map("draft")
+  SUBMITTED @map("submitted")
+  RECALLED  @map("recalled")
+
+  @@schema("performance")
+}
+
+/// Append-only. The application database role holds SELECT and INSERT only;
+/// UPDATE and DELETE are revoked in PostgreSQL. Corrections insert a new row
+/// carrying `supersedes_id`.
+model Measurement {
+  id           String            @id @default(uuid())
+  kpiVersionId String            @map("kpi_version_id")
+  scopeNodeId  String            @map("scope_node_id")
+  period       String
+  value        Decimal           @db.Decimal(20, 6)
+  source       MeasurementSource
+  locked       Boolean           @default(false)
+  supersedesId String?           @unique @map("supersedes_id")
+  submittedById String           @map("submitted_by")
+  /// Opaque object-storage reference. No upload workflow exists yet (2.8).
+  evidenceRef  String?           @map("evidence_ref")
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  submittedBy  User         @relation("MeasurementSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
+  supersedes   Measurement? @relation("MeasurementSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy Measurement? @relation("MeasurementSupersession")
+
+  @@index([kpiVersionId, scopeNodeId, period, createdAt])
+  @@index([kpiVersionId])
+  @@index([scopeNodeId])
+  @@index([period])
+  @@index([createdAt])
+  @@index([submittedById])
+  @@map("measurements")
+  @@schema("performance")
+}
+
+model TargetSeries {
+  id            String   @id @default(uuid())
+  kpiVersionId  String   @map("kpi_version_id")
+  scopeNodeId   String   @map("scope_node_id")
+  period        String
+  targetValue   Decimal  @db.Decimal(20, 6) @map("target_value")
+  /// No planning module exists yet; "baseline" is the implicit original plan.
+  planVersionId String   @default("baseline") @map("plan_version_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([kpiVersionId, scopeNodeId, period, planVersionId], map: "target_series_kpi_scope_period_plan_key")
+  @@index([kpiVersionId, scopeNodeId, period])
+  @@map("target_series")
+  @@schema("performance")
+}
+
+/// Produced by the Rule Engine. Performance never derives a status itself.
+model StatusResult {
+  id              String   @id @default(uuid())
+  kpiVersionId    String   @map("kpi_version_id")
+  scopeNodeId     String   @map("scope_node_id")
+  period          String
+  status          String
+  computedAt      DateTime @default(now()) @map("computed_at")
+  /// The `rules.rule_definitions` row that produced this status. That row *is*
+  /// the immutable rule version.
+  ruleVersionUsed String   @map("rule_version_used")
+  /// Stable per (result, triggering event); makes worker retries a no-op.
+  dedupeKey       String   @unique @map("dedupe_key")
+
+  ruleVersion RuleDefinition @relation("StatusResultRuleVersion", fields: [ruleVersionUsed], references: [id], onDelete: Restrict)
+
+  @@index([kpiVersionId, scopeNodeId, period, computedAt])
+  @@index([computedAt])
+  @@index([ruleVersionUsed])
+  @@map("status_results")
+  @@schema("performance")
+}
+
+model RollupResult {
+  id              String   @id @default(uuid())
+  parentKpiId     String   @map("parent_kpi_id")
+  scopeNodeId     String   @map("scope_node_id")
+  period          String
+  aggregatedValue Decimal? @db.Decimal(20, 6) @map("aggregated_value")
+  /// Mirrors `@spm/rules` `rollupMethodSchema`; the rule document is authoritative.
+  method          String
+  computedAt      DateTime @default(now()) @map("computed_at")
+  ruleVersionUsed String   @map("rule_version_used")
+  dedupeKey       String   @unique @map("dedupe_key")
+
+  ruleVersion RuleDefinition @relation("RollupResultRuleVersion", fields: [ruleVersionUsed], references: [id], onDelete: Restrict)
+
+  @@index([parentKpiId, scopeNodeId, period, computedAt])
+  @@index([computedAt])
+  @@index([ruleVersionUsed])
+  @@map("rollup_results")
+  @@schema("performance")
+}
+
+model Commentary {
+  id           String   @id @default(uuid())
+  kpiVersionId String   @map("kpi_version_id")
+  scopeNodeId  String   @map("scope_node_id")
+  period       String
+  authorId     String   @map("author_id")
+  bodyEn       String?  @map("body_en")
+  bodyAr       String?  @map("body_ar")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  author User @relation("CommentaryAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([kpiVersionId, scopeNodeId, period, createdAt])
+  @@index([authorId])
+  @@map("commentary")
+  @@schema("performance")
+}
+
+model CaptureSession {
+  id           String              @id @default(uuid())
+  kpiVersionId String              @map("kpi_version_id")
+  scopeNodeId  String              @map("scope_node_id")
+  period       String
+  state        CaptureSessionState @default(DRAFT)
+  ownerId      String              @map("owner_id")
+
+  /// Set on submit. The measurement this session produced, so a recall knows
+  /// exactly which row a subsequent correction must supersede.
+  submittedMeasurementId String? @map("submitted_measurement_id")
+  submittedAt            DateTime? @map("submitted_at")
+  recalledAt             DateTime? @map("recalled_at")
+  /// Recall cutoff. Past this instant the submission is final.
+  recallDeadlineAt       DateTime? @map("recall_deadline_at")
+  /// Set once a downstream consumer has taken the submission. Hard cutoff.
+  consumedAt             DateTime? @map("consumed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner User @relation("CaptureSessionOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+
+  @@index([kpiVersionId, scopeNodeId, period, state])
+  @@index([ownerId])
+  @@index([state])
+  @@map("capture_sessions")
+  @@schema("performance")
+}
+
+/// TEMPORARY BRIDGE — replace with the KPI registry (Prompt 2.4).
+///
+/// The recompute worker has to answer "which rule evaluates this KPI" and
+/// "who is this KPI's hierarchy parent". Both belong to the registry, which
+/// does not exist yet. This table carries only those bindings: no KPI name,
+/// owner, definition or versioning semantics, so it does not compete with the
+/// registry it is standing in for.
+model PerformanceKpiBinding {
+  id           String  @id @default(uuid())
+  kpiId        String  @map("kpi_id")
+  kpiVersionId String  @unique @map("kpi_version_id")
+  isActive     Boolean @default(true) @map("is_active")
+
+  thresholdRuleKey String? @map("threshold_rule_key")
+  rollupRuleKey    String? @map("rollup_rule_key")
+  parentKpiId      String? @map("parent_kpi_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([kpiId, isActive])
+  @@index([parentKpiId])
+  @@map("kpi_bindings")
+  @@schema("performance")
 }

@@ -20,6 +20,11 @@ import { IamAdminService } from "./modules/iam/iam-admin.service";
 import { RulesService } from "./modules/rules/rules.service";
 import { SnapshotService } from "./modules/audit/snapshot.service";
 import { ApiAuditTapService } from "./modules/audit/api-audit-tap.service";
+import { MeasurementService } from "./modules/performance/measurement.service";
+import { CaptureSessionService } from "./modules/performance/capture-session.service";
+import { CommentaryService } from "./modules/performance/commentary.service";
+import { PerformanceResultsService } from "./modules/performance/performance-results.service";
+import { PerformanceService } from "./modules/performance/performance.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -77,6 +82,23 @@ const auditTap = new ApiAuditTapService(
   eventBus,
 );
 
+const measurements = new MeasurementService(
+  prisma,
+  eventBus,
+  logger.child("performance-measurement"),
+);
+
+const performance = new PerformanceService(
+  new CaptureSessionService(
+    prisma,
+    measurements,
+    logger.child("performance-capture"),
+  ),
+  measurements,
+  new CommentaryService(prisma),
+  new PerformanceResultsService(prisma),
+);
+
   const server = createHTTPServer({
     router: appRouter,
     basePath: "/trpc/",
@@ -105,6 +127,7 @@ const auditTap = new ApiAuditTapService(
         rules,
     audit,
     auditTap,
+    performance,
       };
     },
 

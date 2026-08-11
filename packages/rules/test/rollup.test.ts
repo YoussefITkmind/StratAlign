@@ -5,12 +5,9 @@ import {
   rollupRuleSchema,
   type RollupRule,
 } from "../src";
+import { goldenRollupChildren } from "./fixtures/golden-rules";
 
-const children = [
-  { id: "a", value: 10 },
-  { id: "b", value: 20 },
-  { id: "c", value: 30 },
-];
+const children = [...goldenRollupChildren];
 
 describe("rollupRuleSchema", () => {
   it("accepts all supported rollup methods", () => {

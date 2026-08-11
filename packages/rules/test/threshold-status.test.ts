@@ -5,31 +5,9 @@ import {
   thresholdStatusRuleSchema,
   type ThresholdStatusRule,
 } from "../src";
+import { goldenThresholdStatusRule } from "./fixtures/golden-rules";
 
-const higherIsBetterRule: ThresholdStatusRule = {
-  ruleType: "threshold_status",
-  direction: "higher_is_better",
-  bands: [
-    {
-      label: "on_track",
-      color: "green",
-      comparator: "gte",
-      value: 80,
-    },
-    {
-      label: "watch",
-      color: "amber",
-      comparator: "gte",
-      value: 50,
-    },
-    {
-      label: "off_track",
-      color: "red",
-      comparator: "lt",
-      value: 50,
-    },
-  ],
-};
+const higherIsBetterRule: ThresholdStatusRule = goldenThresholdStatusRule;
 
 describe("thresholdStatusRuleSchema", () => {
   it("accepts a valid threshold rule", () => {
