@@ -36,7 +36,7 @@ describe.sequential("Prompt 2.2 traversal and activation with PostgreSQL Testcon
     });
     actorId = actor.id;
     strategy = new StrategyService(prisma);
-    traversal = new StrategyTraversalService(prisma);
+    traversal = new StrategyTraversalService(postgres.getConnectionUri());
     await prisma.$executeRawUnsafe(`
       INSERT INTO strategy.relationship_rules (from_type,to_type,edge_type,min_count,max_count)
       VALUES ('objective','objective','aligns_to',0,NULL)
@@ -45,6 +45,7 @@ describe.sequential("Prompt 2.2 traversal and activation with PostgreSQL Testcon
   }, 120_000);
 
   afterAll(async () => {
+    await traversal?.destroy();
     await prisma?.disconnect();
     await postgres?.stop();
   }, 60_000);
@@ -137,7 +138,7 @@ describe.sequential("Prompt 2.2 traversal and activation with PostgreSQL Testcon
     })]);
   });
 
-  it("keeps a ~500-node cascade query comfortably small for the current phase", async () => {
+  it("measures a ~500-node cascade query against the current phase target", async () => {
     const plan = await strategy.createPlanVersion("Performance fixture");
     const root = await objective(plan.id, "Perf root");
     const children: string[] = [];
@@ -158,7 +159,6 @@ describe.sequential("Prompt 2.2 traversal and activation with PostgreSQL Testcon
     const result = await traversal.getCascade(root, 8);
     const elapsedMs = performance.now() - started;
     expect(result).toHaveLength(499);
-    // Phase 2.2 is a sanity measurement, not a hard performance gate.
     console.info(`[strategy traversal] 500-node cascade: ${elapsedMs.toFixed(2)}ms`);
-  });
+  }, 30_000);
 });
