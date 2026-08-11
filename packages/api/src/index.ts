@@ -85,17 +85,15 @@ export interface IamAdminServiceContract {
   }): Promise<SafeScopeGrant>;
   listCredentialUsers(): Promise<unknown[]>;
   listScopeGrants(): Promise<unknown[]>;
-  getStepUpPolicy(actionClass: string): Promise<{
-    requiresStepUp: boolean; maxSessionAgeSeconds: number;
-  } | null>;
+  getStepUpPolicy(actionClass: StepUpActionClass): Promise<{ requiresStepUp: boolean; maxSessionAgeSeconds: number } | null>;
 }
 
-export interface RuleDefinitionOutput {
+export interface RuleDefinitionRecord {
   id: string;
   ruleKey: string;
   ruleType: RuleType;
   name: string;
-  document: RuleDocument;
+  documentJson: RuleDocument;
   version: number;
   status: "draft" | "published" | "superseded";
   isCurrent: boolean;
@@ -104,70 +102,40 @@ export interface RuleDefinitionOutput {
   createdAt: Date;
   createdBy: string;
 }
-
-export interface AuditReconstructionOutput {
-  source: "snapshot" | "replay";
-  aggregateType: string;
-  aggregateId: string;
-  asOf: Date;
-  version: number | null;
-  data: unknown;
-}
-
-export interface AuditJournalEntryOutput {
-  id: string;
-  sourceEventId: string | null;
-  sequenceNumber: string;
-  eventType: string;
-  aggregateType: string;
-  aggregateId: string;
-  payload: unknown;
-  correlationId: string | null;
-  actorUserId: string | null;
-  actorEmail: string | null;
-  occurredAt: Date;
-  previousHash: string | null;
-  entryHash: string;
-}
-
-export interface AuditServiceContract {
-  reconstructAsOf(input: {
-    aggregateType: string;
-    aggregateId: string;
-    asOf: Date;
-  }): Promise<AuditReconstructionOutput | null>;  listEntries(input: {
-    eventType?: string;
-    aggregateType?: string;
-    aggregateId?: string;
-    actor?: string;
-    from?: Date;
-    to?: Date;
-    limit: number;
-  }): Promise<AuditJournalEntryOutput[]>;
-}
-
-
 export interface RulesServiceContract {
-  createDraft(input: {
+  list(): Promise<RuleDefinitionRecord[]>;
+  get(ruleKey: string): Promise<RuleDefinitionRecord | null>;
+  saveDraft(input: {
     ruleKey: string;
+    ruleType: RuleType;
     name: string;
-    document: RuleDocument;
+    documentJson: RuleDocument;
     createdBy: string;
-  }): Promise<RuleDefinitionOutput>;
+  }): Promise<RuleDefinitionRecord>;
+  publish(input: { ruleKey: string; actorUserId: string }): Promise<RuleDefinitionRecord>;
+  preview(input: { draftDocument: RuleDocument; sampleData: unknown }): Promise<RuleResult>;
+  evaluate(input: { ruleKey: string; sampleData: unknown }): Promise<RuleResult>;
+}
 
-  publish(ruleId: string): Promise<RuleDefinitionOutput>;
+export interface AuditSnapshotRecord {
+  id: string;
+  aggregateType: string;
+  aggregateId: string;
+  version: number;
+  snapshotData: unknown;
+  validFrom: Date;
+  validTo: Date | null;
+  createdAt: Date;
+}
+export interface AuditServiceContract {
+  getCurrent(aggregateType: string, aggregateId: string): Promise<AuditSnapshotRecord | null>;
+  getAsOf(aggregateType: string, aggregateId: string, at: Date): Promise<AuditSnapshotRecord | null>;
+  listHistory(aggregateType: string, aggregateId: string): Promise<AuditSnapshotRecord[]>;
+}
 
-  list(): Promise<RuleDefinitionOutput[]>;
-
-  getVersion(
-    ruleKey: string,
-    version: number,
-  ): Promise<RuleDefinitionOutput | null>;
-
-  evaluate(
-  ruleId: string,
-  input: unknown,
-): Promise<RuleResult>;
+export interface RuleEvaluationServiceContract {
+  preview(document: RuleDocument, sampleData: unknown): Promise<RuleResult>;
+  evaluate(ruleKey: string, sampleData: unknown): Promise<RuleResult>;
 }
 
 export interface AuditTapServiceContract {
@@ -213,6 +181,7 @@ const t = initTRPC.context<TrpcContext>().meta<ProcedureMeta>().create({
 });
 
 export const router = t.router;
+export const mergeRouters = t.mergeRouters;
 export const middleware = t.middleware;
 
 export const withAuthn = middleware(({ ctx, next }) => {
@@ -262,26 +231,15 @@ export const withStepUpCheck = middleware(async ({ ctx, meta, next }) => {
 export const withAuditTap = middleware(
   async ({ ctx, meta, path, type, next }) => {
     const result = await next();
-
-    if (!result.ok) {
-      return result;
-    }
-
-    const auditRelevant =
-      meta?.auditRelevant ??
-      (type === "mutation");
-
-    if (!auditRelevant) {
-      return result;
-    }
-
+    if (!result.ok) return result;
+    const auditRelevant = meta?.auditRelevant ?? (type === "mutation");
+    if (!auditRelevant) return result;
     await ctx.auditTap.recordCompletedCall({
       procedurePath: path,
       procedureType: type,
       actorUserId: ctx.session?.user.id ?? null,
       occurredAt: new Date(),
     });
-
     return result;
   },
 );
@@ -334,20 +292,12 @@ const ruleDefinitionOutputSchema = z.object({
   id: z.string().uuid(),
   ruleKey: z.string(),
   ruleType: z.enum([
-    "threshold_status",
-    "rollup",
-    "variance_alert",
-    "rag_aggregation",
-    "gate_criteria",
+    "threshold_status", "rollup", "variance_alert", "rag_aggregation", "gate_criteria",
   ]),
   name: z.string(),
-  document: ruleDocumentSchema,
+  documentJson: ruleDocumentSchema,
   version: z.number().int().positive(),
-  status: z.enum([
-    "draft",
-    "published",
-    "superseded",
-  ]),
+  status: z.enum(["draft", "published", "superseded"]),
   isCurrent: z.boolean(),
   publishedAt: z.date().nullable(),
   supersedesId: z.string().uuid().nullable(),
@@ -355,169 +305,56 @@ const ruleDefinitionOutputSchema = z.object({
   createdBy: z.string().uuid(),
 }).strict();
 
-const rulesCreateInputSchema = z.object({
-  ruleKey: z.string().trim().min(1).max(150),
-  name: z.string().trim().min(1).max(200),
-  document: ruleDocumentSchema,
-}).strict();
-
-const rulesPublishInputSchema = z.object({
-  ruleId: z.string().uuid(),
-}).strict();
-
-const rulesEvaluateInputSchema = z.object({
-  ruleId: z.string().uuid(),
-  input: z.unknown(),
-}).strict();
-
-const auditListEntriesInputSchema = z.object({
-  eventType: z.string().trim().min(1).max(200).optional(),
-  aggregateType: z.string().trim().min(1).max(150).optional(),
-  aggregateId: z.string().trim().min(1).max(200).optional(),
-  actor: z.string().trim().min(1).max(320).optional(),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
-  limit: z.number().int().min(1).max(200).default(50),
-}).strict();
-
-const auditJournalEntryOutputSchema = z.object({
+const snapshotOutputSchema = z.object({
   id: z.string().uuid(),
-  sourceEventId: z.string().nullable(),
-  sequenceNumber: z.string(),
-  eventType: z.string(),
   aggregateType: z.string(),
   aggregateId: z.string(),
-  payload: z.unknown(),
-  correlationId: z.string().nullable(),
-  actorUserId: z.string().nullable(),
-  actorEmail: z.string().email().nullable(),
-  occurredAt: z.date(),
-  previousHash: z.string().nullable(),
-  entryHash: z.string(),
-}).strict();
-
-const auditReconstructAsOfInputSchema = z.object({
-  aggregateType: z.string().trim().min(1).max(150),
-  aggregateId: z.string().trim().min(1).max(200),
-  asOf: z.coerce.date(),
-}).strict();
-
-const auditReconstructionOutputSchema = z.object({
-  source: z.enum(["snapshot", "replay"]),
-  aggregateType: z.string(),
-  aggregateId: z.string(),
-  asOf: z.date(),
-  version: z.number().int().positive().nullable(),
-  data: z.unknown(),
-}).strict().nullable();
-
-const rulesGetVersionInputSchema = z.object({
-  ruleKey: z.string().trim().min(1).max(150),
   version: z.number().int().positive(),
+  snapshotData: z.unknown(),
+  validFrom: z.date(),
+  validTo: z.date().nullable(),
+  createdAt: z.date(),
 }).strict();
 
 export const appRouter = router({
   health: router({
     check: publicProcedure.query(({ ctx }) => ctx.health.check()),
   }),
-
-  audit: router({
-    listEntries: requireRole("platform_administrator")
-      .input(auditListEntriesInputSchema)
-      .output(z.array(auditJournalEntryOutputSchema))
-      .query(({ ctx, input }) => ctx.audit.listEntries(input)),
-
-    reconstructAsOf: requireRole("platform_administrator")
-      .input(auditReconstructAsOfInputSchema)
-      .output(auditReconstructionOutputSchema)
-      .query(({ ctx, input }) => ctx.audit.reconstructAsOf(input)),
-  }),
   rules: router({
-    create: protectedProcedure
-      .input(rulesCreateInputSchema)
-      .output(ruleDefinitionOutputSchema)
-      .mutation(async ({ ctx, input }) => {
-        try {
-          return await ctx.rules.createDraft({
-            ...input,
-            createdBy: ctx.session.user.id,
-          });
-        } catch {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Unable to create rule draft",
-          });
-        }
-      }),
-
-    preview: protectedProcedure
-      .input(rulesPreviewInputSchema)
-      .mutation(({ input }) => {
-        const validatedInput = parseRuleInput(
-          input.draftDocument,
-          input.sampleData,
-        );
-
-        return evaluateRule(
-          input.draftDocument,
-          validatedInput,
-        );
-      }),
-
-    publish: requireRole(
-      "seo_administrator",
-      "strategy_analyst",
-    )
-      .input(rulesPublishInputSchema)
-      .output(ruleDefinitionOutputSchema)
-      .mutation(async ({ ctx, input }) => {
-        try {
-          // TODO(1.5): Replace role gating with
-          // workflow-case-gated publication.
-          return await ctx.rules.publish(input.ruleId);
-        } catch {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Unable to publish rule",
-          });
-        }
-      }),
-
-    evaluate: protectedProcedure
-      .input(rulesEvaluateInputSchema)
-      .mutation(async ({ ctx, input }) => {
-        try {
-          return await ctx.rules.evaluate(
-            input.ruleId,
-            input.input,
-          );
-        } catch {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Unable to evaluate rule",
-          });
-        }
-      }),
-
-    list: protectedProcedure
-      .output(z.array(ruleDefinitionOutputSchema))
-      .query(({ ctx }) => ctx.rules.list()),
-
-    getVersion: protectedProcedure
-      .input(rulesGetVersionInputSchema)
-      .output(ruleDefinitionOutputSchema.nullable())
-      .query(({ ctx, input }) =>
-        ctx.rules.getVersion(
-          input.ruleKey,
-          input.version,
-        ),
-      ),
+    list: scopedProcedure.query(({ ctx }) => ctx.rules.list()),
+    get: scopedProcedure.input(z.object({ ruleKey: z.string().trim().min(1).max(200) }).strict())
+      .query(({ ctx, input }) => ctx.rules.get(input.ruleKey)),
+    saveDraft: requireRole("platform_administrator").input(z.object({
+      ruleKey: z.string().trim().min(1).max(200),
+      ruleType: z.enum(["threshold_status", "rollup", "variance_alert", "rag_aggregation", "gate_criteria"]),
+      name: z.string().trim().min(1).max(200),
+      documentJson: ruleDocumentSchema,
+    }).strict()).output(ruleDefinitionOutputSchema).mutation(({ ctx, input }) => ctx.rules.saveDraft({
+      ...input, createdBy: ctx.session!.user.id,
+    })),
+    preview: scopedProcedure.input(rulesPreviewInputSchema).mutation(async ({ input }) => {
+      const document = ruleDocumentSchema.parse(input.draftDocument);
+      return evaluateRule(document, parseRuleInput(document.ruleType, input.sampleData));
+    }),
+    publish: requireRole("platform_administrator").meta({ actionClass: "rule_publication" }).use(withStepUpCheck)
+      .input(z.object({ ruleKey: z.string().trim().min(1).max(200) }).strict())
+      .output(ruleDefinitionOutputSchema).mutation(({ ctx, input }) => ctx.rules.publish({
+        ruleKey: input.ruleKey, actorUserId: ctx.session!.user.id,
+      })),
+    evaluate: scopedProcedure.input(z.object({
+      ruleKey: z.string().trim().min(1).max(200), sampleData: z.unknown(),
+    }).strict()).mutation(({ ctx, input }) => ctx.rules.evaluate(input)),
+  }),
+  audit: router({
+    current: scopedProcedure.input(z.object({ aggregateType: z.string().min(1), aggregateId: z.string().min(1) }).strict())
+      .output(snapshotOutputSchema.nullable()).query(({ ctx, input }) => ctx.audit.getCurrent(input.aggregateType, input.aggregateId)),
+    asOf: scopedProcedure.input(z.object({ aggregateType: z.string().min(1), aggregateId: z.string().min(1), at: z.coerce.date() }).strict())
+      .output(snapshotOutputSchema.nullable()).query(({ ctx, input }) => ctx.audit.getAsOf(input.aggregateType, input.aggregateId, input.at)),
+    history: scopedProcedure.input(z.object({ aggregateType: z.string().min(1), aggregateId: z.string().min(1) }).strict())
+      .output(z.array(snapshotOutputSchema)).query(({ ctx, input }) => ctx.audit.listHistory(input.aggregateType, input.aggregateId)),
   }),
   auth: router({
-    session: protectedProcedure.query(({ ctx }) => ({
-      user: ctx.session.user,
-      authenticationMethod: ctx.session.authenticationMethod,
-    })),
+    authorization: scopedProcedure.query(({ ctx }) => ctx.authorizationState),
     reconcileOidc: publicProcedure.input(oidcIdTokenInput).output(reconciledOidcUserOutput)
       .mutation(async ({ ctx, input }) => {
         try {
@@ -593,3 +430,4 @@ export const appRouter = router({
 });
 
 export type AppRouter = typeof appRouter;
+export { strategyRouter } from "./strategy";
