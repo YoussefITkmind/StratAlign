@@ -21,6 +21,8 @@ import { AuditEventSubscriber } from "./modules/audit/audit-event.subscriber";
 import { StubSiemForwarder } from "./modules/audit/siem-forwarder";
 import { StrategyActivationService } from "./modules/strategy/strategy-activation.service";
 import { StrategyApprovalSubscriber } from "./modules/strategy/strategy-approval.subscriber";
+import { StrategyTraversalService } from "./modules/strategy/strategy-traversal.service";
+import { TraceabilityRefreshSubscriber } from "./modules/strategy/traceability-refresh.subscriber";
 
 import { CadenceEngine } from "./modules/cadence/cadence.engine";
 import { PeriodCalendarEngine } from "./modules/cadence/period-calendar.engine";
@@ -81,7 +83,9 @@ async function bootstrap(): Promise<void> {
   );
 
   const strategyActivation = new StrategyActivationService(prisma, eventBus);
+  const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
   subscriberRegistry.register(new StrategyApprovalSubscriber(strategyActivation));
+  subscriberRegistry.register(new TraceabilityRefreshSubscriber(strategyTraversal));
 
   const cadenceEngine = new CadenceEngine();
   const periodCalendarEngine = new PeriodCalendarEngine();
@@ -245,7 +249,7 @@ async function bootstrap(): Promise<void> {
     logger.info(`Received ${signal}. Shutting down worker.`);
     await workerFactory.closeAll();
     await queueService.close();
-    await Promise.all([prisma.disconnect(), redis.disconnect()]);
+    await Promise.all([strategyTraversal.destroy(), prisma.disconnect(), redis.disconnect()]);
   }
 
   process.once("SIGINT", () => { void shutdown("SIGINT"); });
