@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/auth";
 
-const PROTECTED_PREFIXES = ["/dashboard", "/admin", "/audit", "/approvals"];
-
 export default auth((req) => {
+  const PROTECTED_PREFIXES = ["/dashboard", "/admin", "/audit", "/approvals"];
   const { pathname, search } = req.nextUrl;
   const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
   if (!isProtected || req.auth) {

@@ -360,6 +360,8 @@ export const authConfig = {
       },
 
       async authorize(credentials) {
+        // Demo mode: any non-empty email/password is accepted without a
+        // backend account. There is no real credential check here.
         const email =
           typeof credentials.email === "string"
             ? credentials.email
@@ -373,20 +375,12 @@ export const authConfig = {
         if (!email || !password) {
           return null;
         }
-        try {
-          const user = await trpcClient.auth.login.mutate({
-            email,
-            password,
-          });
 
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.displayName,
-          };
-        } catch {
-          return null;
-        }
+        return {
+          id: email,
+          email,
+          name: email.split("@")[0],
+        };
       },
     }),
   ],

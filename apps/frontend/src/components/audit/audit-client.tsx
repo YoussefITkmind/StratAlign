@@ -91,8 +91,8 @@ export function AuditClient() {
         </button>
       </form>
 
-      <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-        <table className="w-full text-start text-[13px]">
+      <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+        <table className="w-full min-w-[640px] text-start text-[13px]">
           <thead className="bg-slate-50 text-slate-500">
             <tr>
               <th className="px-4 py-2.5 text-start font-medium">{t("common.eventType")}</th>

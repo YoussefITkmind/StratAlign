@@ -18,33 +18,35 @@ function DiffTable({
 }) {
   const keys = Array.from(new Set([...Object.keys(before), ...Object.keys(after)]));
   return (
-    <table className="w-full text-start text-[13px]">
-      <thead className="bg-slate-50 text-slate-500">
-        <tr>
-          <th className="px-4 py-2.5 text-start font-medium">Field</th>
-          <th className="px-4 py-2.5 text-start font-medium">{labelBefore}</th>
-          <th className="px-4 py-2.5 text-start font-medium">{labelAfter}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {keys.map((key) => {
-          const changed = JSON.stringify(before[key]) !== JSON.stringify(after[key]);
-          return (
-            <tr key={key} className="border-t border-slate-100">
-              <td className="px-4 py-2.5 font-medium text-slate-700">{key}</td>
-              <td className="px-4 py-2.5 text-slate-500">{String(before[key] ?? "—")}</td>
-              <td
-                className={
-                  "px-4 py-2.5 " + (changed ? "font-semibold text-emerald-700" : "text-slate-500")
-                }
-              >
-                {String(after[key] ?? "—")}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[520px] text-start text-[13px]">
+        <thead className="bg-slate-50 text-slate-500">
+          <tr>
+            <th className="px-4 py-2.5 text-start font-medium">Field</th>
+            <th className="px-4 py-2.5 text-start font-medium">{labelBefore}</th>
+            <th className="px-4 py-2.5 text-start font-medium">{labelAfter}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {keys.map((key) => {
+            const changed = JSON.stringify(before[key]) !== JSON.stringify(after[key]);
+            return (
+              <tr key={key} className="border-t border-slate-100">
+                <td className="px-4 py-2.5 font-medium text-slate-700">{key}</td>
+                <td className="px-4 py-2.5 text-slate-500 break-words">{String(before[key] ?? "—")}</td>
+                <td
+                  className={
+                    "px-4 py-2.5 break-words " + (changed ? "font-semibold text-emerald-700" : "text-slate-500")
+                  }
+                >
+                  {String(after[key] ?? "—")}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
