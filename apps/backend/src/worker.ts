@@ -19,7 +19,7 @@ import { EventBusService } from "./events/event-bus.service";
 import { JournalService } from "./modules/audit/journal.service";
 import { AuditEventSubscriber } from "./modules/audit/audit-event.subscriber";
 import { StubSiemForwarder } from "./modules/audit/siem-forwarder";
-import { StrategyService } from "./modules/strategy/strategy.service";
+import { StrategyActivationService } from "./modules/strategy/strategy-activation.service";
 import { StrategyApprovalSubscriber } from "./modules/strategy/strategy-approval.subscriber";
 
 import { CadenceEngine } from "./modules/cadence/cadence.engine";
@@ -70,7 +70,6 @@ async function bootstrap(): Promise<void> {
   );
   const subscriberRegistry = new EventSubscriberRegistry();
 
-  // Audit subscribers.
   const journal = new JournalService(prisma);
   const siemForwarder = new StubSiemForwarder(logger.child("siem"));
   subscriberRegistry.register(
@@ -81,12 +80,9 @@ async function bootstrap(): Promise<void> {
     ),
   );
 
-  // Strategy staged-change subscriber. Prompt 1.5 publishes this event through
-  // the same outbox and dispatcher used by all other domain subscribers.
-  const strategy = new StrategyService(prisma);
-  subscriberRegistry.register(new StrategyApprovalSubscriber(strategy));
+  const strategyActivation = new StrategyActivationService(prisma, eventBus);
+  subscriberRegistry.register(new StrategyApprovalSubscriber(strategyActivation));
 
-  // Scheduler.
   const cadenceEngine = new CadenceEngine();
   const periodCalendarEngine = new PeriodCalendarEngine();
   const transitionService = new ScheduleTransitionService(
@@ -119,7 +115,6 @@ async function bootstrap(): Promise<void> {
     logger.child("scheduler-tick"),
   );
 
-  // Notifications.
   const templateRenderer = new TemplateRenderer();
   const templateService = new NotificationTemplateService(
     prisma,
@@ -177,7 +172,6 @@ async function bootstrap(): Promise<void> {
     ),
   );
 
-  // Event/outbox infrastructure.
   const eventDispatcher = new EventDispatcherService(
     subscriberRegistry,
     logger.child("event-dispatcher"),
