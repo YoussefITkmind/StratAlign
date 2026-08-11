@@ -492,10 +492,61 @@ export interface GovernanceApprovalReferenceInput {
   entityId: string;
 }
 
+export type GovernanceApprovalState =
+  | "DRAFT"
+  | "PENDING_APPROVAL"
+  | "APPROVED"
+  | "REJECTED"
+  | "CHANGES_REQUESTED";
+
+export interface GovernanceCaseOutput {
+  id: string;
+  workflowDefinitionId: string;
+  entityType: string;
+  entityId: string;
+  submittedBy: string;
+  approvalParticipantId: string | null;
+  approvalSlaMs: number;
+  currentState: GovernanceApprovalState;
+  xstateContextSnapshot: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type GovernanceDecisionInput =
+  | {
+      type: "APPROVE";
+      actorUserId: string;
+      rationale?: string;
+    }
+  | {
+      type: "REJECT";
+      actorUserId: string;
+      rationale?: string;
+    }
+  | {
+      type: "REQUEST_CHANGES";
+      actorUserId: string;
+      rationale?: string;
+    };
+
 export interface GovernanceServiceContract {
   assertApproved(
     input: GovernanceApprovalReferenceInput,
   ): Promise<void>;
+
+  myPendingApprovals(
+    viewerUserId: string,
+  ): Promise<GovernanceCaseOutput[]>;
+
+  getCase(
+    caseId: string,
+  ): Promise<GovernanceCaseOutput>;
+
+  transition(input: {
+    caseId: string;
+    event: GovernanceDecisionInput;
+  }): Promise<GovernanceCaseOutput>;
 }
 
 export interface AuditTapServiceContract {
@@ -783,6 +834,109 @@ function toRegistryError(
         message: "Publication requires an approved workflow case",
       })
     : new TRPCError({ code: "BAD_REQUEST", message: fallbackMessage });
+}
+
+const governanceCaseIdInputSchema = z.object({
+  caseId: z.string().uuid(),
+}).strict();
+
+const governanceDecisionInputSchema = z.object({
+  caseId: z.string().uuid(),
+
+  decision: z.enum([
+    "approve",
+    "reject",
+    "request_changes",
+  ]),
+
+  rationale: z
+    .string()
+    .trim()
+    .min(1)
+    .max(4000)
+    .optional(),
+}).strict();
+
+const governanceDecisionEvent = {
+  approve: "APPROVE",
+  reject: "REJECT",
+  request_changes: "REQUEST_CHANGES",
+} as const;
+
+const GOVERNANCE_API_ERROR_CODES = {
+  GOVERNANCE_CASE_NOT_FOUND:
+    "NOT_FOUND",
+
+  GOVERNANCE_ILLEGAL_TRANSITION:
+    "CONFLICT",
+
+  SEPARATION_OF_DUTIES_VIOLATION:
+    "FORBIDDEN",
+
+  GOVERNANCE_APPROVAL_REFERENCE_INVALID:
+    "FORBIDDEN",
+} as const satisfies Record<
+  string,
+  TRPCError["code"]
+>;
+
+type GovernanceApiErrorCode =
+  keyof typeof GOVERNANCE_API_ERROR_CODES;
+
+function isGovernanceApiError(
+  error: unknown,
+): error is {
+  code: GovernanceApiErrorCode;
+  message: string;
+} {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (
+      error as {
+        code: unknown;
+      }
+    ).code === "string" &&
+    (
+      error as {
+        code: string;
+      }
+    ).code in
+      GOVERNANCE_API_ERROR_CODES
+  );
+}
+
+async function mapGovernanceErrors<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (
+      !isGovernanceApiError(
+        error,
+      )
+    ) {
+      throw new TRPCError({
+        code:
+          "INTERNAL_SERVER_ERROR",
+
+        message:
+          "Unable to complete governance operation",
+      });
+    }
+
+    throw new TRPCError({
+      code:
+        GOVERNANCE_API_ERROR_CODES[
+          error.code
+        ],
+
+      message:
+        error.message,
+    });
+  }
 }
 
 const rulesPreviewInputSchema = z.object({
@@ -1257,6 +1411,71 @@ export const appRouter = router({
       .output(auditReconstructionOutputSchema)
       .query(({ ctx, input }) => ctx.audit.reconstructAsOf(input)),
   }),
+  governance: router({
+    myPendingApprovals:
+      protectedProcedure.query(
+        ({ ctx }) =>
+          mapGovernanceErrors(
+            () =>
+              ctx.governance
+                .myPendingApprovals(
+                  ctx.session.user.id,
+                ),
+          ),
+      ),
+
+    getCase:
+      protectedProcedure
+        .input(
+          governanceCaseIdInputSchema,
+        )
+        .query(
+          ({ ctx, input }) =>
+            mapGovernanceErrors(
+              () =>
+                ctx.governance
+                  .getCase(
+                    input.caseId,
+                  ),
+            ),
+        ),
+
+    decide:
+      protectedProcedure
+        .input(
+          governanceDecisionInputSchema,
+        )
+        .mutation(
+          ({ ctx, input }) =>
+            mapGovernanceErrors(
+              () =>
+                ctx.governance
+                  .transition({
+                    caseId:
+                      input.caseId,
+
+                    event: {
+                      type:
+                        governanceDecisionEvent[
+                          input.decision
+                        ],
+
+                      actorUserId:
+                        ctx.session
+                          .user.id,
+
+                      ...(input.rationale
+                        ? {
+                            rationale:
+                              input.rationale,
+                          }
+                        : {}),
+                    },
+                  }),
+            ),
+        ),
+  }),
+
   rules: router({
     create: protectedProcedure
       .input(rulesCreateInputSchema)
