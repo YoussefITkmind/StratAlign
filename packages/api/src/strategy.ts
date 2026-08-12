@@ -9,6 +9,7 @@ import type {
   StrategyNodeState,
   StrategyNodeType,
 } from "@spm/domain-strategy";
+import type { PortfolioServiceContract } from "./portfolio";
 import { protectedProcedure, requireRole, router } from "./index";
 
 export interface StagedChangeOutput {
@@ -151,6 +152,16 @@ const traversal = (
   return ctx.strategyTraversal;
 };
 
+const portfolio = (ctx: { portfolio?: PortfolioServiceContract }): PortfolioServiceContract => {
+  if (!ctx.portfolio) {
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Portfolio service unavailable",
+    });
+  }
+  return ctx.portfolio;
+};
+
 export const strategyRouter = router({
   node: router({
     list: protectedProcedure
@@ -234,6 +245,11 @@ export const strategyRouter = router({
       .mutation(async ({ ctx, input }) => { try { return await service(ctx).closePlanVersion(input.planVersionId, input.closesAt); } catch (e) { return fail(e); } }),
     carryForward: admin().input(z.object({ sourcePlanVersionId: id, name: z.string().trim().min(1).max(300) }).strict())
       .mutation(async ({ ctx, input }) => { try { return await service(ctx).carryForward(input.sourcePlanVersionId, input.name, ctx.session!.user.id); } catch (e) { return fail(e); } }),
+  }),
+  portfolio: router({
+    findUnmappedPlays: admin().query(async ({ ctx }) => {
+      try { return await portfolio(ctx).findUnmappedPlays(); } catch (e) { return fail(e); }
+    }),
   }),
   stagedChange: router({
     list: protectedProcedure.input(z.object({ planVersionId: id }).strict())
