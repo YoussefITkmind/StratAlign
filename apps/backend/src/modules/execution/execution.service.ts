@@ -118,7 +118,7 @@ export class ExecutionService {
       INSERT INTO "execution"."initiatives"
         ("name_en", "name_ar", "strategic_play_node_id", "owner_user_id", "stage")
       VALUES
-        (${input.nameEn}, ${input.nameAr}, ${input.strategicPlayNodeId}::uuid, ${input.ownerUserId}, ${input.stage}::"execution"."initiative_stage")
+        (${input.nameEn}, ${input.nameAr}, ${input.strategicPlayNodeId}::uuid, ${input.ownerUserId}, ${input.stage}::"execution"."InitiativeStage")
       RETURNING id, name_en, name_ar, strategic_play_node_id, owner_user_id, stage, created_at
     `;
     if (!row) throw executionErrors.invalidOperation();
@@ -185,7 +185,7 @@ export class ExecutionService {
       INSERT INTO "execution"."milestone_flags"
         ("jira_link_id", "name_en", "name_ar", "due_date", "forecast_date", "health", "source")
       VALUES
-        (${input.jiraLinkId}::uuid, ${input.nameEn}, ${input.nameAr}, ${input.dueDate}, ${input.forecastDate ?? null}, ${input.health}::"execution"."milestone_health", ${input.source}::"execution"."execution_source")
+        (${input.jiraLinkId}::uuid, ${input.nameEn}, ${input.nameAr}, ${input.dueDate}, ${input.forecastDate ?? null}, ${input.health}::"execution"."MilestoneHealth", ${input.source}::"execution"."ExecutionSource")
       RETURNING id, jira_link_id, name_en, name_ar, due_date, forecast_date, health, source
     `;
     if (!row) throw executionErrors.invalidOperation();
@@ -207,7 +207,7 @@ export class ExecutionService {
       INSERT INTO "execution"."status_updates"
         ("initiative_id", "period", "stage", "status", "confidence", "narrative_en", "narrative_ar", "submitted_by")
       VALUES
-        (${input.initiativeId}::uuid, ${input.period}, ${input.stage}::"execution"."initiative_stage", ${input.status}::"execution"."initiative_status", ${input.confidence}::"execution"."confidence_level", ${input.narrativeEn ?? null}, ${input.narrativeAr ?? null}, ${input.submittedBy})
+        (${input.initiativeId}::uuid, ${input.period}, ${input.stage}::"execution"."InitiativeStage", ${input.status}::"execution"."InitiativeStatus", ${input.confidence}::"execution"."ConfidenceLevel", ${input.narrativeEn ?? null}, ${input.narrativeAr ?? null}, ${input.submittedBy})
       RETURNING id, initiative_id, period, stage, status, confidence, narrative_en, narrative_ar, submitted_by, created_at
     `;
     if (!row) throw executionErrors.invalidOperation();
@@ -243,7 +243,7 @@ export class ExecutionService {
       INSERT INTO "execution"."financial_attrs"
         ("initiative_id", "budget_amount", "spend_amount", "currency", "source", "locked")
       VALUES
-        (${input.initiativeId}::uuid, ${input.budgetAmount}, ${input.spendAmount}, ${input.currency}, ${input.source}::"execution"."execution_source", ${input.locked})
+        (${input.initiativeId}::uuid, ${input.budgetAmount}, ${input.spendAmount}, ${input.currency}, ${input.source}::"execution"."ExecutionSource", ${input.locked})
       ON CONFLICT ("initiative_id") DO UPDATE SET
         "budget_amount" = EXCLUDED."budget_amount",
         "spend_amount" = EXCLUDED."spend_amount",
@@ -270,7 +270,7 @@ export class ExecutionService {
       INSERT INTO "execution"."risk_indicators"
         ("initiative_id", "level", "source", "locked")
       VALUES
-        (${input.initiativeId}::uuid, ${input.level}::"execution"."risk_level", ${input.source}::"execution"."execution_source", ${input.locked})
+        (${input.initiativeId}::uuid, ${input.level}::"execution"."RiskLevel", ${input.source}::"execution"."ExecutionSource", ${input.locked})
       ON CONFLICT ("initiative_id") DO UPDATE SET
         "level" = EXCLUDED."level",
         "source" = EXCLUDED."source",

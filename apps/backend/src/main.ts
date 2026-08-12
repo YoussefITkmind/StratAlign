@@ -39,6 +39,7 @@ import { PerformanceService } from "./modules/performance/performance.service";
 import { KpiDetailService } from "./modules/performance/kpi-detail.service";
 import { ScorecardService } from "./modules/scorecard/scorecard.service";
 import { ExecutionService } from "./modules/execution/execution.service";
+import { PortfolioService } from "./modules/portfolio/portfolio.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -124,6 +125,7 @@ async function bootstrap(): Promise<void> {
 
   const scorecard = new ScorecardService(prisma, governance, rules);
   const execution = new ExecutionService(prisma);
+  const portfolio = new PortfolioService(prisma, rules);
 
   const server = createHTTPServer({
     router: rootRouter,
@@ -153,6 +155,7 @@ async function bootstrap(): Promise<void> {
         performance,
         scorecard,
         execution,
+        portfolio,
       };
     },
     middleware(request, response, next) {
