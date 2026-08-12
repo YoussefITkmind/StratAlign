@@ -36,6 +36,7 @@ import { CaptureSessionService } from "./modules/performance/capture-session.ser
 import { CommentaryService } from "./modules/performance/commentary.service";
 import { PerformanceResultsService } from "./modules/performance/performance-results.service";
 import { PerformanceService } from "./modules/performance/performance.service";
+import { KpiDetailService } from "./modules/performance/kpi-detail.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -107,10 +108,16 @@ async function bootstrap(): Promise<void> {
       measurements,
       logger.child("performance-capture"),
     ),
-    new CaptureWorkspaceService(prisma),
+    new CaptureWorkspaceService(prisma, {
+      endpoint: environment.OBJECT_STORAGE_ENDPOINT,
+      accessKey: environment.OBJECT_STORAGE_ACCESS_KEY,
+      secretKey: environment.OBJECT_STORAGE_SECRET_KEY,
+      bucket: environment.OBJECT_STORAGE_BUCKET,
+    }),
     measurements,
     new CommentaryService(prisma),
     new PerformanceResultsService(prisma),
+    new KpiDetailService(prisma),
   );
 
   const server = createHTTPServer({

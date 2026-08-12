@@ -31,7 +31,7 @@ function message(error: unknown) {
   return error instanceof Error ? error.message : "The operation could not be completed.";
 }
 
-export function KpiRegistryPanel() {
+export function KpiRegistryPanel({ onSelectKpi }: { onSelectKpi?: (kpiDefinitionId: string) => void }) {
   const utils = trpc.useUtils();
   const list = trpc.registry.kpi.list.useQuery();
   const nodes = trpc.registry.strategyNodes.useQuery();
@@ -146,7 +146,7 @@ export function KpiRegistryPanel() {
       {list.error && <p className="text-sm text-red-600">{message(list.error)}</p>}
       <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
         <div className="space-y-2">
-          {list.data?.map((item) => <button key={item.definition.id} data-testid="persisted-kpi-row" onClick={() => { setSelectedId(item.definition.id); setApprovalCaseId(""); setAlignmentDraft(null); }} className={`w-full rounded-xl border p-3 text-left ${selectedId === item.definition.id ? "border-blue-500 bg-blue-50" : "bg-white"}`}><div className="font-semibold text-slate-900">{item.version.nameEn}</div><div className="mt-1 text-xs text-slate-500">v{item.version.version} · {item.definition.status} · {item.version.frequency}</div></button>)}
+          {list.data?.map((item) => <div key={item.definition.id} className={`rounded-xl border p-3 ${selectedId === item.definition.id ? "border-blue-500 bg-blue-50" : "bg-white"}`}><button data-testid="persisted-kpi-row" onClick={() => { setSelectedId(item.definition.id); setApprovalCaseId(""); setAlignmentDraft(null); }} className="w-full text-left"><div className="font-semibold text-slate-900">{item.version.nameEn}</div><div className="mt-1 text-xs text-slate-500">v{item.version.version} · {item.definition.status} · {item.version.frequency}</div></button>{onSelectKpi && <button onClick={() => onSelectKpi(item.definition.id)} className="mt-2 text-xs font-medium text-blue-600">Open KPI Detail →</button>}</div>)}
           {list.data?.length === 0 && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-slate-400">No persisted KPIs.</p>}
         </div>
         {selected.data ? <div className="space-y-4 rounded-xl border bg-white p-5">

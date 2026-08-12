@@ -49,7 +49,7 @@ export default function KpiWorkspacePage() {
       {view.type === "okr" && <OkrRegistryPanel />}
 
       {view.type === "library" && (
-        <KpiRegistryPanel />
+        <KpiRegistryPanel onSelectKpi={(kpiId) => setView({ type: "detail", kpiId })} />
       )}
 
       {view.type === "rules" && <RuleBuilderPanel />}

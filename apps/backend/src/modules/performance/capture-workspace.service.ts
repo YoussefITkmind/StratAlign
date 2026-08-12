@@ -5,9 +5,18 @@ import type { PrismaService } from "../../database/prisma.service";
 
 const allowedEvidence = new Set(["application/pdf", "image/png", "image/jpeg", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]);
 export type ValidatedRow = { row: number; period: string; value: number | null; outcome: "accepted" | "rejected" | "warning"; reason?: string };
+export interface ObjectStorageConfiguration {
+  endpoint: string;
+  accessKey: string;
+  secretKey: string;
+  bucket: string;
+}
 
 export class CaptureWorkspaceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly objectStorage: ObjectStorageConfiguration,
+  ) {}
 
   async listTasks(ownerId: string) {
     const sessions = await this.prisma.captureSession.findMany({ where: { ownerId }, orderBy: { updatedAt: "desc" } });
@@ -64,10 +73,17 @@ export class CaptureWorkspaceService {
 
   async uploadEvidence(sessionId: string, fileName: string, contentType: string, bytes: Buffer) {
     if (!allowedEvidence.has(contentType)) throw new Error("Evidence file type is not allowed");
-    const client = new MinioClient({ endPoint: process.env.MINIO_ENDPOINT ?? "127.0.0.1", port: Number(process.env.MINIO_PORT ?? 19000), useSSL: process.env.MINIO_USE_SSL === "true", accessKey: process.env.MINIO_ACCESS_KEY ?? "", secretKey: process.env.MINIO_SECRET_KEY ?? "" });
+    const endpoint = new URL(this.objectStorage.endpoint);
+    const client = new MinioClient({
+      endPoint: endpoint.hostname,
+      port: endpoint.port ? Number(endpoint.port) : endpoint.protocol === "https:" ? 443 : 80,
+      useSSL: endpoint.protocol === "https:",
+      accessKey: this.objectStorage.accessKey,
+      secretKey: this.objectStorage.secretKey,
+    });
     const key = `evidence/${sessionId}/${randomUUID()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-    await client.putObject("artifacts", key, bytes, bytes.length, { "Content-Type": contentType });
-    await client.statObject("artifacts", key);
-    return `minio://artifacts/${key}`;
+    await client.putObject(this.objectStorage.bucket, key, bytes, bytes.length, { "Content-Type": contentType });
+    await client.statObject(this.objectStorage.bucket, key);
+    return `minio://${this.objectStorage.bucket}/${key}`;
   }
 }

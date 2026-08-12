@@ -455,6 +455,20 @@ export interface RollupResultOutput {
 }
 
 export interface PerformanceServiceContract {
+  getKpiDetail(kpiDefinitionId: string): Promise<{
+    definition: { id: string; status: string; retiredAt: Date | null };
+    version: { id: string; version: number; nameEn: string; nameAr: string; descriptionEn: string | null; descriptionAr: string | null; unit: string; polarity: string; frequency: string; dataSourceType: string; ownerUserId: string; ownerName: string; publishedAt: Date | null };
+    scopeNodeId: string | null;
+    period: string | null;
+    targets: Array<{ id: string; scopeNodeId: string; period: string; targetValue: number; planVersionId: string }>;
+    measurements: Array<{ id: string; scopeNodeId: string; period: string; value: number; createdAt: Date }>;
+    statuses: Array<{ id: string; scopeNodeId: string; period: string; status: string; computedAt: Date; ruleVersionUsed: string }>;
+    rollups: Array<{ id: string; scopeNodeId: string; period: string; aggregatedValue: number | null; method: string }>;
+    contributors: Array<{ definitionId: string; versionId: string; nameEn: string; unit: string; value: number | null; status: string | null; rollupRuleId: string; rollupRuleDocument: unknown }>;
+    commentary: Array<{ id: string; bodyEn: string | null; bodyAr: string | null; authorId: string; authorName: string; createdAt: Date; period: string; scopeNodeId: string }>;
+    alignments: Array<{ id: string; alignmentType: string; strategyNodeId: string; strategyNodeName: string; strategyNodeType: string }>;
+    thresholdBinding: { id: string; thresholdRuleId: string; ruleKey: string; ruleVersion: number; ruleDocument: unknown } | null;
+  } | null>;
   listCaptureTasks(ownerId: string): Promise<Array<{ id: string; kpiVersionId: string; kpiName: string; unit: string; scopeNodeId: string; period: string; dueAt: Date; cadenceState: string; session: (CaptureSessionOutput & { draftValue?: unknown; draftEvidenceRef?: string | null }) | null }>>;
   getCaptureSession(sessionId: string): Promise<(CaptureSessionOutput & { draftValue?: unknown; draftEvidenceRef?: string | null }) | null>;
   saveCaptureDraft(sessionId: string, ownerId: string, value: number, evidenceRef?: string | null): Promise<CaptureSessionOutput & { draftValue?: unknown; draftEvidenceRef?: string | null }>;
@@ -502,6 +516,13 @@ export interface PerformanceServiceContract {
     bodyEn?: string | null;
     bodyAr?: string | null;
   }): Promise<CommentaryOutput>;
+
+  listCommentary(input: {
+    kpiVersionId: string;
+    scopeNodeId: string;
+    period: string;
+    limit: number;
+  }): Promise<CommentaryOutput[]>;
 
   getStatus(input: {
     kpiVersionId: string;
@@ -1713,6 +1734,10 @@ export const appRouter = router({
       .query(({ ctx, input }) => ctx.rules.getVersion(input.ruleKey, input.version)),
   }),
   performance: router({
+    detail: protectedProcedure
+      .input(z.object({ kpiDefinitionId: z.string().uuid() }).strict())
+      .query(({ ctx, input }) =>
+        mapPerformanceErrors(() => ctx.performance.getKpiDetail(input.kpiDefinitionId))),
     capture: router({
       tasks: requireRole("kpi_owner", "data_steward").query(({ ctx }) => ctx.performance.listCaptureTasks(ctx.session.user.id)),
       getSession: requireRole("kpi_owner", "data_steward").input(z.object({ sessionId: z.string().uuid() }).strict()).query(({ ctx, input }) => ctx.performance.getCaptureSession(input.sessionId)),
@@ -1775,6 +1800,10 @@ export const appRouter = router({
     }),
 
     commentary: router({
+      list: protectedProcedure
+        .input(z.object({ kpiVersionId: boundedIdentifierSchema, scopeNodeId: boundedIdentifierSchema, period: periodSchema, limit: z.number().int().min(1).max(100).default(100) }).strict())
+        .output(z.array(commentaryOutputSchema))
+        .query(({ ctx, input }) => mapPerformanceErrors(() => ctx.performance.listCommentary(input))),
       add: requireRole("kpi_owner", "data_steward", "strategy_analyst")
         .input(commentaryAddInputSchema)
         .output(commentaryOutputSchema)

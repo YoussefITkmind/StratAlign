@@ -3,6 +3,7 @@ import type { CaptureWorkspaceService } from "./capture-workspace.service";
 import type { CommentaryService } from "./commentary.service";
 import type { MeasurementService } from "./measurement.service";
 import type { PerformanceResultsService } from "./performance-results.service";
+import type { KpiDetailService } from "./kpi-detail.service";
 
 /**
  * Single entry point the tRPC layer depends on, so the router stays a thin
@@ -16,6 +17,7 @@ export class PerformanceService {
     private readonly measurements: MeasurementService,
     private readonly commentary: CommentaryService,
     private readonly results: PerformanceResultsService,
+    private readonly kpiDetail: KpiDetailService,
   ) {}
 
   listCaptureTasks = (ownerId: string) => this.workspace.listTasks(ownerId);
@@ -46,4 +48,10 @@ export class PerformanceService {
 
   getRollup: PerformanceResultsService["getRollup"] = (input) =>
     this.results.getRollup(input);
+
+  getKpiDetail: KpiDetailService["get"] = (kpiDefinitionId) =>
+    this.kpiDetail.get(kpiDefinitionId);
+
+  listCommentary: CommentaryService["list"] = (input) =>
+    this.commentary.list(input);
 }

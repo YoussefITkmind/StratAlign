@@ -3,6 +3,8 @@ import { authenticatedProcedure, router } from "@/server/trpc";
 import { createBackendRegistryClient, translateBackendRegistryError } from "@/server/backend-registry-client";
 const id=z.string().uuid(); const backend=(ctx:{cookieHeader:string|null})=>createBackendRegistryClient(ctx.cookieHeader); const f=async<T>(op:()=>Promise<T>)=>{try{return await op();}catch(e){return translateBackendRegistryError(e);}};
 export const captureRouter=router({
+  detail:authenticatedProcedure.input(z.object({kpiDefinitionId:id}).strict()).query(({ctx,input})=>f(()=>backend(ctx).performance.detail.query(input))),
+  addCommentary:authenticatedProcedure.input(z.object({kpiVersionId:z.string(),scopeNodeId:z.string(),period:z.string(),bodyEn:z.string().optional(),bodyAr:z.string().optional()}).strict()).mutation(({ctx,input})=>f(()=>backend(ctx).performance.commentary.add.mutate(input))),
   tasks:authenticatedProcedure.query(({ctx})=>f(()=>backend(ctx).performance.capture.tasks.query())),
   start:authenticatedProcedure.input(z.object({kpiVersionId:z.string(),scopeNodeId:z.string(),period:z.string(),recallDeadlineAt:z.coerce.date().optional()}).strict()).mutation(({ctx,input})=>f(()=>backend(ctx).performance.capture.startSession.mutate(input))),
   get:authenticatedProcedure.input(z.object({sessionId:id}).strict()).query(({ctx,input})=>f(()=>backend(ctx).performance.capture.getSession.query(input))),

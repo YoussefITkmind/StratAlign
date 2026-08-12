@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { CaptureWorkspaceService } from "../../src/modules/performance/capture-workspace.service";
 
-const service = new CaptureWorkspaceService({} as never);
+const service = new CaptureWorkspaceService({} as never, {
+  endpoint: "http://127.0.0.1:19000",
+  accessKey: "test-access-key",
+  secretKey: "test-secret-key",
+  bucket: "artifacts",
+});
 
 describe("isolated Prompt 2.8 template validation", () => {
   it("generates and validates CSV rows with accepted, rejected, and warning outcomes", () => {
