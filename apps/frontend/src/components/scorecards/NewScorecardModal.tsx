@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { Scorecard, ScorecardStatus, PerspectiveKey } from "@/types/scorecard";
-import { SCORECARD_STATUS_CONFIG, colorForInitials } from "@/lib/scorecardConfig";
+import { SCORECARD_STATUS_CONFIG, colorForInitials, DEFAULT_PERSPECTIVE_WEIGHTS } from "@/lib/scorecardConfig";
 
 interface Props {
   onClose: () => void;
@@ -33,7 +33,14 @@ export default function NewScorecardModal({ onClose, onAdd }: Props) {
       ownerName: ownerName.trim(),
       status,
       score: 0,
-      perspectives: PERSPECTIVE_KEYS.map((key) => ({ id: `${id}-${key}`, key, owner, score: 0, kpis: [] })),
+      perspectives: PERSPECTIVE_KEYS.map((key) => ({
+        id: `${id}-${key}`,
+        key,
+        owner,
+        score: 0,
+        weight: DEFAULT_PERSPECTIVE_WEIGHTS[key],
+        kpis: [],
+      })),
     };
     onAdd(scorecard);
     onClose();

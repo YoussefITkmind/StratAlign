@@ -22,13 +22,22 @@ export async function loginWithCredentials(
   }
 }
 
+const E2E_ROLE_EMAIL_VARIABLES = {
+  platform_administrator: "E2E_ADMIN_EMAIL",
+  member: "E2E_MEMBER_EMAIL",
+  // Granular PlatformRoles seeded with a single scope grant each — see
+  // apps/backend/prisma/seed.ts. Unlike the two roles above (which also
+  // carry the coarse NextAuth admin/member role), these users exist purely
+  // to exercise real-role-driven UI (e.g. the Home widget composition).
+  executive_viewer: "E2E_EXECUTIVE_VIEWER_EMAIL",
+  kpi_owner: "E2E_KPI_OWNER_EMAIL",
+} as const;
+
 export async function loginAs(
   page: Page,
-  role: "platform_administrator" | "member",
+  role: keyof typeof E2E_ROLE_EMAIL_VARIABLES,
 ) {
-  const emailVariable = role === "platform_administrator"
-    ? "E2E_ADMIN_EMAIL"
-    : "E2E_MEMBER_EMAIL";
+  const emailVariable = E2E_ROLE_EMAIL_VARIABLES[role];
   const email = process.env[emailVariable];
   const password = process.env.E2E_CREDENTIAL_PASSWORD;
 
