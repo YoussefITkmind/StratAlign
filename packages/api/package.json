@@ -13,6 +13,10 @@
       "types": "./dist/strategy.d.ts",
       "default": "./dist/strategy.js"
     },
+    "./execution": {
+      "types": "./dist/execution.d.ts",
+      "default": "./dist/execution.js"
+    },
     "./root": {
       "types": "./dist/root.d.ts",
       "default": "./dist/root.js"
@@ -41,6 +45,9 @@
       ],
       "strategy": [
         "dist/strategy.d.ts"
+      ],
+      "execution": [
+        "dist/execution.d.ts"
       ]
     }
   }
