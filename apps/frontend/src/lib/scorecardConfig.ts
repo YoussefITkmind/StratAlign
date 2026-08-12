@@ -22,6 +22,16 @@ export function scoreColor(score: number): { bar: string; text: string } {
   return { bar: "bg-red-500", text: "text-red-600" };
 }
 
+// Standard perspective weights, used wherever a scorecard is created or seeded
+// without its own weighting workflow yet (Prompt 3.1's real WeightingVersion
+// data layer doesn't exist — see MasterScorecardPage for context).
+export const DEFAULT_PERSPECTIVE_WEIGHTS: Record<PerspectiveKey, number> = {
+  financial: 30,
+  customer: 25,
+  "internal-process": 25,
+  "learning-growth": 20,
+};
+
 export const PERSPECTIVE_CONFIG: Record<
   PerspectiveKey,
   { label: string; icon: LucideIcon; bg: string; text: string; bar: string }

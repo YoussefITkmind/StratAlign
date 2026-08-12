@@ -38,6 +38,14 @@ const testUsers = [
     displayName: "Team Development User",
     password: "Team123!",
   },
+  {
+    email: "dana@example.test",
+    displayName: "Dana Test User",
+  },
+  {
+    email: "erin@example.test",
+    displayName: "Erin Test User",
+  },
 ];
 
 const roleDescriptions: Record<(typeof PLATFORM_ROLES)[number], string> = {
@@ -159,17 +167,27 @@ async function seedTestUsers(): Promise<void> {
   const administratorId = users.get("bob@example.test")!;
   const ordinaryUserId = users.get("alice@example.test")!;
   const teamUserId = users.get("team@test.com")!;
+  const executiveViewerId = users.get("dana@example.test")!;
+  const kpiOwnerId = users.get("erin@example.test")!;
   const analystRole = await prisma.role.findUniqueOrThrow({
     where: { name: "strategy_analyst" },
   });
   const administratorRole = await prisma.role.findUniqueOrThrow({
     where: { name: "platform_administrator" },
   });
+  const executiveViewerRole = await prisma.role.findUniqueOrThrow({
+    where: { name: "executive_viewer" },
+  });
+  const kpiOwnerRole = await prisma.role.findUniqueOrThrow({
+    where: { name: "kpi_owner" },
+  });
 
   for (const grant of [
     { userId: administratorId, roleId: administratorRole.id },
     { userId: ordinaryUserId, roleId: analystRole.id },
     { userId: teamUserId, roleId: administratorRole.id },
+    { userId: executiveViewerId, roleId: executiveViewerRole.id },
+    { userId: kpiOwnerId, roleId: kpiOwnerRole.id },
   ]) {
     await prisma.scopeGrant.upsert({
       where: {
