@@ -8,6 +8,8 @@ const workspaceRoot = resolve(__dirname, "../../..");
 export default async function authGlobalSetup(): Promise<() => Promise<void>> {
   process.env.E2E_MEMBER_EMAIL ??= "alice@example.test";
   process.env.E2E_ADMIN_EMAIL ??= "bob@example.test";
+  process.env.E2E_EXECUTIVE_VIEWER_EMAIL ??= "dana@example.test";
+  process.env.E2E_KPI_OWNER_EMAIL ??= "erin@example.test";
   process.env.E2E_CREDENTIAL_PASSWORD ??= "LocalTestPassword123!";
 
   await execFileAsync(
