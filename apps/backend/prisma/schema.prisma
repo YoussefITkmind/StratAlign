@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance", "scorecard"]
+  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance", "scorecard", "execution"]
 }
 
 model SystemSetting {
@@ -1324,4 +1324,138 @@ model MapLink {
   @@index([toObjectiveId])
   @@map("map_links")
   @@schema("scorecard")
+}
+
+// ---------------------------------------------------------------------------
+// Execution (Phase 4.1)
+//
+// ADR-06 boundary: this schema is intentionally a thin strategy-to-delivery
+// linkage layer. Do not add task lists, resource assignments, dependency graphs
+// or Gantt scheduling here; detailed project management remains in Jira.
+// ---------------------------------------------------------------------------
+
+enum InitiativeStage {
+  DESIGN  @map("design")
+  PILOT   @map("pilot")
+  EXECUTE @map("execute")
+  SCALE   @map("scale")
+  DONE    @map("done")
+  @@schema("execution")
+}
+
+enum MilestoneHealth {
+  ON_TIME @map("on_time")
+  AT_RISK @map("at_risk")
+  LATE    @map("late")
+  @@schema("execution")
+}
+
+enum ExecutionSource {
+  MANUAL @map("manual")
+  JIRA   @map("jira")
+  ERP    @map("erp")
+  @@schema("execution")
+}
+
+enum InitiativeStatus {
+  ON_TRACK  @map("on_track")
+  AT_RISK   @map("at_risk")
+  OFF_TRACK @map("off_track")
+  @@schema("execution")
+}
+
+enum ConfidenceLevel {
+  HIGH   @map("high")
+  MEDIUM @map("medium")
+  LOW    @map("low")
+  @@schema("execution")
+}
+
+enum RiskLevel {
+  LOW    @map("low")
+  MEDIUM @map("medium")
+  HIGH   @map("high")
+  @@schema("execution")
+}
+
+model Initiative {
+  id                  String          @id @default(uuid()) @db.Uuid
+  nameEn              String          @map("name_en")
+  nameAr              String          @map("name_ar")
+  strategicPlayNodeId String          @map("strategic_play_node_id") @db.Uuid
+  ownerUserId         String          @map("owner_user_id")
+  stage               InitiativeStage
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+  @@index([strategicPlayNodeId])
+  @@index([ownerUserId])
+  @@map("initiatives")
+  @@schema("execution")
+}
+
+model JiraLink {
+  id             String    @id @default(uuid()) @db.Uuid
+  initiativeId   String    @unique @map("initiative_id") @db.Uuid
+  jiraProjectKey String    @map("jira_project_key")
+  jiraProjectUrl String    @map("jira_project_url")
+  lastSyncedAt   DateTime? @map("last_synced_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  @@map("jira_links")
+  @@schema("execution")
+}
+
+model MilestoneFlag {
+  id           String          @id @default(uuid()) @db.Uuid
+  jiraLinkId   String          @map("jira_link_id") @db.Uuid
+  nameEn       String          @map("name_en")
+  nameAr       String          @map("name_ar")
+  dueDate      DateTime        @map("due_date") @db.Date
+  forecastDate DateTime?       @map("forecast_date") @db.Date
+  health       MilestoneHealth
+  source       ExecutionSource
+  createdAt    DateTime        @default(now()) @map("created_at")
+  @@index([jiraLinkId])
+  @@map("milestone_flags")
+  @@schema("execution")
+}
+
+model StatusUpdate {
+  id           String           @id @default(uuid()) @db.Uuid
+  initiativeId String           @map("initiative_id") @db.Uuid
+  period       String
+  stage        InitiativeStage
+  status       InitiativeStatus
+  confidence   ConfidenceLevel
+  narrativeEn  String?          @map("narrative_en")
+  narrativeAr  String?          @map("narrative_ar")
+  submittedBy  String           @map("submitted_by")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  @@index([initiativeId, period, createdAt])
+  @@map("status_updates")
+  @@schema("execution")
+}
+
+model FinancialAttr {
+  id           String          @id @default(uuid()) @db.Uuid
+  initiativeId String          @unique @map("initiative_id") @db.Uuid
+  budgetAmount Decimal         @map("budget_amount") @db.Decimal(20, 6)
+  spendAmount  Decimal         @map("spend_amount") @db.Decimal(20, 6)
+  currency     String
+  source       ExecutionSource
+  locked       Boolean         @default(false)
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  @@map("financial_attrs")
+  @@schema("execution")
+}
+
+model RiskIndicator {
+  id           String          @id @default(uuid()) @db.Uuid
+  initiativeId String          @unique @map("initiative_id") @db.Uuid
+  level        RiskLevel
+  source       ExecutionSource
+  locked       Boolean         @default(false)
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  @@map("risk_indicators")
+  @@schema("execution")
 }
