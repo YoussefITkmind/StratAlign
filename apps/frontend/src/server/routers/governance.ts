@@ -345,6 +345,7 @@ export const governanceRouter =
               z.enum([
                 "approved",
                 "rejected",
+                "changes_requested",
               ]),
 
             reason:
@@ -374,7 +375,10 @@ export const governanceRouter =
                       input.decision ===
                         "approved"
                         ? "approve"
-                        : "reject",
+                        : input.decision ===
+                            "changes_requested"
+                          ? "request_changes"
+                          : "reject",
 
                     ...(input.reason
                       ? {

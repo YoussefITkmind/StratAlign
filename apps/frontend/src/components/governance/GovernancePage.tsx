@@ -2,108 +2,65 @@
 
 import { useMemo, useState, type ComponentType } from "react";
 import { Activity, CheckCircle2, FileText, Shield, TriangleAlert, Users } from "lucide-react";
-import type { ApprovalCase, AuditTrailEntry, DecisionLogEntry } from "@/types/governance";
+import { trpc } from "@/lib/trpc/client";
+import type { AuditTrailEntry, DecisionLogEntry } from "@/types/governance";
 import {
-  MOCK_NOW,
   auditTrail as initialAuditTrail,
   committees,
   complianceItems,
   decisionLog as initialDecisionLog,
-  initialApprovals,
   risks,
 } from "@/data/mockGovernanceData";
-import { isOverdue } from "@/lib/governanceConfig";
 import ApprovalsTab from "./tabs/ApprovalsTab";
 import DecisionLogTab from "./tabs/DecisionLogTab";
 import CommitteesTab from "./tabs/CommitteesTab";
 import RiskRegisterTab from "./tabs/RiskRegisterTab";
 import ComplianceTab from "./tabs/ComplianceTab";
 import AuditTrailTab from "./tabs/AuditTrailTab";
-
-const CURRENT_USER = { name: "Alex Morgan", initials: "AM" };
+import type { RealApprovalCase } from "./ApprovalCard";
 
 type TabKey = "approvals" | "decision-log" | "committees" | "risk-register" | "compliance" | "audit-trail";
+const EMPTY_APPROVALS: RealApprovalCase[] = [];
 
 export default function GovernancePage() {
   const [tab, setTab] = useState<TabKey>("approvals");
-  const [approvals, setApprovals] = useState<ApprovalCase[]>(initialApprovals);
-  const [decisionLog, setDecisionLog] = useState<DecisionLogEntry[]>(initialDecisionLog);
-  const [auditTrail, setAuditTrail] = useState<AuditTrailEntry[]>(initialAuditTrail);
+  const utils = trpc.useUtils();
+  const approvalsQuery = trpc.governance.myPendingApprovals.useQuery();
+  const approvals = (approvalsQuery.data as RealApprovalCase[] | undefined) ?? EMPTY_APPROVALS;
+  const decide = trpc.governance.decide.useMutation();
+  const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+
+  // Decision Log / Audit Trail below stay on illustrative mock data for now —
+  // Governance only exposes decisions per-case (governance.getCase), not a
+  // global feed, so a real cross-case list isn't backed by any endpoint yet.
+  const [decisionLog] = useState<DecisionLogEntry[]>(initialDecisionLog);
+  const [auditTrail] = useState<AuditTrailEntry[]>(initialAuditTrail);
 
   const stats = useMemo(() => {
-    const pendingApprovals = approvals.filter((a) => a.status === "pending").length;
-    const overdueActions = approvals.filter(
-      (a) => (a.status === "pending" || a.status === "escalated") && isOverdue(a.dueDate, MOCK_NOW)
-    ).length;
+    const pendingApprovals = approvals.length;
+    const escalated = approvals.filter((a) => a.escalated).length;
     const openRisks = risks.length;
     const compliantCount = complianceItems.filter((c) => c.status === "compliant").length;
     const complianceRate = Math.round((compliantCount / complianceItems.length) * 100);
-    return { pendingApprovals, overdueActions, openRisks, complianceRate };
+    return { pendingApprovals, escalated, openRisks, complianceRate };
   }, [approvals]);
 
-  const recordDecision = (approval: ApprovalCase, outcome: "approved" | "rejected", rationale: string) => {
-    setDecisionLog((prev) => [
-      {
-        id: `dec-${approval.id}-${Date.now()}`,
-        title: approval.title,
-        category: approval.category,
-        outcome,
-        committee: approval.committee,
-        decidedBy: CURRENT_USER,
-        decidedDate: MOCK_NOW,
-        rationale,
-      },
-      ...prev,
-    ]);
-    setAuditTrail((prev) => [
-      {
-        id: `audit-${approval.id}-${Date.now()}`,
-        actor: CURRENT_USER,
-        action: outcome === "approved" ? "Approved" : "Rejected",
-        entity: approval.title,
-        actionType: outcome === "approved" ? "approve" : "reject",
-        timestamp: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
-  };
-
-  const handleApprove = (id: string) => {
-    const approval = approvals.find((a) => a.id === id);
-    if (!approval) return;
-    const updated: ApprovalCase = { ...approval, status: "approved", decidedBy: CURRENT_USER, decidedDate: MOCK_NOW };
-    setApprovals((prev) => prev.map((a) => (a.id === id ? updated : a)));
-    recordDecision(updated, "approved", "Approved via the Governance approval tray.");
-  };
-
-  const handleReject = (id: string) => {
-    const approval = approvals.find((a) => a.id === id);
-    if (!approval) return;
-    const reason = "Rejected via the Governance approval tray.";
-    const updated: ApprovalCase = { ...approval, status: "rejected", decidedBy: CURRENT_USER, decidedDate: MOCK_NOW, decisionReason: reason };
-    setApprovals((prev) => prev.map((a) => (a.id === id ? updated : a)));
-    recordDecision(updated, "rejected", reason);
-  };
-
-  const handleEscalate = (id: string) => {
-    setApprovals((prev) => prev.map((a) => (a.id === id ? { ...a, status: "escalated" } : a)));
-    const approval = approvals.find((a) => a.id === id);
-    if (!approval) return;
-    setAuditTrail((prev) => [
-      {
-        id: `audit-${id}-${Date.now()}`,
-        actor: CURRENT_USER,
-        action: "Escalated",
-        entity: approval.title,
-        actionType: "update",
-        timestamp: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
+  const handleDecide = async (id: string, decision: "approved" | "rejected" | "changes_requested", reason: string) => {
+    setDecidingId(id);
+    setDecisionError(null);
+    try {
+      await decide.mutateAsync({ id, decision, ...(reason ? { reason } : {}) });
+      await utils.governance.myPendingApprovals.invalidate();
+    } catch (error) {
+      setDecisionError(error instanceof Error ? error.message : "Could not record that decision");
+    } finally {
+      setDecidingId(null);
+    }
   };
 
   const tabs: { key: TabKey; label: string; icon: ComponentType<{ className?: string }>; badge?: number }[] = [
-    { key: "approvals", label: "Approvals", icon: CheckCircle2, badge: stats.pendingApprovals + approvals.filter((a) => a.status === "escalated").length },
+    { key: "approvals", label: "Approvals", icon: CheckCircle2, badge: stats.pendingApprovals },
     { key: "decision-log", label: "Decision Log", icon: FileText },
     { key: "committees", label: "Committees", icon: Users, badge: committees.filter((c) => c.needsAttention).length },
     { key: "risk-register", label: "Risk Register", icon: TriangleAlert, badge: risks.filter((r) => r.severity === "critical").length },
@@ -122,7 +79,7 @@ export default function GovernancePage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <StatPill dot="bg-amber-500" label={`${stats.pendingApprovals} pending approvals`} />
-          <StatPill dot="bg-red-500" label={`${stats.overdueActions} overdue actions`} />
+          <StatPill dot="bg-red-500" label={`${stats.escalated} escalated`} />
           <StatPill dot="bg-red-500" label={`${stats.openRisks} open risks`} />
           <StatPill dot="bg-amber-500" label={`${stats.complianceRate}% compliant`} />
         </div>
@@ -158,7 +115,13 @@ export default function GovernancePage() {
       </div>
 
       {tab === "approvals" && (
-        <ApprovalsTab approvals={approvals} onApprove={handleApprove} onReject={handleReject} onEscalate={handleEscalate} />
+        approvalsQuery.isLoading ? (
+          <p className="p-8 text-sm text-gray-500">Loading…</p>
+        ) : approvalsQuery.error ? (
+          <p role="alert" className="p-8 text-sm text-red-600">{approvalsQuery.error.message}</p>
+        ) : (
+          <ApprovalsTab approvals={approvals} onDecide={(id, decision, reason) => void handleDecide(id, decision, reason)} decidingId={decidingId} error={decisionError} />
+        )
       )}
       {tab === "decision-log" && <DecisionLogTab entries={decisionLog} />}
       {tab === "committees" && <CommitteesTab committees={committees} />}
