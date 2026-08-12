@@ -37,6 +37,7 @@ import { CommentaryService } from "./modules/performance/commentary.service";
 import { PerformanceResultsService } from "./modules/performance/performance-results.service";
 import { PerformanceService } from "./modules/performance/performance.service";
 import { KpiDetailService } from "./modules/performance/kpi-detail.service";
+import { ScorecardService } from "./modules/scorecard/scorecard.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -120,6 +121,8 @@ async function bootstrap(): Promise<void> {
     new KpiDetailService(prisma),
   );
 
+  const scorecard = new ScorecardService(prisma, governance, rules);
+
   const server = createHTTPServer({
     router: rootRouter,
     basePath: "/trpc/",
@@ -146,6 +149,7 @@ async function bootstrap(): Promise<void> {
         audit,
         auditTap,
         performance,
+        scorecard,
       };
     },
     middleware(request, response, next) {
