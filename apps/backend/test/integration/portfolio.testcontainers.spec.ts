@@ -205,7 +205,7 @@ describe.sequential("Portfolio module with PostgreSQL Testcontainers", () => {
           status,
           confidence: "HIGH",
           narrativeEn: "Fixture status",
-          submittedBy,
+          submittedBy: userId,
         },
       });
     }
