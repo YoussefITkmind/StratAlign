@@ -18,7 +18,7 @@ import { RulesService } from "../../src/modules/rules/rules.service";
 import { SCHEDULE_EVENT_TYPES } from "../../src/modules/scheduler/scheduler.events";
 
 import { MeasurementService } from "../../src/modules/performance/measurement.service";
-import { KpiBindingService } from "../../src/modules/performance/kpi-binding.service";
+import { ThresholdRuleBindingReader } from "../../src/modules/registry/threshold-rule-binding.reader";
 import { RecomputeService } from "../../src/modules/performance/recompute.service";
 import { PerformanceResultsService } from "../../src/modules/performance/performance-results.service";
 import { PerformanceRecomputeSubscriber } from "../../src/modules/performance/subscribers/performance-recompute.subscriber";
@@ -80,7 +80,7 @@ describe.sequential(
     let postgres: Awaited<ReturnType<PostgreSqlContainer["start"]>>;
     let prisma: PrismaService;
     let measurements: MeasurementService;
-    let bindings: KpiBindingService;
+    let bindings: ThresholdRuleBindingReader;
     let rules: RulesService;
     let recompute: RecomputeService;
     let results: PerformanceResultsService;
@@ -112,7 +112,7 @@ describe.sequential(
         eventBus,
         logger.child("measurement"),
       );
-      bindings = new KpiBindingService(prisma);
+      bindings = new ThresholdRuleBindingReader(prisma);
       rules = new RulesService(prisma);
       results = new PerformanceResultsService(prisma);
       recompute = new RecomputeService(
@@ -139,7 +139,7 @@ describe.sequential(
         `TRUNCATE TABLE
            "performance"."status_results",
            "performance"."rollup_results",
-           "performance"."kpi_bindings",
+           "registry"."kpi_threshold_rule_bindings",
            "performance"."measurements",
            "registry"."kpi_hierarchy_nodes",
            "registry"."kpi_definitions",
@@ -309,15 +309,10 @@ describe.sequential(
       });
       rollupRuleId = (await rules.publish(rollupDraft.id)).id;
 
-      await bindings.upsert({
-        kpiVersionId: CHILD_A_VERSION,
-        thresholdRuleKey: THRESHOLD_RULE_KEY,
-      });
-
-      await bindings.upsert({
-        kpiVersionId: CHILD_B_VERSION,
-        thresholdRuleKey: THRESHOLD_RULE_KEY,
-      });
+      await prisma.kpiThresholdRuleBinding.createMany({ data: [
+        { kpiVersionId: CHILD_A_VERSION, thresholdRuleId, createdById: authorId },
+        { kpiVersionId: CHILD_B_VERSION, thresholdRuleId, createdById: authorId },
+      ] });
 
       // Registry owns the real KPI hierarchy and rollup rule.
       await prisma.kpiHierarchyNode.createMany({
@@ -553,29 +548,7 @@ describe.sequential(
         ).toBe("off_track");
       });
 
-      it("fails permanently when the bound rule has never been published", async () => {
-        await bindings.upsert({
-          kpiVersionId: DRAFT_RULE_VERSION,
-          thresholdRuleKey: "a-rule-that-does-not-exist",
-        });
-
-        await measurements.record({
-          kpiVersionId: DRAFT_RULE_VERSION,
-          scopeNodeId: SCOPE,
-          period: PERIOD,
-          value: 10,
-          source: "MANUAL",
-          submittedBy: authorId,
-        });
-
-        await expect(
-          subscriber.handle(await latestMeasurementEnvelope()),
-        ).rejects.toMatchObject({ name: "PermanentError" });
-
-        expect(await prisma.statusResult.count()).toBe(0);
-      });
-
-      it("refuses to evaluate a rule that is still a draft", async () => {
+      it("cannot resolve an unpublished rule through the Registry binding", async () => {
         const draft = await rules.createDraft({
           ruleKey: "unpublished-threshold",
           name: "Unpublished threshold",
@@ -585,25 +558,21 @@ describe.sequential(
 
         expect(draft.status).toBe("draft");
 
-        await bindings.upsert({
+        await expect(prisma.kpiThresholdRuleBinding.create({ data: {
           kpiVersionId: UNPUBLISHED_VERSION,
-          thresholdRuleKey: "unpublished-threshold",
-        });
+          thresholdRuleId: draft.id,
+          createdById: authorId,
+        } })).resolves.toMatchObject({ thresholdRuleId: draft.id });
 
         await measurements.record({
-          kpiVersionId: UNPUBLISHED_VERSION,
-          scopeNodeId: SCOPE,
-          period: PERIOD,
-          value: 10,
-          source: "MANUAL",
-          submittedBy: authorId,
+          kpiVersionId: UNPUBLISHED_VERSION, scopeNodeId: SCOPE,
+          period: PERIOD, value: 10, source: "MANUAL", submittedBy: authorId,
         });
 
-        await expect(
-          subscriber.handle(await latestMeasurementEnvelope()),
-        ).rejects.toMatchObject({ name: "PermanentError" });
-
-        expect(await prisma.statusResult.count()).toBe(0);
+        await expect(recompute.recompute({
+          kpiVersionId: UNPUBLISHED_VERSION, scopeNodeId: SCOPE,
+          period: PERIOD, triggerEventId: "unpublished-registry-binding",
+        })).rejects.toMatchObject({ code: "RULE_NOT_FOUND" });
       });
 
       it("computes nothing when the KPI has no effective measurement", async () => {
@@ -745,10 +714,9 @@ describe.sequential(
 
       it("ignores children belonging to a different parent", async () => {
         // A KPI under another parent must not leak into this aggregation.
-        await bindings.upsert({
-          kpiVersionId: OUTSIDER_VERSION,
-          thresholdRuleKey: THRESHOLD_RULE_KEY,
-        });
+        await prisma.kpiThresholdRuleBinding.create({ data: {
+          kpiVersionId: OUTSIDER_VERSION, thresholdRuleId, createdById: authorId,
+        } });
 
         await prisma.kpiHierarchyNode.create({
           data: {

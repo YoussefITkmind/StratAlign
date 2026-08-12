@@ -27,7 +27,7 @@ interface Props {
 }
 
 export default function KpiDefinitionPage({ kpiId, onBack, onViewDetail }: Props) {
-  const { kpis, rules, retireKpi } = useKpiStore();
+  const { kpis, retireKpi } = useKpiStore();
   const [tab, setTab] = useState<Tab>("definition");
   const [retireOpen, setRetireOpen] = useState(false);
 
@@ -41,7 +41,6 @@ export default function KpiDefinitionPage({ kpiId, onBack, onViewDetail }: Props
     );
   }
 
-  const rule = rules[kpi.ruleId];
   const dependents = kpis.filter((k) => k.childIds?.includes(kpi.id));
   const perspectiveCfg = PERSPECTIVE_CONFIG[kpi.perspective];
   const statusCfg = STATUS_CONFIG[kpi.status];
@@ -99,7 +98,7 @@ export default function KpiDefinitionPage({ kpiId, onBack, onViewDetail }: Props
 
       {tab === "definition" && <DefinitionTab kpi={kpi} />}
       {tab === "alignment" && <AlignmentTab kpi={kpi} />}
-      {tab === "thresholds" && rule && <ThresholdsTab kpi={kpi} rule={rule} />}
+      {tab === "thresholds" && <ThresholdsTab />}
       {tab === "targets" && <TargetsTabPlaceholder />}
       {tab === "history" && <HistoryTab kpi={kpi} />}
 

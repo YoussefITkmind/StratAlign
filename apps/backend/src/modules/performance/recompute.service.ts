@@ -4,7 +4,7 @@ import type { Logger } from "../../logging/logger";
 import { isUniqueConstraintViolation } from "../../errors/app.errors";
 import type { EventPublicationRequest } from "../../events/event.types";
 import type { RulesService, RuleDefinitionView } from "../rules/rules.service";
-import type { KpiBindingService } from "./kpi-binding.service";
+import type { ThresholdRuleBindingReader } from "../registry/threshold-rule-binding.reader";
 import type { MeasurementService } from "./measurement.service";
 import { performanceErrors } from "./performance.errors";
 import {
@@ -74,7 +74,7 @@ export class RecomputeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly measurements: MeasurementService,
-    private readonly bindings: KpiBindingService,
+    private readonly bindings: Pick<ThresholdRuleBindingReader, "getThresholdRuleBinding">,
     private readonly rules: RulesService,
     private readonly eventBus: EventBusService,
     private readonly logger: Logger,
@@ -110,13 +110,12 @@ export class RecomputeService {
       return { status: null, rollups: [] };
     }
 
-    // Temporary until Prompt 2.6 supplies the permanent threshold binding.
-    const binding = await this.bindings.findByKpiVersion(
+    const binding = await this.bindings.getThresholdRuleBinding(
       request.kpiVersionId,
     );
 
-    const status = binding?.thresholdRuleKey
-      ? await this.evaluateStatus(request, binding.thresholdRuleKey)
+    const status = binding
+      ? await this.evaluateStatus(request, binding.thresholdRuleId)
       : null;
 
     // Registry hierarchy may legally expose more than one parent, so compute
@@ -152,7 +151,7 @@ export class RecomputeService {
 
   private async evaluateStatus(
     request: RecomputeRequest,
-    thresholdRuleKey: string,
+    thresholdRuleId: string,
   ): Promise<RecomputeOutcome["status"]> {
     const dedupeKey = performanceDedupeKey(
       PERFORMANCE_EVENT_TYPES.statusComputed,
@@ -198,16 +197,16 @@ export class RecomputeService {
       return null;
     }
 
-    const rule = await this.requirePublishedRule(thresholdRuleKey);
+    const rule = await this.requirePublishedRuleById(thresholdRuleId);
 
     const evaluation = await this.evaluateWithRuleEngine(
       rule,
       { value: measurement.value },
-      thresholdRuleKey,
+      thresholdRuleId,
     );
 
     if (!("label" in evaluation)) {
-      throw performanceErrors.ruleEvaluationFailed(thresholdRuleKey);
+      throw performanceErrors.ruleEvaluationFailed(thresholdRuleId);
     }
 
     const status = evaluation.label;
@@ -312,7 +311,7 @@ export class RecomputeService {
         kpiVersionId: request.kpiVersionId,
         scopeNodeId: request.scopeNodeId,
         period: request.period,
-        ruleKey: thresholdRuleKey,
+        ruleId: thresholdRuleId,
         ruleVersionUsed: rule.id,
         ruleVersion: rule.version,
         previousStatus,
@@ -560,18 +559,6 @@ export class RecomputeService {
       rule.status !== "published"
     ) {
       throw performanceErrors.ruleNotFound(ruleId);
-    }
-
-    return rule;
-  }
-
-  private async requirePublishedRule(
-    ruleKey: string,
-  ): Promise<RuleDefinitionView> {
-    const rule = await this.rules.getPublished(ruleKey);
-
-    if (!rule) {
-      throw performanceErrors.ruleNotFound(ruleKey);
     }
 
     return rule;

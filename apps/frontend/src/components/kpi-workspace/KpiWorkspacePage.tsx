@@ -1,17 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronRight, Rocket, Target, ClipboardList } from "lucide-react";
+import { ChevronRight, Rocket, Target, ClipboardList, SlidersHorizontal } from "lucide-react";
 import KpiDetailView from "@/components/kpi-detail/KpiDetailView";
 import CaptureTaskList from "@/components/capture/CaptureTaskList";
 import CaptureSessionView from "@/components/capture/CaptureSessionView";
 import { KpiRegistryPanel, OkrRegistryPanel } from "@/components/kpi-registry/RegistryPanels";
+import { RuleBuilderPanel } from "@/components/rule-builder/RuleBuilderPanel";
 
-type TopTab = "okr" | "library" | "capture";
+type TopTab = "okr" | "library" | "rules" | "capture";
 
 type View =
   | { type: "okr" }
   | { type: "library" }
+  | { type: "rules" }
   | { type: "detail"; kpiId: string }
   | { type: "capture-list" }
   | { type: "capture-session"; taskId: string };
@@ -26,7 +28,7 @@ export default function KpiWorkspacePage() {
       : view.type === "capture-list" ? "capture"
       : view.type;
 
-  const isTopLevel = view.type === "okr" || view.type === "library" || view.type === "capture-list";
+  const isTopLevel = view.type === "okr" || view.type === "library" || view.type === "rules" || view.type === "capture-list";
 
   return (
     <div className="mx-auto max-w-[1500px] p-6">
@@ -39,6 +41,7 @@ export default function KpiWorkspacePage() {
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <TabButton active={activeTab === "okr"} icon={Rocket} label="OKR Library" onClick={() => setView({ type: "okr" })} />
           <TabButton active={activeTab === "library"} icon={Target} label="KPI Library" onClick={() => setView({ type: "library" })} />
+          <TabButton active={activeTab === "rules"} icon={SlidersHorizontal} label="Rule Builder" onClick={() => setView({ type: "rules" })} />
           <TabButton active={activeTab === "capture"} icon={ClipboardList} label="Data Capture" onClick={() => setView({ type: "capture-list" })} />
         </div>
       )}
@@ -48,6 +51,8 @@ export default function KpiWorkspacePage() {
       {view.type === "library" && (
         <KpiRegistryPanel />
       )}
+
+      {view.type === "rules" && <RuleBuilderPanel />}
 
       {view.type === "detail" && (
         <KpiDetailView

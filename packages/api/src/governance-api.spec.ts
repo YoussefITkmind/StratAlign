@@ -109,6 +109,9 @@ function createContext() {
         caseOutput,
     );
 
+  const getLatestCaseForEntity = vi.fn(async () => caseOutput);
+  const submitCase = vi.fn(async () => caseOutput);
+
   const transition =
     vi.fn(
       async () => ({
@@ -169,6 +172,10 @@ function createContext() {
 
       getCase,
 
+      getLatestCaseForEntity,
+
+      submitCase,
+
       transition,
     },
 
@@ -187,6 +194,8 @@ function createContext() {
     context,
     myPendingApprovals,
     getCase,
+    getLatestCaseForEntity,
+    submitCase,
     transition,
     acknowledgeEscalation,
     auditTap,
@@ -264,6 +273,29 @@ describe(
         );
       },
     );
+
+    it("submits a real case using the authenticated user as submitter", async () => {
+      const { context, submitCase } = createContext();
+      const caller = appRouter.createCaller(context);
+      await caller.governance.submit({
+        entityType: "RuleDefinition",
+        entityId: CASE_ID,
+        approvalParticipantId: USER_ID,
+        proposedChange: { before: {}, after: { version: 2 } },
+      });
+      expect(submitCase).toHaveBeenCalledWith(expect.objectContaining({
+        entityType: "RuleDefinition", entityId: CASE_ID, submittedBy: USER_ID,
+      }));
+    });
+
+    it("reloads the latest persisted approval state for an entity", async () => {
+      const { context, getLatestCaseForEntity } = createContext();
+      const caller = appRouter.createCaller(context);
+      await expect(caller.governance.getLatestCaseForEntity({
+        entityType: "RuleDefinition", entityId: CASE_ID,
+      })).resolves.toEqual(caseOutput);
+      expect(getLatestCaseForEntity).toHaveBeenCalledWith("RuleDefinition", CASE_ID);
+    });
 
     it(
       "maps an approve decision to the XState APPROVE event using the authenticated actor",

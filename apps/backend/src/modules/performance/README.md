@@ -128,15 +128,13 @@ Performance implements no threshold or aggregation logic. `RecomputeService`:
 1. resolves the KPI version from Registry,
 2. verifies that it is the KPI definition's active version,
 3. resolves the currently effective measurement,
-4. resolves the temporary threshold-rule binding,
+4. reads the active Registry-owned KPI-version threshold-rule binding,
 5. resolves the **published** rule via `RulesService`,
 6. calls `RulesService.evaluate`, which runs `@spm/rules`,
 7. persists the result.
 
-Registry is the source of truth for KPI identity, active versions and hierarchy.
-The temporary `performance.kpi_bindings` table now contains only
-`kpiVersionId -> thresholdRuleKey` until Prompt 2.6 supplies the permanent
-threshold-rule binding.
+Registry is the source of truth for KPI identity, active versions, hierarchy,
+and the exact published threshold-rule version used by Performance.
 
 `StatusResult.status` is the band label the engine returned — the engine chooses
 it, not this module. `RollupResult.method` is read off the rule document.

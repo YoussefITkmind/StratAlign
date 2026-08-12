@@ -29,6 +29,7 @@ import type {
   RetirementImpactView,
   SimilarityMatchField,
 } from "./registry.types";
+import { ThresholdRuleBindingReader } from "./threshold-rule-binding.reader";
 
 export interface CreateKpiDraftInput {
   /** Omit to open the first version of a brand new KPI. */
@@ -600,11 +601,8 @@ export class KpiRegistryService {
   async getThresholdRuleBinding(
     kpiVersionId: string,
   ): Promise<KpiThresholdRuleBindingView | null> {
-    const binding = await this.prisma.kpiThresholdRuleBinding.findFirst({
-      where: { kpiVersionId, isCurrent: true },
-      include: { thresholdRule: true },
-    });
-    return binding ? this.toThresholdBindingView(binding) : null;
+    return new ThresholdRuleBindingReader(this.prisma)
+      .getThresholdRuleBinding(kpiVersionId);
   }
 
   /**

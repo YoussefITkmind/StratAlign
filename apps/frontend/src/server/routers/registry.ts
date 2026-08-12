@@ -46,6 +46,10 @@ export const registryRouter = router({
       .query(({ ctx, input }) => forward(() => backend(ctx).registry.kpi.listVersions.query(input))),
     retirementImpact: authenticatedProcedure.input(z.object({ kpiDefinitionId: id }).strict())
       .query(({ ctx, input }) => forward(() => backend(ctx).registry.kpi.retirementImpact.query(input))),
+    bindThresholdRule: authenticatedProcedure.input(z.object({ kpiVersionId: id, thresholdRuleId: id }).strict())
+      .mutation(({ ctx, input }) => forward(() => backend(ctx).registry.kpi.bindThresholdRule.mutate(input))),
+    getThresholdRuleBinding: authenticatedProcedure.input(z.object({ kpiVersionId: id }).strict())
+      .query(({ ctx, input }) => forward(() => backend(ctx).registry.kpi.getThresholdRuleBinding.query(input))),
   }),
   okr: router({
     list: authenticatedProcedure.query(({ ctx }) =>

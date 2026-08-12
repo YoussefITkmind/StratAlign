@@ -31,6 +31,7 @@ import { KpiHierarchyService } from "./modules/registry/kpi-hierarchy.service";
 import { GovernanceApprovalGateway } from "./modules/registry/gateways/approval.gateway";
 import { PrismaStrategyNodeGateway } from "./modules/registry/gateways/strategy-node.gateway";
 import { MeasurementService } from "./modules/performance/measurement.service";
+import { CaptureWorkspaceService } from "./modules/performance/capture-workspace.service";
 import { CaptureSessionService } from "./modules/performance/capture-session.service";
 import { CommentaryService } from "./modules/performance/commentary.service";
 import { PerformanceResultsService } from "./modules/performance/performance-results.service";
@@ -106,6 +107,7 @@ async function bootstrap(): Promise<void> {
       measurements,
       logger.child("performance-capture"),
     ),
+    new CaptureWorkspaceService(prisma),
     measurements,
     new CommentaryService(prisma),
     new PerformanceResultsService(prisma),

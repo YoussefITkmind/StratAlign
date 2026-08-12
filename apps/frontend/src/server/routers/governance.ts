@@ -319,6 +319,21 @@ export const governanceRouter =
           },
         ),
 
+    getLatestCaseForEntity:
+      authenticatedProcedure
+        .input(z.object({
+          entityType: z.string().trim().min(1).max(150),
+          entityId: z.string().trim().min(1).max(200),
+        }).strict())
+        .query(async ({ ctx, input }) => {
+          try {
+            const item = await backend(ctx).governance.getLatestCaseForEntity.query(input);
+            return item ? toFrontendCase(item as BackendGovernanceCase) : null;
+          } catch (error) {
+            translateBackendGovernanceError(error);
+          }
+        }),
+
     decide:
       authenticatedProcedure
         .input(

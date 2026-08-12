@@ -649,6 +649,14 @@ export class GovernanceService {
     return result;
   }
 
+  async getLatestCaseForEntity(entityType: string, entityId: string) {
+    return this.prisma.approvalCase.findFirst({
+      where: { entityType, entityId },
+      include: { workflowDefinition: true, decisionLog: true, escalations: true },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
   async myPendingApprovals(
     viewerUserId: string,
   ) {

@@ -455,6 +455,13 @@ export interface RollupResultOutput {
 }
 
 export interface PerformanceServiceContract {
+  listCaptureTasks(ownerId: string): Promise<Array<{ id: string; kpiVersionId: string; kpiName: string; unit: string; scopeNodeId: string; period: string; dueAt: Date; cadenceState: string; session: (CaptureSessionOutput & { draftValue?: unknown; draftEvidenceRef?: string | null }) | null }>>;
+  getCaptureSession(sessionId: string): Promise<(CaptureSessionOutput & { draftValue?: unknown; draftEvidenceRef?: string | null }) | null>;
+  saveCaptureDraft(sessionId: string, ownerId: string, value: number, evidenceRef?: string | null): Promise<CaptureSessionOutput & { draftValue?: unknown; draftEvidenceRef?: string | null }>;
+  captureHistory(kpiVersionId: string, scopeNodeId: string): Promise<MeasurementOutput[]>;
+  captureTemplate(format: "csv" | "xlsx", period: string, priorValue: number | null): Buffer;
+  validateCaptureTemplate(bytes: Buffer, format: "csv" | "xlsx", expectedPeriod: string, history: number[]): Array<{ row: number; period: string; value: number | null; outcome: "accepted" | "rejected" | "warning"; reason?: string }>;
+  uploadCaptureEvidence(sessionId: string, fileName: string, contentType: string, bytes: Buffer): Promise<string>;
   startCaptureSession(input: {
     kpiVersionId: string;
     scopeNodeId: string;
@@ -577,6 +584,11 @@ export interface GovernanceServiceContract {
   getCase(
     caseId: string,
   ): Promise<GovernanceCaseOutput>;
+
+  getLatestCaseForEntity(
+    entityType: string,
+    entityId: string,
+  ): Promise<GovernanceCaseOutput | null>;
 
   transition(input: {
     caseId: string;
@@ -891,6 +903,11 @@ function toRegistryError(
 
 const governanceCaseIdInputSchema = z.object({
   caseId: z.string().uuid(),
+}).strict();
+
+const governanceEntityInputSchema = z.object({
+  entityType: z.string().trim().min(1).max(150),
+  entityId: z.string().trim().min(1).max(200),
 }).strict();
 
 const governanceSubmitInputSchema = z.object({
@@ -1251,6 +1268,8 @@ const captureRecallInputSchema = z.object({
   sessionId: z.string().uuid(),
 }).strict();
 
+const bulkRowSchema = z.object({ row: z.number().int().positive(), period: z.string(), value: z.number().nullable(), outcome: z.enum(["accepted", "rejected", "warning"]), reason: z.string().optional() }).strict();
+
 const measurementListInputSchema = z.object({
   kpiVersionId: boundedIdentifierSchema.optional(),
   scopeNodeId: boundedIdentifierSchema.optional(),
@@ -1559,6 +1578,15 @@ export const appRouter = router({
             ),
         ),
 
+    getLatestCaseForEntity:
+      protectedProcedure
+        .input(governanceEntityInputSchema)
+        .query(({ ctx, input }) =>
+          mapGovernanceErrors(() =>
+            ctx.governance.getLatestCaseForEntity(input.entityType, input.entityId),
+          ),
+        ),
+
     decide:
       protectedProcedure
         .input(
@@ -1686,6 +1714,13 @@ export const appRouter = router({
   }),
   performance: router({
     capture: router({
+      tasks: requireRole("kpi_owner", "data_steward").query(({ ctx }) => ctx.performance.listCaptureTasks(ctx.session.user.id)),
+      getSession: requireRole("kpi_owner", "data_steward").input(z.object({ sessionId: z.string().uuid() }).strict()).query(({ ctx, input }) => ctx.performance.getCaptureSession(input.sessionId)),
+      saveDraft: requireRole("kpi_owner", "data_steward").input(z.object({ sessionId: z.string().uuid(), value: z.number().finite(), evidenceRef: evidenceRefSchema.nullish() }).strict()).mutation(({ ctx, input }) => mapPerformanceErrors(() => ctx.performance.saveCaptureDraft(input.sessionId, ctx.session.user.id, input.value, input.evidenceRef))),
+      history: requireRole("kpi_owner", "data_steward").input(z.object({ kpiVersionId: boundedIdentifierSchema, scopeNodeId: boundedIdentifierSchema }).strict()).query(({ ctx, input }) => ctx.performance.captureHistory(input.kpiVersionId, input.scopeNodeId)),
+      template: requireRole("kpi_owner", "data_steward").input(z.object({ format: z.enum(["csv", "xlsx"]), period: periodSchema, priorValue: z.number().nullable() }).strict()).query(({ ctx, input }) => ({ base64: ctx.performance.captureTemplate(input.format, input.period, input.priorValue).toString("base64"), format: input.format })),
+      validateTemplate: requireRole("kpi_owner", "data_steward").input(z.object({ base64: z.string().max(14_000_000), format: z.enum(["csv", "xlsx"]), expectedPeriod: periodSchema, history: z.array(z.number().finite()).max(100) }).strict()).output(z.array(bulkRowSchema)).mutation(({ ctx, input }) => ctx.performance.validateCaptureTemplate(Buffer.from(input.base64, "base64"), input.format, input.expectedPeriod, input.history) as never),
+      uploadEvidence: requireRole("kpi_owner", "data_steward").input(z.object({ sessionId: z.string().uuid(), fileName: z.string().min(1).max(255), contentType: z.string().min(1).max(150), base64: z.string().max(14_000_000) }).strict()).mutation(({ ctx, input }) => ctx.performance.uploadCaptureEvidence(input.sessionId, input.fileName, input.contentType, Buffer.from(input.base64, "base64"))),
       startSession: requireRole("kpi_owner", "data_steward")
         .input(captureStartSessionInputSchema)
         .output(captureSessionOutputSchema)

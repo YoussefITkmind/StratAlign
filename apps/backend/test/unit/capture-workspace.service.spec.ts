@@ -1,0 +1,25 @@
+import { describe, expect, it } from "vitest";
+import { CaptureWorkspaceService } from "../../src/modules/performance/capture-workspace.service";
+
+const service = new CaptureWorkspaceService({} as never);
+
+describe("isolated Prompt 2.8 template validation", () => {
+  it("generates and validates CSV rows with accepted, rejected, and warning outcomes", () => {
+    const csv = Buffer.from("period,value\n2026-Q1,12\n2026-Q1,nope\n2026-Q1,100\n");
+    const rows = service.validateTemplate(csv, "csv", "2026-Q1", [9, 10, 11]);
+    expect(rows.map((row) => row.outcome)).toEqual(["accepted", "rejected", "warning"]);
+    expect(service.template("csv", "2026-Q1", 10).toString()).toContain("2026-Q1");
+  });
+
+  it("generates and validates XLSX rows with accepted and invalid data", () => {
+    const workbook = service.template("xlsx", "2026-Q1", 10);
+    expect(service.validateTemplate(workbook, "xlsx", "2026-Q1", [9, 10, 11])[0]?.outcome).toBe("accepted");
+    const invalid = service.template("xlsx", "wrong-period", 10);
+    expect(service.validateTemplate(invalid, "xlsx", "2026-Q1", [9, 10, 11])[0]?.outcome).toBe("rejected");
+  });
+
+  it("rejects disallowed evidence types before contacting object storage", async () => {
+    await expect(service.uploadEvidence("session", "payload.exe", "application/x-msdownload", Buffer.from("x")))
+      .rejects.toThrow("not allowed");
+  });
+});

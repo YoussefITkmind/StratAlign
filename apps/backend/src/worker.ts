@@ -43,7 +43,7 @@ import { ScheduleNotificationSubscriber } from "./modules/notifications/subscrib
 
 import { RulesService } from "./modules/rules/rules.service";
 import { MeasurementService } from "./modules/performance/measurement.service";
-import { KpiBindingService } from "./modules/performance/kpi-binding.service";
+import { ThresholdRuleBindingReader } from "./modules/registry/threshold-rule-binding.reader";
 import { RecomputeService } from "./modules/performance/recompute.service";
 import { PerformanceRecomputeSubscriber } from "./modules/performance/subscribers/performance-recompute.subscriber";
 
@@ -208,7 +208,7 @@ async function bootstrap(): Promise<void> {
           eventBus,
           logger.child("performance-measurement"),
         ),
-        new KpiBindingService(prisma),
+        new ThresholdRuleBindingReader(prisma),
         new RulesService(prisma),
         eventBus,
         logger.child("performance-recompute"),

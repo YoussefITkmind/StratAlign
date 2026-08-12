@@ -16,7 +16,8 @@ vi.mock("@/server/trpc", async () => {
 
 const calls = vi.hoisted(() => ({
   list: vi.fn(), createDraft: vi.fn(), retire: vi.fn(), align: vi.fn(),
-  publish: vi.fn(), strategyNodes: vi.fn(),
+  publish: vi.fn(), strategyNodes: vi.fn(), bindThresholdRule: vi.fn(),
+  getThresholdRuleBinding: vi.fn(),
 }));
 
 vi.mock("@/server/backend-registry-client", () => ({
@@ -27,6 +28,8 @@ vi.mock("@/server/backend-registry-client", () => ({
         createDraft: { mutate: calls.createDraft }, publishVersion: { mutate: calls.publish },
         retire: { mutate: calls.retire }, listVersions: { query: vi.fn() },
         retirementImpact: { query: vi.fn() },
+        bindThresholdRule: { mutate: calls.bindThresholdRule },
+        getThresholdRuleBinding: { query: calls.getThresholdRuleBinding },
       },
       okr: { list: { query: vi.fn() }, get: { query: vi.fn() }, create: { mutate: vi.fn() } },
       alignment: { set: { mutate: calls.align } },
@@ -84,5 +87,15 @@ describe("KPI Registry frontend proxy", () => {
     calls.publish.mockResolvedValue({ id: VERSION_ID, publishedAt: new Date() });
     await caller().kpi.publishVersion({ kpiVersionId: VERSION_ID, approvalCaseId: CASE_ID });
     expect(calls.publish).toHaveBeenCalledWith({ kpiVersionId: VERSION_ID, approvalCaseId: CASE_ID });
+  });
+
+  it("persists and reloads the Registry-owned threshold binding", async () => {
+    calls.bindThresholdRule.mockResolvedValue({ kpiVersionId: VERSION_ID, thresholdRuleId: CASE_ID });
+    calls.getThresholdRuleBinding.mockResolvedValue({ kpiVersionId: VERSION_ID, thresholdRuleId: CASE_ID });
+    await caller().kpi.bindThresholdRule({ kpiVersionId: VERSION_ID, thresholdRuleId: CASE_ID });
+    await expect(caller().kpi.getThresholdRuleBinding({ kpiVersionId: VERSION_ID }))
+      .resolves.toMatchObject({ thresholdRuleId: CASE_ID });
+    expect(calls.bindThresholdRule).toHaveBeenCalledOnce();
+    expect(calls.getThresholdRuleBinding).toHaveBeenCalledOnce();
   });
 });

@@ -999,7 +999,6 @@ model KpiVersion {
   performanceCommentary   Commentary[]     @relation("PerformanceCommentaryKpiVersion")
   performanceSessions     CaptureSession[] @relation("PerformanceCaptureKpiVersion")
 
-  performanceThresholdBinding PerformanceKpiBinding?    @relation("PerformanceThresholdKpiVersion")
   thresholdRuleBindings       KpiThresholdRuleBinding[] @relation("KpiThresholdBindingVersion")
 
   @@unique([kpiDefinitionId, version])
@@ -1292,6 +1291,8 @@ model CaptureSession {
   recallDeadlineAt       DateTime? @map("recall_deadline_at")
   /// Set once a downstream consumer has taken the submission. Hard cutoff.
   consumedAt             DateTime? @map("consumed_at")
+  draftValue             Decimal?  @map("draft_value") @db.Decimal(30, 10)
+  draftEvidenceRef       String?   @map("draft_evidence_ref")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1305,25 +1306,5 @@ model CaptureSession {
   @@index([ownerId])
   @@index([state])
   @@map("capture_sessions")
-  @@schema("performance")
-}
-
-/// TEMPORARY THRESHOLD-RULE SEAM.
-///
-/// Registry 2.4 is now the source of truth for KPI identity, active versions
-/// and hierarchy. This table exists only until Prompt 2.6 provides the
-/// permanent KPI -> threshold-rule binding.
-model PerformanceKpiBinding {
-  id               String  @id @default(uuid())
-  kpiVersionId     String  @unique @map("kpi_version_id")
-  thresholdRuleKey String? @map("threshold_rule_key")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  kpiVersion KpiVersion @relation("PerformanceThresholdKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
-  @@index([thresholdRuleKey])
-  @@map("kpi_bindings")
   @@schema("performance")
 }

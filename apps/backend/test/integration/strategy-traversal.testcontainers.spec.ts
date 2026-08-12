@@ -149,7 +149,10 @@ describe.sequential("Prompt 2.2 traversal and activation with PostgreSQL Testcon
     await subscriber.handle({
       eventId: randomUUID(), eventType: "governance.approval.granted", eventVersion: 1,
       aggregateType: "approval_case", aggregateId: approvalCaseId, occurredAt: new Date().toISOString(),
-      payload: { domain: "strategy", approvalCaseId, stagedChangeId: selected.id },
+      payload: {
+        domain: "strategy", approvalCaseId,
+        entityType: "StrategyStagedChange", entityId: selected.id,
+      },
     });
 
     const statuses = await prisma.$queryRawUnsafe<Array<{ id: string; status: string }>>(`
