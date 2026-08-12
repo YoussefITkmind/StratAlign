@@ -35,7 +35,7 @@ export interface Scorecard {
   status: ScorecardStatus;
   score: number;
   priorScore?: number;
-  /** Id of the StrategyMap (see @/data/mockMapData) rendered by this screen's map toggle, if one has been linked. */
+  /** Id of a mock StrategyMap, used only by this list screen's still-mock preview — unrelated to the real scorecard.map.getPublished data Master Scorecard renders. */
   mapId?: string;
   perspectives: Perspective[];
 }
