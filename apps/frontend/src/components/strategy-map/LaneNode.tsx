@@ -4,12 +4,15 @@ import { PERSPECTIVE_CONFIG } from "@/lib/mapConfig";
 
 interface LaneData {
   perspective: PerspectiveKey;
+  /** Real scorecard perspective name/weight, when this lane backs a real Perspective row rather than the fixed 4-lane mock taxonomy. */
+  label?: string;
+  weightLabel?: string;
   dimmed?: boolean;
   [key: string]: unknown;
 }
 
 export default function LaneNode({ data }: NodeProps) {
-  const { perspective, dimmed } = data as LaneData;
+  const { perspective, label, weightLabel, dimmed } = data as LaneData;
   const cfg = PERSPECTIVE_CONFIG[perspective];
 
   return (
@@ -20,9 +23,9 @@ export default function LaneNode({ data }: NodeProps) {
       <div className="absolute inset-y-0 left-0 w-[3px]" style={{ background: cfg.accent }} />
       <div className="absolute left-4 top-3 select-none">
         <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: cfg.textColor }}>
-          {cfg.label}
+          {label ?? cfg.label}
         </p>
-        <p className="text-[10px] text-gray-400">{cfg.weight}% weight</p>
+        <p className="text-[10px] text-gray-400">{weightLabel ?? `${cfg.weight}% weight`}</p>
       </div>
     </div>
   );

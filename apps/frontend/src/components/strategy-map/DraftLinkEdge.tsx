@@ -5,6 +5,8 @@ import { getEdgeParams } from "@/lib/floatingEdge";
 interface DraftEdgeData {
   strength: LinkStrength;
   removed?: boolean;
+  /** True for an already-published link being shown for context while editing — rendered solid, not dashed. */
+  published?: boolean;
   [key: string]: unknown;
 }
 
@@ -23,17 +25,17 @@ export default function DraftLinkEdge({ id, source, target, data }: EdgeProps) {
     curvature: 0.32,
   });
 
-  const { strength, removed } = data as DraftEdgeData;
+  const { strength, removed, published } = data as DraftEdgeData;
 
   return (
     <BaseEdge
       id={id}
       path={path}
       style={{
-        stroke: removed ? "#ef4444" : "#3b82f6",
+        stroke: removed ? "#ef4444" : published ? "#64748b" : "#3b82f6",
         strokeWidth: STRENGTH_WIDTH[strength],
-        strokeDasharray: "5 4",
-        opacity: removed ? 0.5 : 0.9,
+        strokeDasharray: published ? undefined : "5 4",
+        opacity: removed ? 0.5 : published ? 0.8 : 0.9,
       }}
     />
   );

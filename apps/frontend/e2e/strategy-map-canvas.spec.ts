@@ -1,74 +1,116 @@
+import { execFile } from "node:child_process";
+import { resolve } from "node:path";
+import { promisify } from "node:util";
+
 import { test, expect } from "@playwright/test";
+
 import { loginAs } from "./utils";
 
-/**
- * NOTE ON SCOPE: Prompt 3.3 asks for two Playwright flows this suite
- * deliberately does NOT implement:
- *
- *   1. A full edit -> submit -> approve -> publish -> view flow across three
- *      distinct user sessions.
- *   2. A non-analyst attempting the underlying procedure directly and
- *      getting a server-side rejection.
- *
- * Neither is possible yet: there is no ApprovalCase workflow (Prompt 1.5) or
- * DRAFT-map API (Prompt 3.1) in the backend, and this build's "edit mode"
- * role check is a local dropdown for previewing the UI, not a real session —
- * there is no server-side procedure to call and reject, and no persisted
- * draft that a second session could see. This suite instead covers what's
- * actually real: the view/edit UI and its interactions within one session.
- * The two flows above should be added once that backend work lands.
- */
+const execFileAsync = promisify(execFile);
+const workspaceRoot = resolve(__dirname, "../../..");
 
-test.describe("Strategy Map canvas — screen 13 (frontend shell)", () => {
-  test("view mode: selecting an objective shows its properties, including the Phase 4 initiative placeholder", async ({ page }) => {
-    await loginAs(page, "member");
-    await page.goto("/strategy-maps");
-    await page.getByTestId("open-map-canvas-map-corporate").click();
+interface ScorecardFixture {
+  scorecardId: string;
+  revenueObjectiveId: string;
+  csatObjectiveId: string;
+  aliceId: string;
+  bobId: string;
+}
 
-    await expect(page).toHaveURL("/strategy-maps/map-corporate");
-    await expect(page.getByTestId("map-canvas-page")).toBeVisible();
-    await expect(page.getByTestId("map-status-badge")).toHaveText("Published");
+async function seedScorecardFixture(): Promise<ScorecardFixture> {
+  const result = await execFileAsync(
+    "pnpm",
+    ["--filter", "@spm/backend", "exec", "tsx", "prisma/e2e-scorecard-seed.ts"],
+    { cwd: workspaceRoot, env: process.env },
+  );
+  const line = result.stdout.trim().split("\n").at(-1);
+  if (!line) throw new Error("Scorecard E2E seed produced no output");
+  return JSON.parse(line) as ScorecardFixture;
+}
 
-    await page.locator('.react-flow__node[data-id="obj-revenue-growth"]').click();
-    const panel = page.getByTestId("node-properties-panel");
-    await expect(panel).toContainText("Grow Revenue 20% YoY");
-    await expect(panel).toContainText("Coming in Phase 4");
-    await expect(panel).toContainText("Not tracked yet");
+test.describe("Strategy Map canvas — screen 13, real Prompt 3.1/1.5 data", () => {
+  let fixture: ScorecardFixture;
+
+  test.beforeAll(async () => {
+    fixture = await seedScorecardFixture();
   });
 
-  test("edit mode is only reachable after switching the (mock) viewer role to strategy analyst", async ({ page }) => {
-    await loginAs(page, "member");
-    await page.goto("/strategy-maps/map-corporate");
+  test("three real sessions: analyst edits and submits, a different user approves, a read-only user sees the new published link", async ({ browser }) => {
+    test.setTimeout(120_000);
 
-    await expect(page.getByTestId("edit-mode-toggle")).toBeDisabled();
+    // Session 1: the analyst (real strategy_analyst role grant) drafts and submits a new link.
+    const analystContext = await browser.newContext();
+    const analystPage = await analystContext.newPage();
+    await loginAs(analystPage, "member"); // seeded with the real strategy_analyst role
+    await analystPage.goto(`/strategy-maps/${fixture.scorecardId}`);
+    await expect(analystPage.getByTestId("map-canvas-page")).toBeVisible();
+    await expect(analystPage.getByTestId("edit-mode-toggle")).toBeEnabled();
 
-    await page.getByTestId("viewer-role-select").selectOption("strategy_analyst");
-    await expect(page.getByTestId("edit-mode-toggle")).toBeEnabled();
+    await analystPage.getByTestId("edit-mode-toggle").click();
+    await expect(analystPage.getByTestId("edit-toolbar")).toBeVisible();
+    // Entering edit mode seeds the draft from the currently published link.
+    await expect(analystPage.getByTestId("pending-changes-list")).toContainText("strong");
 
-    await page.getByTestId("edit-mode-toggle").click();
-    await expect(page.getByTestId("edit-toolbar")).toBeVisible();
+    await analystPage.getByTestId("draw-link-button").click();
+    await analystPage.locator(`.react-flow__node[data-id="${fixture.csatObjectiveId}"]`).click();
+    await analystPage.locator(`.react-flow__node[data-id="${fixture.revenueObjectiveId}"]`).click();
+    await analystPage.getByTestId("link-strength-select").selectOption("weak");
+    await analystPage.getByTestId("confirm-link-button").click();
+    await expect(analystPage.getByTestId("pending-changes-list")).toContainText("weak");
+
+    await analystPage.getByTestId("approver-user-id-input").fill(fixture.bobId);
+    await analystPage.getByTestId("submit-for-approval-button").click();
+
+    const banner = analystPage.getByTestId("proposed-case-banner");
+    await expect(banner).toBeVisible();
+    const bannerText = await banner.innerText();
+    const caseId = bannerText.match(/Case:\s*([0-9a-f-]{36})/i)?.[1];
+    if (!caseId) throw new Error(`No case id found in: ${bannerText}`);
+    const draftMapId = await analystPage.getByTestId("publish-map-id-input").inputValue();
+    await analystContext.close();
+
+    // Session 2: a genuinely different user (platform_administrator) approves the case.
+    const approverContext = await browser.newContext();
+    const approverPage = await approverContext.newPage();
+    await loginAs(approverPage, "platform_administrator");
+    await approverPage.goto(`/approvals/${caseId}`);
+    await approverPage.getByTestId("approve-case").click();
+    await expect(approverPage.getByTestId("decision-badge")).toContainText("Approved");
+    await approverContext.close();
+
+    // Analyst returns (still session-appropriate: any strategy_analyst) to publish the approved change.
+    const publisherContext = await browser.newContext();
+    const publisherPage = await publisherContext.newPage();
+    await loginAs(publisherPage, "member");
+    await publisherPage.goto(`/strategy-maps/${fixture.scorecardId}`);
+    await publisherPage.getByTestId("publish-map-id-input").fill(draftMapId);
+    await publisherPage.getByTestId("publish-case-id-input").fill(caseId);
+    await publisherPage.getByTestId("publish-map-button").click();
+    await expect(publisherPage.getByTestId("map-publish-notice")).toBeVisible();
+    await publisherContext.close();
+
+    // Session 3: a genuinely different, read-only (non-analyst) user sees the newly published link.
+    const viewerContext = await browser.newContext();
+    const viewerPage = await viewerContext.newPage();
+    await loginAs(viewerPage, "executive_viewer");
+    await viewerPage.goto(`/strategy-maps/${fixture.scorecardId}`);
+    await expect(viewerPage.getByTestId("map-canvas-page")).toBeVisible();
+    await expect(viewerPage.getByTestId("edit-mode-toggle")).toBeDisabled();
+    await expect(viewerPage.locator(".react-flow__edge")).toHaveCount(2);
+    await viewerContext.close();
   });
 
-  test("adds an objective reference and a link with a strength, then submits the local draft", async ({ page }) => {
-    await loginAs(page, "member");
-    await page.goto("/strategy-maps/map-corporate");
-    await page.getByTestId("viewer-role-select").selectOption("strategy_analyst");
-    await page.getByTestId("edit-mode-toggle").click();
+  test("a non-analyst is rejected server-side calling the map draft procedure directly, not merely blocked by disabled UI", async ({ page }) => {
+    await loginAs(page, "executive_viewer");
 
-    await page.getByTestId("add-objective-reference-button").click();
-    await page.getByTestId("unplaced-objective-obj-pricing-strategy").click();
-    await expect(page.getByTestId("pending-changes-list")).toContainText("Refresh Pricing Strategy");
-
-    await page.getByTestId("draw-link-button").click();
-    await page.locator('.react-flow__node[data-id="obj-revenue-growth"]').click();
-    await page.locator('.react-flow__node[data-id="obj-pricing-strategy"]').click();
-    await page.getByTestId("link-strength-select").selectOption("strong");
-    await page.getByTestId("confirm-link-button").click();
-    await expect(page.getByTestId("pending-changes-list")).toContainText("Added link: strong");
-
-    await page.getByTestId("submit-for-approval-button").click();
-    await expect(page.getByTestId("map-status-badge")).toContainText("Draft");
-    await expect(page.getByTestId("draft-banner")).toBeVisible();
-    await expect(page.getByTestId("edit-toolbar")).toHaveCount(0);
+    const response = await page.request.post("/api/trpc/scorecard.map.draftLink", {
+      data: {
+        json: {
+          scorecardId: fixture.scorecardId,
+          link: { fromObjectiveId: fixture.revenueObjectiveId, toObjectiveId: fixture.csatObjectiveId, strength: "weak" },
+        },
+      },
+    });
+    expect(response.status()).toBe(403);
   });
 });

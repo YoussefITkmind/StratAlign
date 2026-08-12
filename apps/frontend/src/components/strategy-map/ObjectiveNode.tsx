@@ -5,6 +5,8 @@ import { PERSPECTIVE_CONFIG, scoreStatus, STATUS_DOT } from "@/lib/mapConfig";
 
 interface ObjectiveData {
   objective: Objective;
+  /** Real KPI RAG status label (e.g. "On Track"), shown instead of the numeric score when this node backs a real placement rather than mock data. */
+  statusLabel?: string;
   dimmed?: boolean;
   active?: boolean;
   pendingSource?: boolean;
@@ -15,7 +17,7 @@ interface ObjectiveData {
 const handleStyle = { opacity: 0, pointerEvents: "none" as const };
 
 export default function ObjectiveNode({ data }: NodeProps) {
-  const { objective, dimmed, active, pendingSource, connecting } = data as ObjectiveData;
+  const { objective, statusLabel, dimmed, active, pendingSource, connecting } = data as ObjectiveData;
   const cfg = PERSPECTIVE_CONFIG[objective.perspective];
   const status = scoreStatus(objective.score);
   const highlighted = active || pendingSource;
@@ -48,7 +50,7 @@ export default function ObjectiveNode({ data }: NodeProps) {
             <div className="h-full rounded-full" style={{ width: `${objective.score}%`, background: cfg.barColor }} />
           </div>
           <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: STATUS_DOT[status] }} />
-          <span className="shrink-0 text-[11px] font-medium text-gray-600">{objective.score}%</span>
+          <span className="shrink-0 text-[11px] font-medium text-gray-600">{statusLabel ?? `${objective.score}%`}</span>
         </div>
       </div>
     </div>
