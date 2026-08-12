@@ -1,5 +1,4 @@
 import type { CadenceTask, Kpi } from "@/types/kpi";
-import type { ApprovalCase, Committee, RiskItem } from "@/types/governance";
 
 const KPI_STATUS_SEVERITY: Record<Kpi["status"], number> = {
   behind: 0,
@@ -35,63 +34,6 @@ export function kpisOwnedBy(kpis: Kpi[], ownerName: string): Kpi[] {
 export function cadenceTasksFor(tasks: CadenceTask[], kpiIds: readonly string[]): CadenceTask[] {
   const ids = new Set(kpiIds);
   return tasks.filter((task) => ids.has(task.kpiId)).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-}
-
-export type CalendarItemKind = "committee" | "risk" | "approval";
-
-export interface CalendarItem {
-  id: string;
-  date: string;
-  kind: CalendarItemKind;
-  title: string;
-  detail: string;
-}
-
-/**
- * Upcoming review-calendar items merged from three Phase 2/3 governance
- * fixtures (committee meetings, risk reviews, approval due dates). `nowIso`
- * should be the dataset's own MOCK_NOW, not the real clock — see
- * mockGovernanceData.ts's comment on why its dates are pinned to 2025-07-19.
- */
-export function buildReviewCalendar(
-  committees: Committee[],
-  risks: RiskItem[],
-  approvals: ApprovalCase[],
-  nowIso: string,
-  limit = 5
-): CalendarItem[] {
-  const items: CalendarItem[] = [
-    ...committees.map((c) => ({
-      id: `committee-${c.id}`,
-      date: c.nextMeeting,
-      kind: "committee" as const,
-      title: c.name,
-      detail: `${c.code} · ${c.pendingItems} pending`,
-    })),
-    ...risks
-      .filter((r) => r.status === "open" || r.status === "mitigating")
-      .map((r) => ({
-        id: `risk-${r.id}`,
-        date: r.reviewDate,
-        kind: "risk" as const,
-        title: r.title,
-        detail: `Risk review · ${r.owner.name}`,
-      })),
-    ...approvals
-      .filter((a) => a.status === "pending" || a.status === "escalated")
-      .map((a) => ({
-        id: `approval-${a.id}`,
-        date: a.dueDate,
-        kind: "approval" as const,
-        title: a.title,
-        detail: `${a.committee} · ${a.status === "escalated" ? "Escalated" : "Due"}`,
-      })),
-  ];
-
-  return items
-    .filter((item) => item.date >= nowIso)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, limit);
 }
 
 /**

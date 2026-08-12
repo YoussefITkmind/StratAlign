@@ -4,11 +4,8 @@ import { useMemo } from "react";
 import type { PlatformRole } from "@spm/domain-iam";
 import { initialKpis } from "@/data/mockKpiData";
 import { initialCadenceTasks } from "@/data/mockCadenceTasks";
-import { initialScorecards } from "@/data/mockScorecardData";
-import { initialMaps } from "@/data/mockMapData";
-import { committees, risks, initialApprovals, MOCK_NOW } from "@/data/mockGovernanceData";
 import { widgetsForRole, resolveHomeRole, type WidgetKey } from "@/lib/roleWidgetConfig";
-import { selectTopKpis, selectExceptions, kpisOwnedBy, cadenceTasksFor, buildReviewCalendar, HOME_DEMO_OWNER_NAME } from "@/lib/homeConfig";
+import { selectTopKpis, selectExceptions, kpisOwnedBy, cadenceTasksFor, HOME_DEMO_OWNER_NAME } from "@/lib/homeConfig";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { KpiTilesWidget } from "./KpiTilesWidget";
 import { ExceptionsWidget } from "./ExceptionsWidget";
@@ -37,16 +34,14 @@ export function HomePage({ roles }: { roles: PlatformRole[] }) {
   const role = useMemo(() => resolveHomeRole(roles), [roles]);
   const widgets = useMemo(() => widgetsForRole(role), [role]);
 
+  // kpiTiles/exceptions/ownedKpis/dueSubmissions stay on the Phase 2/3
+  // fixtures: there's no real org-wide KPI performance aggregate endpoint
+  // (registry.kpi.list returns definitions only, no live status/actuals) and
+  // no seeded real cadence/capture-task data to back a real "my due
+  // submissions" query yet. scorecardStrip, reviewCalendar, mapThumbnail, and
+  // governanceEscalations below are real — see each widget's own file.
   const ownedKpis = useMemo(() => kpisOwnedBy(initialKpis, HOME_DEMO_OWNER_NAME), []);
   const kpiNameById = useMemo(() => Object.fromEntries(initialKpis.map((k) => [k.id, k.name])), []);
-  const reviewCalendarItems = useMemo(
-    () => buildReviewCalendar(committees, risks, initialApprovals, MOCK_NOW),
-    []
-  );
-  const thumbnailMap = useMemo(
-    () => initialMaps.find((m) => m.id === initialScorecards.find((sc) => sc.mapId)?.mapId),
-    []
-  );
 
   function renderWidget(key: WidgetKey) {
     switch (key) {
@@ -55,11 +50,11 @@ export function HomePage({ roles }: { roles: PlatformRole[] }) {
       case "exceptions":
         return <ExceptionsWidget kpis={selectExceptions(initialKpis)} />;
       case "scorecardStrip":
-        return <ScorecardStripWidget scorecards={initialScorecards} />;
+        return <ScorecardStripWidget />;
       case "reviewCalendar":
-        return <ReviewCalendarWidget items={reviewCalendarItems} />;
+        return <ReviewCalendarWidget />;
       case "mapThumbnail":
-        return <MapThumbnailWidget map={thumbnailMap} />;
+        return <MapThumbnailWidget />;
       case "ownedKpis":
         return <OwnedKpisWidget kpis={ownedKpis} />;
       case "dueSubmissions":

@@ -1,57 +1,70 @@
 "use client";
 
 import Link from "next/link";
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
-import type { Scorecard } from "@/types/scorecard";
-import { SCORECARD_STATUS_CONFIG, scoreColor } from "@/lib/scorecardConfig";
+import { trpc } from "@/lib/trpc/client";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { WidgetCard } from "./WidgetCard";
 
-export function ScorecardStripWidget({ scorecards }: { scorecards: Scorecard[] }) {
-  const { t } = useI18n();
+interface ScorecardRow { id: string; nameEn: string; nameAr: string }
+interface ScorecardDetail { weighting: { perspectiveWeights: Record<string, number> } | null }
+interface WeightingPreview { currentScore: number | null }
+
+const STATUS_TOKENS = {
+  good: { bg: "bg-emerald-50", text: "text-emerald-600" },
+  warn: { bg: "bg-amber-50", text: "text-amber-600" },
+  bad: { bg: "bg-red-50", text: "text-red-600" },
+  none: { bg: "bg-gray-100", text: "text-gray-500" },
+};
+
+/**
+ * The real Prompt 3.1/3.2 summary: the same scorecard.get + weighting.preview
+ * data Master Scorecard itself reads, so an approved weighting change shows
+ * up here live once queries refetch — no separate Home-only computation.
+ */
+function ScorecardStripItem({ scorecard, locale }: { scorecard: ScorecardRow; locale: string }) {
+  const detailQuery = trpc.scorecard.get.useQuery({ scorecardId: scorecard.id });
+  const detail = detailQuery.data as ScorecardDetail | undefined;
+  const weights = detail?.weighting?.perspectiveWeights;
+  const previewQuery = trpc.scorecard.weighting.preview.useQuery(
+    { scorecardId: scorecard.id, draftWeights: weights ?? {} },
+    { enabled: Boolean(weights) }
+  );
+  const score = (previewQuery.data as WeightingPreview | undefined)?.currentScore;
+  const status = score == null ? "none" : score >= 75 ? "good" : score >= 50 ? "warn" : "bad";
+  const tokens = STATUS_TOKENS[status];
 
   return (
-    <WidgetCard
-      testId="widget-scorecard-strip"
-      title={t("home.scorecardStripTitle")}
-      href="/balanced-scorecards"
-      linkLabel={t("home.viewAll")}
+    <Link
+      href={`/balanced-scorecards/${scorecard.id}`}
+      data-testid={`scorecard-strip-item-${scorecard.id}`}
+      className="flex w-[190px] shrink-0 flex-col gap-1.5 rounded-xl border border-gray-100 p-3 transition hover:border-gray-200 hover:bg-gray-50"
     >
-      <div className="flex gap-3 overflow-x-auto pb-1">
-        {scorecards.map((sc) => {
-          const statusCfg = SCORECARD_STATUS_CONFIG[sc.status];
-          const color = scoreColor(sc.score);
-          const delta = sc.priorScore !== undefined ? Math.round((sc.score - sc.priorScore) * 10) / 10 : null;
-          const DeltaIcon = delta === null || delta === 0 ? Minus : delta > 0 ? TrendingUp : TrendingDown;
+      <p className="truncate text-[13px] font-medium text-gray-800">{locale === "ar" ? scorecard.nameAr : scorecard.nameEn}</p>
+      <div className="flex items-baseline gap-2">
+        <span data-testid={`scorecard-strip-score-${scorecard.id}`} className={`text-xl font-bold ${tokens.text}`}>
+          {score != null ? `${Math.round(score)}%` : "—"}
+        </span>
+      </div>
+      <span className={`w-fit rounded-full ${tokens.bg} ${tokens.text} px-2 py-0.5 text-[10px] font-medium`}>
+        {score == null ? "No weighting yet" : status === "good" ? "On Track" : status === "warn" ? "Watch" : "Off Track"}
+      </span>
+    </Link>
+  );
+}
 
-          return (
-            <Link
-              key={sc.id}
-              href={`/balanced-scorecards/${sc.id}`}
-              data-testid={`scorecard-strip-item-${sc.id}`}
-              className="flex w-[190px] shrink-0 flex-col gap-1.5 rounded-xl border border-gray-100 p-3 transition hover:border-gray-200 hover:bg-gray-50"
-            >
-              <p className="truncate text-[13px] font-medium text-gray-800">{sc.name}</p>
-              <div className="flex items-baseline gap-2">
-                <span className={`text-xl font-bold ${color.text}`}>{sc.score}%</span>
-                {delta !== null && (
-                  <span
-                    className={`flex items-center gap-0.5 text-xs font-medium ${
-                      delta === 0 ? "text-gray-400" : delta > 0 ? "text-emerald-600" : "text-red-600"
-                    }`}
-                  >
-                    <DeltaIcon className="h-3 w-3" />
-                    {delta > 0 ? "+" : ""}
-                    {delta}
-                  </span>
-                )}
-              </div>
-              <span className={`w-fit rounded-full ${statusCfg.badgeBg} ${statusCfg.badgeText} px-2 py-0.5 text-[10px] font-medium`}>
-                {statusCfg.label}
-              </span>
-            </Link>
-          );
-        })}
+export function ScorecardStripWidget() {
+  const { t, locale } = useI18n();
+  const listQuery = trpc.scorecard.list.useQuery();
+  const scorecards = ((listQuery.data as ScorecardRow[] | undefined) ?? []).slice(0, 4);
+
+  return (
+    <WidgetCard testId="widget-scorecard-strip" title={t("home.scorecardStripTitle")} href="/balanced-scorecards" linkLabel={t("home.viewAll")}>
+      {listQuery.error && <p role="alert" className="text-xs text-red-600">{listQuery.error.message}</p>}
+      <div className="flex gap-3 overflow-x-auto pb-1">
+        {scorecards.map((scorecard) => (
+          <ScorecardStripItem key={scorecard.id} scorecard={scorecard} locale={locale} />
+        ))}
+        {scorecards.length === 0 && !listQuery.isLoading && <p className="text-xs text-gray-400">{t("home.noData")}</p>}
       </div>
     </WidgetCard>
   );
