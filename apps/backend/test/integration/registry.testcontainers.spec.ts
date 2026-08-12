@@ -10,7 +10,6 @@ import { AlignmentService } from "../../src/modules/registry/alignment.service";
 import { KpiHierarchyService } from "../../src/modules/registry/kpi-hierarchy.service";
 import { KpiRegistryService } from "../../src/modules/registry/kpi-registry.service";
 import { OkrService } from "../../src/modules/registry/okr.service";
-import { UnavailableApprovalGateway } from "../../src/modules/registry/gateways/approval.gateway";
 import {
   RegistryApprovalError,
   RegistryOperationError,
@@ -164,7 +163,8 @@ describe.sequential(
       // Registry tables only: users and rule definitions are shared fixtures
       // created once in beforeAll.
       await prisma.$executeRawUnsafe(
-        `TRUNCATE TABLE
+         `TRUNCATE TABLE
+           "registry"."kpi_threshold_rule_bindings",
            "registry"."kpi_hierarchy_nodes",
            "registry"."alignments",
            "registry"."key_results",
@@ -387,22 +387,6 @@ describe.sequential(
         ).rejects.toBeInstanceOf(RegistryOperationError);
       });
 
-      it("cannot be published at all through the production gateway", async () => {
-        const production = new KpiRegistryService(
-          prisma,
-          new UnavailableApprovalGateway(),
-          strategyNodes,
-        );
-
-        const draft = await production.createDraft(draftInput());
-
-        await expect(
-          production.publishVersion({
-            kpiVersionId: draft.version.id,
-            approvalCaseId: "any-case",
-          }),
-        ).rejects.toBeInstanceOf(RegistryApprovalError);
-      });
     });
 
     describe("retirement", () => {
@@ -613,6 +597,150 @@ describe.sequential(
         });
         expect(byNewName[0].kpiDefinitionId).toBe(definitionId);
         expect(byNewName[0].version).toBe(2);
+      });
+    });
+
+    describe("threshold rule binding", () => {
+      it("persists and resolves the active published threshold rule", async () => {
+        const kpi = await publishNewKpi();
+
+        const bound = await kpis.bindThresholdRule({
+          kpiVersionId: kpi.version.id,
+          thresholdRuleId,
+          actorUserId: ownerUserId,
+        });
+
+        expect(bound).toMatchObject({
+          kpiVersionId: kpi.version.id,
+          thresholdRuleId,
+          ruleKey: "kpi-threshold",
+          ruleVersion: 1,
+        });
+        await expect(
+          kpis.getThresholdRuleBinding(kpi.version.id),
+        ).resolves.toEqual(bound);
+
+        const stored = await prisma.kpiThresholdRuleBinding.findUnique({
+          where: { id: bound.id },
+        });
+        expect(stored?.isCurrent).toBe(true);
+      });
+
+      it("rejects an unknown KPI version", async () => {
+        await expect(
+          kpis.bindThresholdRule({
+            kpiVersionId: "00000000-0000-4000-8000-000000000000",
+            thresholdRuleId,
+            actorUserId: ownerUserId,
+          }),
+        ).rejects.toThrow(/KPI version was not found/i);
+      });
+
+      it("rejects unpublished and inactive threshold rule versions", async () => {
+        const kpi = await publishNewKpi();
+        const draft = await rules.createDraft({
+          ruleKey: `draft-threshold-${Date.now()}`,
+          name: "Draft threshold",
+          createdBy: ownerUserId,
+          document: {
+            ruleType: "threshold_status",
+            direction: "higher_is_better",
+            bands: [{
+              label: "On track",
+              color: "green",
+              comparator: "gte",
+              value: 80,
+            }],
+          },
+        });
+
+        await expect(
+          kpis.bindThresholdRule({
+            kpiVersionId: kpi.version.id,
+            thresholdRuleId: draft.id,
+            actorUserId: ownerUserId,
+          }),
+        ).rejects.toThrow(/current published rule version/i);
+
+        await prisma.ruleDefinition.update({
+          where: { id: thresholdRuleId },
+          data: { isCurrent: false },
+        });
+        await expect(
+          kpis.bindThresholdRule({
+            kpiVersionId: kpi.version.id,
+            thresholdRuleId,
+            actorUserId: ownerUserId,
+          }),
+        ).rejects.toThrow(/current published rule version/i);
+        await prisma.ruleDefinition.update({
+          where: { id: thresholdRuleId },
+          data: { isCurrent: true },
+        });
+      });
+
+      it("appends binding history when the active rule changes", async () => {
+        const kpi = await publishNewKpi();
+        const first = await kpis.bindThresholdRule({
+          kpiVersionId: kpi.version.id,
+          thresholdRuleId,
+          actorUserId: ownerUserId,
+        });
+        const replacementDraft = await rules.createDraft({
+          ruleKey: `replacement-threshold-${Date.now()}`,
+          name: "Replacement threshold",
+          createdBy: ownerUserId,
+          document: {
+            ruleType: "threshold_status",
+            direction: "higher_is_better",
+            bands: [{
+              label: "On track",
+              color: "green",
+              comparator: "gte",
+              value: 95,
+            }],
+          },
+        });
+        const replacement = await rules.publish(replacementDraft.id);
+
+        const second = await kpis.bindThresholdRule({
+          kpiVersionId: kpi.version.id,
+          thresholdRuleId: replacement.id,
+          actorUserId: ownerUserId,
+        });
+
+        expect(second.supersedesBindingId).toBe(first.id);
+        expect(second.id).not.toBe(first.id);
+        const history = await prisma.kpiThresholdRuleBinding.findMany({
+          where: { kpiVersionId: kpi.version.id },
+          orderBy: { createdAt: "asc" },
+        });
+        expect(history).toHaveLength(2);
+        expect(history.map((item) => item.isCurrent)).toEqual([false, true]);
+        expect(await prisma.kpiVersion.count({
+          where: { id: kpi.version.id },
+        })).toBe(1);
+      });
+    });
+
+    describe("registry reads", () => {
+      it("lists and gets persisted KPI and OKR data", async () => {
+        const kpi = await publishNewKpi();
+        const okr = await okrs.create({
+          objectiveNodeId: "10000000-0000-4000-8000-000000000001",
+          nameEn: "Improve satisfaction",
+          nameAr: "تحسين الرضا",
+          keyResults: [{
+            type: "quantitative",
+            targetValue: 95,
+            unit: "%",
+          }],
+        });
+
+        await expect(kpis.list()).resolves.toContainEqual(kpi);
+        await expect(kpis.getById(kpi.definition.id)).resolves.toEqual(kpi);
+        await expect(okrs.list()).resolves.toContainEqual(okr);
+        await expect(okrs.getById(okr.id)).resolves.toEqual(okr);
       });
     });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { UnavailableApprovalGateway } from "../../src/modules/registry/gateways/approval.gateway";
+import { GovernanceApprovalGateway } from "../../src/modules/registry/gateways/approval.gateway";
 import {
   PrismaStrategyNodeGateway,
   UnverifiedStrategyNodeGateway,
@@ -17,30 +17,77 @@ import {
  * left implicit in the integration suite.
  */
 describe("registry integration seams", () => {
-  describe("UnavailableApprovalGateway", () => {
-    it("refuses every approval check", async () => {
-      const gateway = new UnavailableApprovalGateway();
+  describe("GovernanceApprovalGateway", () => {
+    it(
+      "maps the Registry subject identity to Governance",
+      async () => {
+        const assertApproved =
+          vi.fn().mockResolvedValue(
+            undefined,
+          );
 
-      await expect(
-        gateway.assertApproved({
-          approvalCaseId: "any-case",
-          subjectType: "KpiDefinition",
-          subjectId: "any-kpi",
-        }),
-      ).rejects.toBeInstanceOf(RegistryApprovalError);
-    });
+        const gateway =
+          new GovernanceApprovalGateway({
+            assertApproved,
+          });
 
-    it("names the missing dependency instead of failing opaquely", async () => {
-      const gateway = new UnavailableApprovalGateway();
+        await expect(
+          gateway.assertApproved({
+            approvalCaseId:
+              "case-42",
 
-      await expect(
-        gateway.assertApproved({
-          approvalCaseId: "case-42",
-          subjectType: "KpiDefinition",
-          subjectId: "kpi-1",
-        }),
-      ).rejects.toThrow(/workflow module is not available/i);
-    });
+            subjectType:
+              "KpiDefinition",
+
+            subjectId:
+              "kpi-1",
+          }),
+        ).resolves.toBeUndefined();
+
+        expect(
+          assertApproved,
+        ).toHaveBeenCalledWith({
+          approvalCaseId:
+            "case-42",
+
+          entityType:
+            "KpiDefinition",
+
+          entityId:
+            "kpi-1",
+        });
+      },
+    );
+
+    it(
+      "fails closed when Governance refuses the reference",
+      async () => {
+        const gateway =
+          new GovernanceApprovalGateway({
+            assertApproved:
+              vi.fn().mockRejectedValue(
+                new Error(
+                  "not approved",
+                ),
+              ),
+          });
+
+        await expect(
+          gateway.assertApproved({
+            approvalCaseId:
+              "case-denied",
+
+            subjectType:
+              "KpiDefinition",
+
+            subjectId:
+              "kpi-2",
+          }),
+        ).rejects.toBeInstanceOf(
+          RegistryApprovalError,
+        );
+      },
+    );
   });
 
   describe("UnverifiedStrategyNodeGateway", () => {

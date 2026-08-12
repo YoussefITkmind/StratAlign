@@ -25,6 +25,11 @@ export interface StagedChangeOutput {
 }
 
 export interface StrategyServiceContract {
+  listNodes(): Promise<StrategyNode[]>;
+  getNode(nodeId: string): Promise<StrategyNode | null>;
+  listPlanVersions(): Promise<PlanVersion[]>;
+  getEdges(planVersionId: string): Promise<StrategyEdge[]>;
+  listStagedChanges(planVersionId: string): Promise<StagedChangeOutput[]>;
   createPlanVersion(name: string): Promise<PlanVersion>;
 
   createNode(input: {
@@ -34,6 +39,7 @@ export interface StrategyServiceContract {
     planVersionId: string;
     actorUserId: string;
     approvalCaseId?: string;
+    stagedChangeId?: string;
   }): Promise<StrategyNode | StagedChangeOutput>;
 
   updateNode(input: {
@@ -57,6 +63,7 @@ export interface StrategyServiceContract {
     planVersionId: string;
     actorUserId: string;
     approvalCaseId?: string;
+    stagedChangeId?: string;
   }): Promise<StrategyEdge | StagedChangeOutput>;
 
   unlinkEdge(input: {
@@ -146,6 +153,14 @@ const traversal = (
 
 export const strategyRouter = router({
   node: router({
+    list: protectedProcedure
+      .query(async ({ ctx }) => {
+        try { return await service(ctx).listNodes(); } catch (e) { return fail(e); }
+      }),
+    get: protectedProcedure.input(z.object({ nodeId: id }).strict())
+      .query(async ({ ctx, input }) => {
+        try { return await service(ctx).getNode(input.nodeId); } catch (e) { return fail(e); }
+      }),
     cascade: protectedProcedure
       .input(
         z.object({
@@ -184,6 +199,7 @@ export const strategyRouter = router({
       type: z.enum(["corporate_strategy","theme","objective","strategic_play","portfolio","area_of_focus"]),
       nameEn: z.string().trim().min(1).max(300), nameAr: z.string().trim().min(1).max(300), planVersionId: id,
       approvalCaseId: id.optional(),
+      stagedChangeId: id.optional(),
     }).strict()).mutation(async ({ ctx, input }) => {
       try { return await service(ctx).createNode({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); }
     }),
@@ -193,7 +209,11 @@ export const strategyRouter = router({
       .mutation(async ({ ctx, input }) => { try { return await service(ctx).retireNode({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
   }),
   edge: router({
-    link: admin().input(z.object({ fromNodeId: id, toNodeId: id, edgeType: z.enum(["contains","executed_by","belongs_to_portfolio","aligns_to"]), planVersionId: id, approvalCaseId: id.optional() }).strict())
+    list: protectedProcedure.input(z.object({ planVersionId: id }).strict())
+      .query(async ({ ctx, input }) => {
+        try { return await service(ctx).getEdges(input.planVersionId); } catch (e) { return fail(e); }
+      }),
+    link: admin().input(z.object({ fromNodeId: id, toNodeId: id, edgeType: z.enum(["contains","executed_by","belongs_to_portfolio","aligns_to"]), planVersionId: id, approvalCaseId: id.optional(), stagedChangeId: id.optional() }).strict())
       .mutation(async ({ ctx, input }) => { try { return await service(ctx).linkEdge({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
     unlink: admin().input(z.object({ edgeId: id, approvalCaseId: id.optional() }).strict())
       .mutation(async ({ ctx, input }) => { try { return await service(ctx).unlinkEdge({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
@@ -203,6 +223,9 @@ export const strategyRouter = router({
       .mutation(async ({ ctx, input }) => { try { return await service(ctx).assignOwner({ ...input, assignedBy: ctx.session!.user.id }); } catch (e) { return fail(e); } }),
   }),
   planVersion: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      try { return await service(ctx).listPlanVersions(); } catch (e) { return fail(e); }
+    }),
     create: admin().input(z.object({ name: z.string().trim().min(1).max(300) }).strict())
       .mutation(async ({ ctx, input }) => { try { return await service(ctx).createPlanVersion(input.name); } catch (e) { return fail(e); } }),
     open: admin().input(z.object({ planVersionId: id, opensAt: z.coerce.date().optional() }).strict())
@@ -211,5 +234,11 @@ export const strategyRouter = router({
       .mutation(async ({ ctx, input }) => { try { return await service(ctx).closePlanVersion(input.planVersionId, input.closesAt); } catch (e) { return fail(e); } }),
     carryForward: admin().input(z.object({ sourcePlanVersionId: id, name: z.string().trim().min(1).max(300) }).strict())
       .mutation(async ({ ctx, input }) => { try { return await service(ctx).carryForward(input.sourcePlanVersionId, input.name, ctx.session!.user.id); } catch (e) { return fail(e); } }),
+  }),
+  stagedChange: router({
+    list: protectedProcedure.input(z.object({ planVersionId: id }).strict())
+      .query(async ({ ctx, input }) => {
+        try { return await service(ctx).listStagedChanges(input.planVersionId); } catch (e) { return fail(e); }
+      }),
   }),
 });

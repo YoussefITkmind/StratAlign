@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { findUserById } from "@/server/mock-db";
 import { authorizationCodes, randomToken } from "@/lib/mock-idp/store";
+import { findMockIdpUser } from "@/lib/mock-idp/users";
 
 const SUBJECT_TO_USER_ID: Record<string, string> = {
   member: "oidc-user",
@@ -13,7 +13,7 @@ export async function GET(req: Request) {
 
   const subject = params.get("subject") ?? "";
   const userId = SUBJECT_TO_USER_ID[subject];
-  const user = userId ? findUserById(userId) : undefined;
+  const user = userId ? findMockIdpUser(userId) : undefined;
   const redirectUri = params.get("redirect_uri");
   const clientId = params.get("client_id");
   const codeChallenge = params.get("code_challenge");

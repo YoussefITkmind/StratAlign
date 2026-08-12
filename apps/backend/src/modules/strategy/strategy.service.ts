@@ -38,9 +38,9 @@ export class StrategyService {
     return mapPlan(rows[0]!);
   }
 
-  async createNode(input: { type: StrategyNodeType; nameEn: string; nameAr: string; planVersionId: string; actorUserId: string; approvalCaseId?: string }): Promise<StrategyNodeRecord | StagedChangeRecord> {
+  async createNode(input: { type: StrategyNodeType; nameEn: string; nameAr: string; planVersionId: string; actorUserId: string; approvalCaseId?: string; stagedChangeId?: string }): Promise<StrategyNodeRecord | StagedChangeRecord> {
     const plan = await this.requirePlan(input.planVersionId);
-    if (plan.status === "active") return this.stage("node_create", null, input.planVersionId, { type: input.type, nameEn: input.nameEn.trim(), nameAr: input.nameAr.trim() }, input.actorUserId, this.requireApproval(input.approvalCaseId));
+    if (plan.status === "active") return this.stage("node_create", null, input.planVersionId, { type: input.type, nameEn: input.nameEn.trim(), nameAr: input.nameAr.trim() }, input.actorUserId, this.requireApproval(input.approvalCaseId), input.stagedChangeId);
     this.assertDraft(plan);
     const rows = await this.prisma.$queryRaw<NodeRow[]>`INSERT INTO strategy.strategy_nodes (id,type,name_en,name_ar,plan_version_id,state,created_by) VALUES (${randomUUID()}::uuid,${input.type}::strategy."StrategyNodeType",${input.nameEn.trim()},${input.nameAr.trim()},${input.planVersionId}::uuid,'draft',${input.actorUserId}) RETURNING *`;
     return mapNode(rows[0]!);
@@ -62,9 +62,9 @@ export class StrategyService {
     return mapNode(rows[0]!);
   }
 
-  async linkEdge(input: { fromNodeId: string; toNodeId: string; edgeType: StrategyEdgeType; planVersionId: string; actorUserId: string; approvalCaseId?: string }): Promise<StrategyEdgeRecord | StagedChangeRecord> {
+  async linkEdge(input: { fromNodeId: string; toNodeId: string; edgeType: StrategyEdgeType; planVersionId: string; actorUserId: string; approvalCaseId?: string; stagedChangeId?: string }): Promise<StrategyEdgeRecord | StagedChangeRecord> {
     const plan = await this.requirePlan(input.planVersionId); const payload = { fromNodeId: input.fromNodeId, toNodeId: input.toNodeId, edgeType: input.edgeType };
-    if (plan.status === "active") return this.stage("edge_link", null, input.planVersionId, payload, input.actorUserId, this.requireApproval(input.approvalCaseId));
+    if (plan.status === "active") return this.stage("edge_link", null, input.planVersionId, payload, input.actorUserId, this.requireApproval(input.approvalCaseId), input.stagedChangeId);
     this.assertDraft(plan); return this.insertEdge(payload, input.planVersionId);
   }
 
@@ -125,10 +125,14 @@ export class StrategyService {
   }
 
   async listActiveNodes(planVersionId:string):Promise<StrategyNodeRecord[]>{const r=await this.prisma.$queryRaw<NodeRow[]>`SELECT * FROM strategy.strategy_nodes WHERE plan_version_id=${planVersionId}::uuid AND state='active' ORDER BY created_at,id`;return r.map(mapNode);}
+  async listNodes():Promise<StrategyNodeRecord[]>{const r=await this.prisma.$queryRaw<NodeRow[]>`SELECT * FROM strategy.strategy_nodes WHERE state<>'retired' ORDER BY plan_version_id,created_at,id`;return r.map(mapNode);}
+  async getNode(nodeId:string):Promise<StrategyNodeRecord|null>{const r=await this.prisma.$queryRaw<NodeRow[]>`SELECT * FROM strategy.strategy_nodes WHERE id=${nodeId}::uuid`;return r[0]?mapNode(r[0]):null;}
+  async listPlanVersions():Promise<PlanVersionRecord[]>{const r=await this.prisma.$queryRaw<PlanRow[]>`SELECT * FROM strategy.plan_versions ORDER BY opens_at DESC NULLS LAST,id`;return r.map(mapPlan);}
   async getEdges(planVersionId:string):Promise<StrategyEdgeRecord[]>{const r=await this.prisma.$queryRaw<EdgeRow[]>`SELECT * FROM strategy.strategy_edges WHERE plan_version_id=${planVersionId}::uuid ORDER BY id`;return r.map(mapEdge);}
+  async listStagedChanges(planVersionId:string):Promise<StagedChangeRecord[]>{const r=await this.prisma.$queryRaw<StageRow[]>`SELECT * FROM strategy.staged_changes WHERE plan_version_id=${planVersionId}::uuid ORDER BY requested_at DESC,id`;return r.map(mapStage);}
 
   private async insertEdge(p:{fromNodeId:string;toNodeId:string;edgeType:StrategyEdgeType},planVersionId:string):Promise<StrategyEdgeRecord>{const r=await this.prisma.$queryRaw<EdgeRow[]>`INSERT INTO strategy.strategy_edges (id,from_node_id,to_node_id,edge_type,plan_version_id) VALUES (${randomUUID()}::uuid,${p.fromNodeId}::uuid,${p.toNodeId}::uuid,${p.edgeType}::strategy."StrategyEdgeType",${planVersionId}::uuid) RETURNING *`;return mapEdge(r[0]!);}
-  private async stage(kind:StagedChangeKind,targetId:string|null,planVersionId:string,payload:Record<string,unknown>,requestedBy:string,approvalCaseId:string):Promise<StagedChangeRecord>{const r=await this.prisma.$queryRaw<StageRow[]>`INSERT INTO strategy.staged_changes (id,approval_case_id,plan_version_id,kind,target_id,payload,requested_by) VALUES (${randomUUID()}::uuid,${approvalCaseId}::uuid,${planVersionId}::uuid,${kind}::strategy."StagedChangeKind",${targetId}::uuid,${JSON.stringify(payload)}::jsonb,${requestedBy}) RETURNING *`;return mapStage(r[0]!);}
+  private async stage(kind:StagedChangeKind,targetId:string|null,planVersionId:string,payload:Record<string,unknown>,requestedBy:string,approvalCaseId:string,stagedChangeId?:string):Promise<StagedChangeRecord>{const r=await this.prisma.$queryRaw<StageRow[]>`INSERT INTO strategy.staged_changes (id,approval_case_id,plan_version_id,kind,target_id,payload,requested_by) VALUES (${stagedChangeId??randomUUID()}::uuid,${approvalCaseId}::uuid,${planVersionId}::uuid,${kind}::strategy."StagedChangeKind",${targetId}::uuid,${JSON.stringify(payload)}::jsonb,${requestedBy}) RETURNING *`;return mapStage(r[0]!);}
   private requireApproval(id?:string):string{if(!id)throw new Error("approvalCaseId is required for changes to active strategy data");return id;}
   private assertDraft(p:PlanVersionRecord):void{if(p.status!=="draft")throw new Error("Strategy plan version must be draft");}
   private async requirePlan(id:string):Promise<PlanVersionRecord>{const p=await this.getPlanVersion(id);if(!p)throw new Error("Plan version not found");return p;}

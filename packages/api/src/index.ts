@@ -220,6 +220,17 @@ export interface KpiWithVersionOutput {
   version: KpiVersionOutput;
 }
 
+export interface KpiThresholdRuleBindingOutput {
+  id: string;
+  kpiVersionId: string;
+  thresholdRuleId: string;
+  ruleKey: string;
+  ruleVersion: number;
+  createdAt: Date;
+  createdBy: string;
+  supersedesBindingId: string | null;
+}
+
 export interface KpiSimilarityMatchOutput {
   kpiDefinitionId: string;
   kpiVersionId: string;
@@ -317,6 +328,16 @@ export interface RegistryKpiServiceContract {
   ): Promise<RetirementImpactOutput>;
 
   listVersions(kpiDefinitionId: string): Promise<KpiVersionOutput[]>;
+  list(): Promise<KpiWithVersionOutput[]>;
+  getById(kpiDefinitionId: string): Promise<KpiWithVersionOutput | null>;
+  bindThresholdRule(input: {
+    kpiVersionId: string;
+    thresholdRuleId: string;
+    actorUserId: string;
+  }): Promise<KpiThresholdRuleBindingOutput>;
+  getThresholdRuleBinding(
+    kpiVersionId: string,
+  ): Promise<KpiThresholdRuleBindingOutput | null>;
 }
 
 export interface RegistryOkrServiceContract {
@@ -335,6 +356,8 @@ export interface RegistryOkrServiceContract {
     keyResultId: string;
     currentValue: number;
   }): Promise<KeyResultOutput>;
+  list(): Promise<OkrOutput[]>;
+  getById(okrId: string): Promise<OkrOutput | null>;
 }
 
 export interface RegistryAlignmentServiceContract {
@@ -432,6 +455,27 @@ export interface RollupResultOutput {
 }
 
 export interface PerformanceServiceContract {
+  getKpiDetail(kpiDefinitionId: string): Promise<{
+    definition: { id: string; status: string; retiredAt: Date | null };
+    version: { id: string; version: number; nameEn: string; nameAr: string; descriptionEn: string | null; descriptionAr: string | null; unit: string; polarity: string; frequency: string; dataSourceType: string; ownerUserId: string; ownerName: string; publishedAt: Date | null };
+    scopeNodeId: string | null;
+    period: string | null;
+    targets: Array<{ id: string; scopeNodeId: string; period: string; targetValue: number; planVersionId: string }>;
+    measurements: Array<{ id: string; scopeNodeId: string; period: string; value: number; createdAt: Date }>;
+    statuses: Array<{ id: string; scopeNodeId: string; period: string; status: string; computedAt: Date; ruleVersionUsed: string }>;
+    rollups: Array<{ id: string; scopeNodeId: string; period: string; aggregatedValue: number | null; method: string }>;
+    contributors: Array<{ definitionId: string; versionId: string; nameEn: string; unit: string; value: number | null; status: string | null; rollupRuleId: string; rollupRuleDocument: unknown }>;
+    commentary: Array<{ id: string; bodyEn: string | null; bodyAr: string | null; authorId: string; authorName: string; createdAt: Date; period: string; scopeNodeId: string }>;
+    alignments: Array<{ id: string; alignmentType: string; strategyNodeId: string; strategyNodeName: string; strategyNodeType: string }>;
+    thresholdBinding: { id: string; thresholdRuleId: string; ruleKey: string; ruleVersion: number; ruleDocument: unknown } | null;
+  } | null>;
+  listCaptureTasks(ownerId: string): Promise<Array<{ id: string; kpiVersionId: string; kpiName: string; unit: string; scopeNodeId: string; period: string; dueAt: Date; cadenceState: string; session: (CaptureSessionOutput & { draftValue?: unknown; draftEvidenceRef?: string | null }) | null }>>;
+  getCaptureSession(sessionId: string): Promise<(CaptureSessionOutput & { draftValue?: unknown; draftEvidenceRef?: string | null }) | null>;
+  saveCaptureDraft(sessionId: string, ownerId: string, value: number, evidenceRef?: string | null): Promise<CaptureSessionOutput & { draftValue?: unknown; draftEvidenceRef?: string | null }>;
+  captureHistory(kpiVersionId: string, scopeNodeId: string): Promise<MeasurementOutput[]>;
+  captureTemplate(format: "csv" | "xlsx", period: string, priorValue: number | null): Buffer;
+  validateCaptureTemplate(bytes: Buffer, format: "csv" | "xlsx", expectedPeriod: string, history: number[]): Array<{ row: number; period: string; value: number | null; outcome: "accepted" | "rejected" | "warning"; reason?: string }>;
+  uploadCaptureEvidence(sessionId: string, fileName: string, contentType: string, bytes: Buffer): Promise<string>;
   startCaptureSession(input: {
     kpiVersionId: string;
     scopeNodeId: string;
@@ -473,6 +517,13 @@ export interface PerformanceServiceContract {
     bodyAr?: string | null;
   }): Promise<CommentaryOutput>;
 
+  listCommentary(input: {
+    kpiVersionId: string;
+    scopeNodeId: string;
+    period: string;
+    limit: number;
+  }): Promise<CommentaryOutput[]>;
+
   getStatus(input: {
     kpiVersionId: string;
     scopeNodeId: string;
@@ -484,6 +535,103 @@ export interface PerformanceServiceContract {
     scopeNodeId: string;
     period: string;
   }): Promise<RollupResultOutput | null>;
+}
+
+export interface GovernanceApprovalReferenceInput {
+  approvalCaseId: string;
+  entityType: string;
+  entityId: string;
+}
+
+export type GovernanceApprovalState =
+  | "DRAFT"
+  | "PENDING_APPROVAL"
+  | "APPROVED"
+  | "REJECTED"
+  | "CHANGES_REQUESTED";
+
+export interface GovernanceCaseOutput {
+  id: string;
+  workflowDefinitionId: string;
+  entityType: string;
+  entityId: string;
+  submittedBy: string;
+  approvalParticipantId: string | null;
+  approvalSlaMs: number;
+  currentState: GovernanceApprovalState;
+  xstateContextSnapshot: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type GovernanceDecisionInput =
+  | {
+      type: "APPROVE";
+      actorUserId: string;
+      rationale?: string;
+    }
+  | {
+      type: "REJECT";
+      actorUserId: string;
+      rationale?: string;
+    }
+  | {
+      type: "REQUEST_CHANGES";
+      actorUserId: string;
+      rationale?: string;
+    };
+
+export interface GovernanceServiceContract {
+  submitCase(input: {
+    entityType: string;
+    entityId: string;
+    submittedBy: string;
+    approvalParticipantId: string;
+    proposedChange: {
+      before: unknown;
+      after: unknown;
+      impactSummary?: unknown;
+    };
+  }): Promise<GovernanceCaseOutput>;
+
+  assertApproved(
+    input: GovernanceApprovalReferenceInput,
+  ): Promise<void>;
+
+  myPendingApprovals(
+    viewerUserId: string,
+  ): Promise<GovernanceCaseOutput[]>;
+
+  getCase(
+    caseId: string,
+  ): Promise<GovernanceCaseOutput>;
+
+  getLatestCaseForEntity(
+    entityType: string,
+    entityId: string,
+  ): Promise<GovernanceCaseOutput | null>;
+
+  transition(input: {
+    caseId: string;
+    event: GovernanceDecisionInput;
+  }): Promise<GovernanceCaseOutput>;
+}
+
+export interface GovernanceEscalationOutput {
+  id: string;
+  caseId: string;
+  participant: string;
+  deadline: Date;
+  acknowledgedAt: Date | null;
+  acknowledgedBy: string | null;
+  createdAt: Date;
+}
+
+export interface GovernanceEscalationServiceContract {
+  acknowledge(
+    escalationId: string,
+    actingUserId: string,
+  ): Promise<GovernanceEscalationOutput>;
 }
 
 export interface AuditTapServiceContract {
@@ -506,15 +654,24 @@ export interface TrpcContext {
   authorization: IamAuthorizationServiceContract;
   iam: IamAdminServiceContract;
   rules: RulesServiceContract;
+  governance: GovernanceServiceContract;
+  governanceEscalation: GovernanceEscalationServiceContract;
   audit: AuditServiceContract;
   auditTap: AuditTapServiceContract;
   performance: PerformanceServiceContract;
   registry: RegistryServicesContract;
 }
 
+type WorkflowReferenceRequirement = {
+  entityType: string;
+  entityIdField: string;
+  approvalCaseIdField?: string;
+};
+
 type ProcedureMeta = {
   actionClass?: StepUpActionClass;
   auditRelevant?: boolean;
+  requiresApprovalCase?: WorkflowReferenceRequirement;
 };
 const t = initTRPC.context<TrpcContext>().meta<ProcedureMeta>().create({
   errorFormatter({ shape, error }) {
@@ -577,6 +734,86 @@ export const withStepUpCheck = middleware(async ({ ctx, meta, next }) => {
   }
   return next({ ctx: authorized });
 });
+
+export const withWorkflowReferenceCheck = middleware(
+  async ({
+    ctx,
+    meta,
+    getRawInput,
+    next,
+  }) => {
+    const requirement =
+      meta?.requiresApprovalCase;
+
+    if (!requirement) {
+      return next({ ctx });
+    }
+
+    const rawInput =
+      await getRawInput();
+
+    if (
+      typeof rawInput !== "object" ||
+      rawInput === null ||
+      Array.isArray(rawInput)
+    ) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "Workflow approval reference is required",
+      });
+    }
+
+    const input =
+      rawInput as Record<
+        string,
+        unknown
+      >;
+
+    const approvalCaseIdField =
+      requirement.approvalCaseIdField ??
+      "approvalCaseId";
+
+    const approvalCaseId =
+      input[approvalCaseIdField];
+
+    const entityId =
+      input[
+        requirement.entityIdField
+      ];
+
+    if (
+      typeof approvalCaseId !==
+        "string" ||
+      approvalCaseId.trim().length === 0 ||
+      typeof entityId !== "string" ||
+      entityId.trim().length === 0
+    ) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message:
+          "Workflow approval reference is required",
+      });
+    }
+
+    try {
+      await ctx.governance.assertApproved({
+        approvalCaseId,
+        entityType:
+          requirement.entityType,
+        entityId,
+      });
+    } catch {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message:
+          "This operation requires an approved workflow case for the same entity",
+      });
+    }
+
+    return next({ ctx });
+  },
+);
 
 export const withAuditTap = middleware(
   async ({ ctx, meta, path, type, next }) => {
@@ -685,6 +922,145 @@ function toRegistryError(
     : new TRPCError({ code: "BAD_REQUEST", message: fallbackMessage });
 }
 
+const governanceCaseIdInputSchema = z.object({
+  caseId: z.string().uuid(),
+}).strict();
+
+const governanceEntityInputSchema = z.object({
+  entityType: z.string().trim().min(1).max(150),
+  entityId: z.string().trim().min(1).max(200),
+}).strict();
+
+const governanceSubmitInputSchema = z.object({
+  entityType: z.string().trim().min(1).max(150),
+  entityId: z.string().trim().min(1).max(200),
+  approvalParticipantId: z.string().uuid(),
+  proposedChange: z.object({
+    before: z.unknown(),
+    after: z.unknown(),
+    impactSummary: z.unknown().optional(),
+  }).strict(),
+}).strict();
+
+const governanceEscalationIdInputSchema = z.object({
+  escalationId: z.string().uuid(),
+}).strict();
+
+const governanceEscalationOutputSchema = z.object({
+  id: z.string().uuid(),
+  caseId: z.string().uuid(),
+  participant: z.string().uuid(),
+  deadline: z.date(),
+  acknowledgedAt: z.date().nullable(),
+  acknowledgedBy: z.string().uuid().nullable(),
+  createdAt: z.date(),
+}).strict();
+
+const governanceDecisionInputSchema = z.object({
+  caseId: z.string().uuid(),
+
+  decision: z.enum([
+    "approve",
+    "reject",
+    "request_changes",
+  ]),
+
+  rationale: z
+    .string()
+    .trim()
+    .min(1)
+    .max(4000)
+    .optional(),
+}).strict();
+
+const governanceDecisionEvent = {
+  approve: "APPROVE",
+  reject: "REJECT",
+  request_changes: "REQUEST_CHANGES",
+} as const;
+
+const GOVERNANCE_API_ERROR_CODES = {
+  GOVERNANCE_CASE_NOT_FOUND:
+    "NOT_FOUND",
+
+  GOVERNANCE_ILLEGAL_TRANSITION:
+    "CONFLICT",
+
+  SEPARATION_OF_DUTIES_VIOLATION:
+    "FORBIDDEN",
+
+  GOVERNANCE_APPROVAL_REFERENCE_INVALID:
+    "FORBIDDEN",
+
+  GOVERNANCE_ESCALATION_NOT_FOUND:
+    "NOT_FOUND",
+
+  GOVERNANCE_ESCALATION_PARTICIPANT_MISMATCH:
+    "FORBIDDEN",
+} as const satisfies Record<
+  string,
+  TRPCError["code"]
+>;
+
+type GovernanceApiErrorCode =
+  keyof typeof GOVERNANCE_API_ERROR_CODES;
+
+function isGovernanceApiError(
+  error: unknown,
+): error is {
+  code: GovernanceApiErrorCode;
+  message: string;
+} {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (
+      error as {
+        code: unknown;
+      }
+    ).code === "string" &&
+    (
+      error as {
+        code: string;
+      }
+    ).code in
+      GOVERNANCE_API_ERROR_CODES
+  );
+}
+
+async function mapGovernanceErrors<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (
+      !isGovernanceApiError(
+        error,
+      )
+    ) {
+      throw new TRPCError({
+        code:
+          "INTERNAL_SERVER_ERROR",
+
+        message:
+          "Unable to complete governance operation",
+      });
+    }
+
+    throw new TRPCError({
+      code:
+        GOVERNANCE_API_ERROR_CODES[
+          error.code
+        ],
+
+      message:
+        error.message,
+    });
+  }
+}
+
 const rulesPreviewInputSchema = z.object({
   draftDocument: ruleDocumentSchema,
   sampleData: z.unknown(),
@@ -719,6 +1095,7 @@ const rulesCreateInputSchema = z.object({
 
 const rulesPublishInputSchema = z.object({
   ruleId: z.string().uuid(),
+  approvalCaseId: z.string().uuid(),
 }).strict();
 
 const rulesEvaluateInputSchema = z.object({
@@ -912,6 +1289,8 @@ const captureRecallInputSchema = z.object({
   sessionId: z.string().uuid(),
 }).strict();
 
+const bulkRowSchema = z.object({ row: z.number().int().positive(), period: z.string(), value: z.number().nullable(), outcome: z.enum(["accepted", "rejected", "warning"]), reason: z.string().optional() }).strict();
+
 const measurementListInputSchema = z.object({
   kpiVersionId: boundedIdentifierSchema.optional(),
   scopeNodeId: boundedIdentifierSchema.optional(),
@@ -953,8 +1332,7 @@ const rulesGetVersionInputSchema = z.object({
 // Registry schemas
 //
 // `strategyNodeId` / `objectiveNodeId` are validated as bounded identifiers
-// rather than UUIDs: the Strategy module owns their format and does not exist
-// yet, so asserting a shape here would be inventing its contract.
+// because the Strategy module owns their external identifier contract.
 // ---------------------------------------------------------------------------
 
 const kpiStatusSchema = z.enum(["draft", "active", "retired"]);
@@ -1009,6 +1387,17 @@ const kpiWithVersionOutputSchema = z.object({
   version: kpiVersionOutputSchema,
 }).strict();
 
+const kpiThresholdRuleBindingOutputSchema = z.object({
+  id: z.string().uuid(),
+  kpiVersionId: z.string().uuid(),
+  thresholdRuleId: z.string().uuid(),
+  ruleKey: z.string(),
+  ruleVersion: z.number().int().positive(),
+  createdAt: z.date(),
+  createdBy: z.string().uuid(),
+  supersedesBindingId: z.string().uuid().nullable(),
+}).strict();
+
 const registryCreateDraftInputSchema = z.object({
   kpiDefinitionId: z.string().uuid().optional(),
   nameEn: shortTextSchema,
@@ -1034,6 +1423,15 @@ const registryPublishVersionInputSchema = z.object({
 
 const registryKpiIdInputSchema = z.object({
   kpiDefinitionId: z.string().uuid(),
+}).strict();
+
+const registryKpiVersionIdInputSchema = z.object({
+  kpiVersionId: z.string().uuid(),
+}).strict();
+
+const registryBindThresholdRuleInputSchema = z.object({
+  kpiVersionId: z.string().uuid(),
+  thresholdRuleId: z.string().uuid(),
 }).strict();
 
 const registryFindSimilarInputSchema = z.object({
@@ -1120,6 +1518,10 @@ const registryCreateOkrInputSchema = z.object({
   }).strict()).min(1).max(20),
 }).strict();
 
+const registryOkrIdInputSchema = z.object({
+  okrId: z.string().uuid(),
+}).strict();
+
 const registryUpdateProgressInputSchema = z.object({
   keyResultId: z.string().uuid(),
   currentValue: z.number().finite(),
@@ -1156,6 +1558,113 @@ export const appRouter = router({
       .output(auditReconstructionOutputSchema)
       .query(({ ctx, input }) => ctx.audit.reconstructAsOf(input)),
   }),
+  governance: router({
+    submit:
+      protectedProcedure
+        .input(governanceSubmitInputSchema)
+        .mutation(({ ctx, input }) =>
+          mapGovernanceErrors(() =>
+            ctx.governance.submitCase({
+              ...input,
+              submittedBy: ctx.session.user.id,
+            }),
+          ),
+        ),
+
+    myPendingApprovals:
+      protectedProcedure.query(
+        ({ ctx }) =>
+          mapGovernanceErrors(
+            () =>
+              ctx.governance
+                .myPendingApprovals(
+                  ctx.session.user.id,
+                ),
+          ),
+      ),
+
+    getCase:
+      protectedProcedure
+        .input(
+          governanceCaseIdInputSchema,
+        )
+        .query(
+          ({ ctx, input }) =>
+            mapGovernanceErrors(
+              () =>
+                ctx.governance
+                  .getCase(
+                    input.caseId,
+                  ),
+            ),
+        ),
+
+    getLatestCaseForEntity:
+      protectedProcedure
+        .input(governanceEntityInputSchema)
+        .query(({ ctx, input }) =>
+          mapGovernanceErrors(() =>
+            ctx.governance.getLatestCaseForEntity(input.entityType, input.entityId),
+          ),
+        ),
+
+    decide:
+      protectedProcedure
+        .input(
+          governanceDecisionInputSchema,
+        )
+        .mutation(
+          ({ ctx, input }) =>
+            mapGovernanceErrors(
+              () =>
+                ctx.governance
+                  .transition({
+                    caseId:
+                      input.caseId,
+
+                    event: {
+                      type:
+                        governanceDecisionEvent[
+                          input.decision
+                        ],
+
+                      actorUserId:
+                        ctx.session
+                          .user.id,
+
+                      ...(input.rationale
+                        ? {
+                            rationale:
+                              input.rationale,
+                          }
+                        : {}),
+                    },
+                  }),
+            ),
+        ),
+    escalation: router({
+      acknowledge:
+        protectedProcedure
+          .input(
+            governanceEscalationIdInputSchema,
+          )
+          .output(
+            governanceEscalationOutputSchema,
+          )
+          .mutation(
+            ({ ctx, input }) =>
+              mapGovernanceErrors(
+                () =>
+                  ctx.governanceEscalation
+                    .acknowledge(
+                      input.escalationId,
+                      ctx.session.user.id,
+                    ),
+              ),
+          ),
+    }),
+  }),
+
   rules: router({
     create: protectedProcedure
       .input(rulesCreateInputSchema)
@@ -1178,14 +1687,30 @@ export const appRouter = router({
         return evaluateRule(input.draftDocument, validatedInput);
       }),
 
-    publish: requireRole("seo_administrator", "strategy_analyst")
+    publish: requireRole(
+      "seo_administrator",
+      "strategy_analyst",
+    )
       .input(rulesPublishInputSchema)
+      .meta({
+        requiresApprovalCase: {
+          entityType: "RuleDefinition",
+          entityIdField: "ruleId",
+        },
+      })
+      .use(withWorkflowReferenceCheck)
       .output(ruleDefinitionOutputSchema)
       .mutation(async ({ ctx, input }) => {
         try {
-          return await ctx.rules.publish(input.ruleId);
+          return await ctx.rules.publish(
+            input.ruleId,
+          );
         } catch {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Unable to publish rule" });
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message:
+              "Unable to publish rule",
+          });
         }
       }),
 
@@ -1209,7 +1734,18 @@ export const appRouter = router({
       .query(({ ctx, input }) => ctx.rules.getVersion(input.ruleKey, input.version)),
   }),
   performance: router({
+    detail: protectedProcedure
+      .input(z.object({ kpiDefinitionId: z.string().uuid() }).strict())
+      .query(({ ctx, input }) =>
+        mapPerformanceErrors(() => ctx.performance.getKpiDetail(input.kpiDefinitionId))),
     capture: router({
+      tasks: requireRole("kpi_owner", "data_steward").query(({ ctx }) => ctx.performance.listCaptureTasks(ctx.session.user.id)),
+      getSession: requireRole("kpi_owner", "data_steward").input(z.object({ sessionId: z.string().uuid() }).strict()).query(({ ctx, input }) => ctx.performance.getCaptureSession(input.sessionId)),
+      saveDraft: requireRole("kpi_owner", "data_steward").input(z.object({ sessionId: z.string().uuid(), value: z.number().finite(), evidenceRef: evidenceRefSchema.nullish() }).strict()).mutation(({ ctx, input }) => mapPerformanceErrors(() => ctx.performance.saveCaptureDraft(input.sessionId, ctx.session.user.id, input.value, input.evidenceRef))),
+      history: requireRole("kpi_owner", "data_steward").input(z.object({ kpiVersionId: boundedIdentifierSchema, scopeNodeId: boundedIdentifierSchema }).strict()).query(({ ctx, input }) => ctx.performance.captureHistory(input.kpiVersionId, input.scopeNodeId)),
+      template: requireRole("kpi_owner", "data_steward").input(z.object({ format: z.enum(["csv", "xlsx"]), period: periodSchema, priorValue: z.number().nullable() }).strict()).query(({ ctx, input }) => ({ base64: ctx.performance.captureTemplate(input.format, input.period, input.priorValue).toString("base64"), format: input.format })),
+      validateTemplate: requireRole("kpi_owner", "data_steward").input(z.object({ base64: z.string().max(14_000_000), format: z.enum(["csv", "xlsx"]), expectedPeriod: periodSchema, history: z.array(z.number().finite()).max(100) }).strict()).output(z.array(bulkRowSchema)).mutation(({ ctx, input }) => ctx.performance.validateCaptureTemplate(Buffer.from(input.base64, "base64"), input.format, input.expectedPeriod, input.history) as never),
+      uploadEvidence: requireRole("kpi_owner", "data_steward").input(z.object({ sessionId: z.string().uuid(), fileName: z.string().min(1).max(255), contentType: z.string().min(1).max(150), base64: z.string().max(14_000_000) }).strict()).mutation(({ ctx, input }) => ctx.performance.uploadCaptureEvidence(input.sessionId, input.fileName, input.contentType, Buffer.from(input.base64, "base64"))),
       startSession: requireRole("kpi_owner", "data_steward")
         .input(captureStartSessionInputSchema)
         .output(captureSessionOutputSchema)
@@ -1264,6 +1800,10 @@ export const appRouter = router({
     }),
 
     commentary: router({
+      list: protectedProcedure
+        .input(z.object({ kpiVersionId: boundedIdentifierSchema, scopeNodeId: boundedIdentifierSchema, period: periodSchema, limit: z.number().int().min(1).max(100).default(100) }).strict())
+        .output(z.array(commentaryOutputSchema))
+        .query(({ ctx, input }) => mapPerformanceErrors(() => ctx.performance.listCommentary(input))),
       add: requireRole("kpi_owner", "data_steward", "strategy_analyst")
         .input(commentaryAddInputSchema)
         .output(commentaryOutputSchema)
@@ -1297,6 +1837,17 @@ export const appRouter = router({
   }),
   registry: router({
     kpi: router({
+      list: protectedProcedure
+        .output(z.array(kpiWithVersionOutputSchema))
+        .query(({ ctx }) => ctx.registry.kpi.list()),
+
+      get: protectedProcedure
+        .input(registryKpiIdInputSchema)
+        .output(kpiWithVersionOutputSchema.nullable())
+        .query(({ ctx, input }) =>
+          ctx.registry.kpi.getById(input.kpiDefinitionId),
+        ),
+
       createDraft: registryAuthor()
         .input(registryCreateDraftInputSchema)
         .output(kpiWithVersionOutputSchema)
@@ -1363,9 +1914,42 @@ export const appRouter = router({
         .query(({ ctx, input }) =>
           ctx.registry.kpi.listVersions(input.kpiDefinitionId),
         ),
+
+      bindThresholdRule: registryAuthor()
+        .input(registryBindThresholdRuleInputSchema)
+        .output(kpiThresholdRuleBindingOutputSchema)
+        .mutation(async ({ ctx, input }) => {
+          try {
+            return await ctx.registry.kpi.bindThresholdRule({
+              ...input,
+              actorUserId: ctx.session.user.id,
+            });
+          } catch (error) {
+            throw toRegistryError(
+              error,
+              "Unable to bind threshold rule",
+            );
+          }
+        }),
+
+      getThresholdRuleBinding: protectedProcedure
+        .input(registryKpiVersionIdInputSchema)
+        .output(kpiThresholdRuleBindingOutputSchema.nullable())
+        .query(({ ctx, input }) =>
+          ctx.registry.kpi.getThresholdRuleBinding(input.kpiVersionId),
+        ),
     }),
 
     okr: router({
+      list: protectedProcedure
+        .output(z.array(okrOutputSchema))
+        .query(({ ctx }) => ctx.registry.okr.list()),
+
+      get: protectedProcedure
+        .input(registryOkrIdInputSchema)
+        .output(okrOutputSchema.nullable())
+        .query(({ ctx, input }) => ctx.registry.okr.getById(input.okrId)),
+
       create: registryAuthor()
         .input(registryCreateOkrInputSchema)
         .output(okrOutputSchema)

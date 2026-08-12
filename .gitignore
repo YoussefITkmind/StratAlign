@@ -48,3 +48,6 @@ apps/backend/src/generated/
 
 # Vercel
 .vercel
+
+# Local Pulumi state
+infrastructure/pulumi/.pulumi-state/

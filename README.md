@@ -254,7 +254,6 @@ StratAlign/
 │   │   │   │   ├── routers/
 │   │   │   │   │   └── audit.ts
 │   │   │   │   ├── backend-iam-client.ts
-│   │   │   │   ├── mock-db.ts
 │   │   │   │   └── trpc.ts
 │   │   │   └── services/
 │   │   │       └── iam.service.ts

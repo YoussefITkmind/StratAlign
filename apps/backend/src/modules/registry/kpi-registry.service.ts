@@ -23,11 +23,13 @@ import type {
   KpiFrequencyView,
   KpiPolarityView,
   KpiSimilarityMatch,
+  KpiThresholdRuleBindingView,
   KpiVersionView,
   KpiWithVersionView,
   RetirementImpactView,
   SimilarityMatchField,
 } from "./registry.types";
+import { ThresholdRuleBindingReader } from "./threshold-rule-binding.reader";
 
 export interface CreateKpiDraftInput {
   /** Omit to open the first version of a brand new KPI. */
@@ -59,6 +61,12 @@ export interface FindSimilarKpisInput {
   limit?: number;
   /** Excluded from results, so an edit does not match itself. */
   excludeKpiDefinitionId?: string;
+}
+
+export interface BindThresholdRuleInput {
+  kpiVersionId: string;
+  thresholdRuleId: string;
+  actorUserId: string;
 }
 
 const DEFAULT_SIMILARITY_THRESHOLD = 0.3;
@@ -408,13 +416,9 @@ export class KpiRegistryService {
   /**
    * Previews what retiring a KPI would strand.
    *
-   * Reports alignment ids and the strategy node ids they record. It does not
-   * resolve those nodes: the Strategy module owns them and does not exist
-   * here, so `strategyNodesVerified` reports whether anything actually
-   * confirmed them.
-   *
-   * TODO(2.1-2.3): once a StrategyNodeGateway adapter can resolve nodes,
-   * enrich each entry with node name and type.
+   * Reports alignment ids and the strategy node ids they record. Registry
+   * uses the configured Strategy gateway to report whether those references
+   * can be verified without taking ownership of Strategy data.
    * TODO(Phase 3): extend with scorecards and dashboards that consume this
    * KPI, which do not exist yet.
    */
@@ -478,6 +482,127 @@ export class KpiRegistryService {
     });
 
     return versions.map((version) => this.toVersionView(version));
+  }
+
+  /** Lists persisted KPIs with their active version, or latest draft. */
+  async list(): Promise<KpiWithVersionView[]> {
+    const definitions = await this.prisma.kpiDefinition.findMany({
+      include: {
+        activeVersion: true,
+        versions: { orderBy: { version: "desc" }, take: 1 },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return definitions.map((definition) => {
+      const version = definition.activeVersion ?? definition.versions[0];
+      if (!version) throw new RegistryOperationError("KPI has no version");
+      return {
+        definition: this.toDefinitionView(definition),
+        version: this.toVersionView(version),
+      };
+    });
+  }
+
+  /** Retrieves one persisted KPI with its active version, or latest draft. */
+  async getById(kpiDefinitionId: string): Promise<KpiWithVersionView | null> {
+    const definition = await this.prisma.kpiDefinition.findUnique({
+      where: { id: kpiDefinitionId },
+      include: {
+        activeVersion: true,
+        versions: { orderBy: { version: "desc" }, take: 1 },
+      },
+    });
+
+    if (!definition) return null;
+    const version = definition.activeVersion ?? definition.versions[0];
+    if (!version) throw new RegistryOperationError("KPI has no version");
+    return {
+      definition: this.toDefinitionView(definition),
+      version: this.toVersionView(version),
+    };
+  }
+
+  /**
+   * Binds a KPI version to the exact current published threshold-rule version.
+   * Rebinding closes the prior relationship and appends a new history row;
+   * neither referenced domain version is modified.
+   */
+  async bindThresholdRule(
+    input: BindThresholdRuleInput,
+  ): Promise<KpiThresholdRuleBindingView> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`KpiThresholdRuleBinding:${input.kpiVersionId}`}))`;
+
+        const kpiVersion = await tx.kpiVersion.findUnique({
+          where: { id: input.kpiVersionId },
+          select: { id: true },
+        });
+        if (!kpiVersion) {
+          throw new RegistryOperationError("KPI version was not found");
+        }
+
+        const thresholdRule = await tx.ruleDefinition.findUnique({
+          where: { id: input.thresholdRuleId },
+          select: {
+            id: true,
+            ruleKey: true,
+            version: true,
+            ruleType: true,
+            status: true,
+            isCurrent: true,
+          },
+        });
+        if (!thresholdRule) {
+          throw new RegistryOperationError("Threshold rule was not found");
+        }
+        if (thresholdRule.ruleType !== "THRESHOLD_STATUS") {
+          throw new RegistryOperationError(
+            "The binding must reference a threshold status rule",
+          );
+        }
+        if (thresholdRule.status !== "PUBLISHED" || !thresholdRule.isCurrent) {
+          throw new RegistryOperationError(
+            "The binding must reference the current published rule version",
+          );
+        }
+
+        const current = await tx.kpiThresholdRuleBinding.findFirst({
+          where: { kpiVersionId: input.kpiVersionId, isCurrent: true },
+          include: { thresholdRule: true },
+        });
+        if (current?.thresholdRuleId === thresholdRule.id) {
+          return this.toThresholdBindingView(current);
+        }
+        if (current) {
+          await tx.kpiThresholdRuleBinding.update({
+            where: { id: current.id },
+            data: { isCurrent: false },
+          });
+        }
+
+        const created = await tx.kpiThresholdRuleBinding.create({
+          data: {
+            kpiVersionId: input.kpiVersionId,
+            thresholdRuleId: thresholdRule.id,
+            createdById: input.actorUserId,
+            supersedesId: current?.id ?? null,
+          },
+          include: { thresholdRule: true },
+        });
+        return this.toThresholdBindingView(created);
+      });
+    } catch (error) {
+      throw this.rethrow(error);
+    }
+  }
+
+  async getThresholdRuleBinding(
+    kpiVersionId: string,
+  ): Promise<KpiThresholdRuleBindingView | null> {
+    return new ThresholdRuleBindingReader(this.prisma)
+      .getThresholdRuleBinding(kpiVersionId);
   }
 
   /**
@@ -592,6 +717,27 @@ export class KpiRegistryService {
       approvalCaseId: version.approvalCaseId,
       publishedAt: version.publishedAt,
       createdAt: version.createdAt,
+    };
+  }
+
+  private toThresholdBindingView(binding: {
+    id: string;
+    kpiVersionId: string;
+    thresholdRuleId: string;
+    supersedesId: string | null;
+    createdAt: Date;
+    createdById: string;
+    thresholdRule: { ruleKey: string; version: number };
+  }): KpiThresholdRuleBindingView {
+    return {
+      id: binding.id,
+      kpiVersionId: binding.kpiVersionId,
+      thresholdRuleId: binding.thresholdRuleId,
+      ruleKey: binding.thresholdRule.ruleKey,
+      ruleVersion: binding.thresholdRule.version,
+      createdAt: binding.createdAt,
+      createdBy: binding.createdById,
+      supersedesBindingId: binding.supersedesId,
     };
   }
 

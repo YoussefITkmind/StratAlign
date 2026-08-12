@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "scheduling", "strategy", "registry", "performance"]
+  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance"]
 }
 
 model SystemSetting {
@@ -21,31 +21,37 @@ model SystemSetting {
 }
 
 model User {
-  id                               String                   @id @default(uuid())
-  email                            String                   @unique
-  displayName                      String?                  @map("display_name")
-  emailVerifiedAt                  DateTime?                @map("email_verified_at")
-  preferredLocale                  String                   @default("en") @map("preferred_locale")
-  createdAt                        DateTime                 @default(now()) @map("created_at")
-  updatedAt                        DateTime                 @updatedAt @map("updated_at")
-  localCredential                  LocalCredential?
-  oidcIdentities                   OidcIdentity[]
-  scopeGrants                      ScopeGrant[]             @relation("ScopeGrantUser")
-  grantsGiven                      ScopeGrant[]             @relation("ScopeGrantGrantor")
-  mappingsCreated                  GroupRoleMapping[]       @relation("MappingCreator")
-  rulesCreated                     RuleDefinition[]         @relation("RuleDefinitionCreator")
-  notificationPreferences          NotificationPreference[] @relation("NotificationPreferenceRecipient")
-  notificationDeliveries           NotificationDelivery[]   @relation("NotificationDeliveryRecipient")
-  notificationDigests              NotificationDigest[]     @relation("NotificationDigestRecipient")
-  strategyNodesCreated             StrategyNode[]           @relation("StrategyNodeCreator")
-  strategyOwnerAssignments         OwnerAssignment[]        @relation("StrategyOwner")
-  strategyOwnerAssignmentsAssigned OwnerAssignment[]        @relation("StrategyAssigner")
-  strategyStagedChangesRequested   StagedChange[]           @relation("StrategyStagedChangeRequester")
-  kpiVersionsOwned                 KpiVersion[]             @relation("KpiVersionOwner")
-  kpiVersionsStewarded             KpiVersion[]             @relation("KpiVersionSteward")
-  measurementsSubmitted            Measurement[]            @relation("MeasurementSubmitter")
-  commentaryAuthored               Commentary[]             @relation("CommentaryAuthor")
-  captureSessionsOwned             CaptureSession[]         @relation("CaptureSessionOwner")
+  id                                String                    @id @default(uuid())
+  email                             String                    @unique
+  displayName                       String?                   @map("display_name")
+  emailVerifiedAt                   DateTime?                 @map("email_verified_at")
+  preferredLocale                   String                    @default("en") @map("preferred_locale")
+  createdAt                         DateTime                  @default(now()) @map("created_at")
+  updatedAt                         DateTime                  @updatedAt @map("updated_at")
+  localCredential                   LocalCredential?
+  oidcIdentities                    OidcIdentity[]
+  scopeGrants                       ScopeGrant[]              @relation("ScopeGrantUser")
+  grantsGiven                       ScopeGrant[]              @relation("ScopeGrantGrantor")
+  mappingsCreated                   GroupRoleMapping[]        @relation("MappingCreator")
+  rulesCreated                      RuleDefinition[]          @relation("RuleDefinitionCreator")
+  kpiThresholdBindingsCreated       KpiThresholdRuleBinding[] @relation("KpiThresholdBindingCreator")
+  notificationPreferences           NotificationPreference[]  @relation("NotificationPreferenceRecipient")
+  notificationDeliveries            NotificationDelivery[]    @relation("NotificationDeliveryRecipient")
+  notificationDigests               NotificationDigest[]      @relation("NotificationDigestRecipient")
+  strategyNodesCreated              StrategyNode[]            @relation("StrategyNodeCreator")
+  strategyOwnerAssignments          OwnerAssignment[]         @relation("StrategyOwner")
+  strategyOwnerAssignmentsAssigned  OwnerAssignment[]         @relation("StrategyAssigner")
+  strategyStagedChangesRequested    StagedChange[]            @relation("StrategyStagedChangeRequester")
+  kpiVersionsOwned                  KpiVersion[]              @relation("KpiVersionOwner")
+  kpiVersionsStewarded              KpiVersion[]              @relation("KpiVersionSteward")
+  measurementsSubmitted             Measurement[]             @relation("MeasurementSubmitter")
+  commentaryAuthored                Commentary[]              @relation("CommentaryAuthor")
+  captureSessionsOwned              CaptureSession[]          @relation("CaptureSessionOwner")
+  approvalCasesSubmitted            ApprovalCase[]            @relation("ApprovalCaseSubmitter")
+  approvalCasesAssigned             ApprovalCase[]            @relation("ApprovalCaseParticipant")
+  governanceEscalationsAssigned     EscalationCase[]          @relation("EscalationParticipant")
+  governanceEscalationsAcknowledged EscalationCase[]          @relation("EscalationAcknowledgedBy")
+  governanceDecisionsMade           DecisionLogEntry[]        @relation("DecisionLogActor")
 
   @@map("users")
   @@schema("iam")
@@ -194,9 +200,10 @@ model RuleDefinition {
   supersedes   RuleDefinition? @relation("RuleDefinitionVersions", fields: [supersedesId], references: [id], onDelete: Restrict)
   supersededBy RuleDefinition? @relation("RuleDefinitionVersions")
 
-  kpiRollupLinks         KpiHierarchyNode[] @relation("KpiHierarchyRollupRule")
-  statusResultsEvaluated StatusResult[]     @relation("StatusResultRuleVersion")
-  rollupResultsEvaluated RollupResult[]     @relation("RollupResultRuleVersion")
+  kpiRollupLinks         KpiHierarchyNode[]        @relation("KpiHierarchyRollupRule")
+  kpiThresholdBindings   KpiThresholdRuleBinding[] @relation("KpiThresholdBindingRule")
+  statusResultsEvaluated StatusResult[]            @relation("StatusResultRuleVersion")
+  rollupResultsEvaluated RollupResult[]            @relation("RollupResultRuleVersion")
 
   @@unique([ruleKey, version])
   @@index([ruleKey, isCurrent])
@@ -235,6 +242,120 @@ model DomainEvent {
   @@index([status, occurredAt])
   @@map("domain_events")
   @@schema("public")
+}
+
+// ---------------------------------------------------------------------------
+// Governance / Workflow
+// ---------------------------------------------------------------------------
+
+enum ApprovalCaseState {
+  DRAFT             @map("draft")
+  PENDING_APPROVAL  @map("pending_approval")
+  APPROVED          @map("approved")
+  REJECTED          @map("rejected")
+  CHANGES_REQUESTED @map("changes_requested")
+
+  @@schema("governance")
+}
+
+enum ApprovalDecision {
+  APPROVED @map("approved")
+  REJECTED @map("rejected")
+
+  @@schema("governance")
+}
+
+/// Immutable, versioned workflow-machine configuration.
+/// New versions append rows rather than mutating historical definitions.
+model WorkflowDefinition {
+  id             String   @id @default(uuid()) @db.Uuid
+  workflowKey    String   @map("workflow_key")
+  version        Int
+  definitionJson Json     @map("definition_json")
+  isCurrent      Boolean  @default(true) @map("is_current")
+  supersedesId   String?  @unique @map("supersedes_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  supersedes    WorkflowDefinition? @relation("WorkflowDefinitionVersions", fields: [supersedesId], references: [id], onDelete: Restrict)
+  supersededBy  WorkflowDefinition? @relation("WorkflowDefinitionVersions")
+  approvalCases ApprovalCase[]
+
+  @@unique([workflowKey, version])
+  @@index([workflowKey, isCurrent])
+  @@map("workflow_definitions")
+  @@schema("governance")
+}
+
+/// Persistent instance of a configured XState workflow.
+///
+/// xstateContextSnapshot stores the complete persisted XState snapshot
+/// required to recreate an actor after a process restart.
+model ApprovalCase {
+  id                    String            @id @default(uuid()) @db.Uuid
+  workflowDefinitionId  String            @map("workflow_definition_id") @db.Uuid
+  entityType            String            @map("entity_type")
+  entityId              String            @map("entity_id")
+  submittedBy           String            @map("submitted_by")
+  approvalParticipantId String?           @map("approval_participant_id")
+  approvalSlaMs         Int               @default(86400000) @map("approval_sla_ms")
+  currentState          ApprovalCaseState @default(DRAFT) @map("current_state")
+  xstateContextSnapshot Json              @map("xstate_context_snapshot")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+
+  workflowDefinition  WorkflowDefinition @relation(fields: [workflowDefinitionId], references: [id], onDelete: Restrict)
+  submitter           User               @relation("ApprovalCaseSubmitter", fields: [submittedBy], references: [id], onDelete: Restrict)
+  approvalParticipant User?              @relation("ApprovalCaseParticipant", fields: [approvalParticipantId], references: [id], onDelete: Restrict)
+  escalations         EscalationCase[]
+  decisionLog         DecisionLogEntry?
+
+  @@index([workflowDefinitionId])
+  @@index([entityType, entityId])
+  @@index([submittedBy])
+  @@index([approvalParticipantId, currentState])
+  @@index([currentState])
+  @@map("approval_cases")
+  @@schema("governance")
+}
+
+/// Escalation raised when an approval remains pending past its SLA deadline.
+model EscalationCase {
+  id             String    @id @default(uuid()) @db.Uuid
+  caseId         String    @map("case_id") @db.Uuid
+  participant    String
+  deadline       DateTime
+  acknowledgedAt DateTime? @map("acknowledged_at")
+  acknowledgedBy String?   @map("acknowledged_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  approvalCase    ApprovalCase @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  participantUser User         @relation("EscalationParticipant", fields: [participant], references: [id], onDelete: Restrict)
+  acknowledger    User?        @relation("EscalationAcknowledgedBy", fields: [acknowledgedBy], references: [id], onDelete: Restrict)
+
+  @@unique([caseId, participant, deadline])
+  @@index([caseId])
+  @@index([participant, acknowledgedAt])
+  @@index([deadline, acknowledgedAt])
+  @@map("escalation_cases")
+  @@schema("governance")
+}
+
+/// Immutable terminal approval/rejection record.
+model DecisionLogEntry {
+  id        String           @id @default(uuid()) @db.Uuid
+  caseId    String           @unique @map("case_id") @db.Uuid
+  decision  ApprovalDecision
+  decidedBy String           @map("decided_by")
+  decidedAt DateTime         @default(now()) @map("decided_at")
+  rationale String?
+
+  approvalCase ApprovalCase @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  actor        User         @relation("DecisionLogActor", fields: [decidedBy], references: [id], onDelete: Restrict)
+
+  @@index([decidedBy])
+  @@index([decidedAt])
+  @@map("decision_log_entries")
+  @@schema("governance")
 }
 
 model JournalEntry {
@@ -878,7 +999,7 @@ model KpiVersion {
   performanceCommentary   Commentary[]     @relation("PerformanceCommentaryKpiVersion")
   performanceSessions     CaptureSession[] @relation("PerformanceCaptureKpiVersion")
 
-  performanceThresholdBinding PerformanceKpiBinding? @relation("PerformanceThresholdKpiVersion")
+  thresholdRuleBindings       KpiThresholdRuleBinding[] @relation("KpiThresholdBindingVersion")
 
   @@unique([kpiDefinitionId, version])
   @@index([kpiDefinitionId, activeFrom])
@@ -973,6 +1094,31 @@ model KpiHierarchyNode {
   @@index([childKpiId])
   @@index([rollupMethodRuleId])
   @@map("kpi_hierarchy_nodes")
+  @@schema("registry")
+}
+
+/// Registry-owned, append-preserving history of threshold rule assignments.
+/// Each row references an immutable KPI version and an immutable Rules-owned
+/// RuleDefinition version. Exactly one row per KPI version may be current.
+model KpiThresholdRuleBinding {
+  id              String   @id @default(uuid())
+  kpiVersionId    String   @map("kpi_version_id")
+  thresholdRuleId String   @map("threshold_rule_id")
+  isCurrent       Boolean  @default(true) @map("is_current")
+  supersedesId    String?  @unique @map("supersedes_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  createdById     String   @map("created_by")
+
+  kpiVersion    KpiVersion               @relation("KpiThresholdBindingVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  thresholdRule RuleDefinition           @relation("KpiThresholdBindingRule", fields: [thresholdRuleId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdBy     User                     @relation("KpiThresholdBindingCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  supersedes    KpiThresholdRuleBinding? @relation("KpiThresholdBindingHistory", fields: [supersedesId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  supersededBy  KpiThresholdRuleBinding? @relation("KpiThresholdBindingHistory")
+
+  @@index([kpiVersionId, isCurrent])
+  @@index([thresholdRuleId])
+  @@index([createdById])
+  @@map("kpi_threshold_rule_bindings")
   @@schema("registry")
 }
 
@@ -1145,6 +1291,8 @@ model CaptureSession {
   recallDeadlineAt       DateTime? @map("recall_deadline_at")
   /// Set once a downstream consumer has taken the submission. Hard cutoff.
   consumedAt             DateTime? @map("consumed_at")
+  draftValue             Decimal?  @map("draft_value") @db.Decimal(30, 10)
+  draftEvidenceRef       String?   @map("draft_evidence_ref")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1158,25 +1306,5 @@ model CaptureSession {
   @@index([ownerId])
   @@index([state])
   @@map("capture_sessions")
-  @@schema("performance")
-}
-
-/// TEMPORARY THRESHOLD-RULE SEAM.
-///
-/// Registry 2.4 is now the source of truth for KPI identity, active versions
-/// and hierarchy. This table exists only until Prompt 2.6 provides the
-/// permanent KPI -> threshold-rule binding.
-model PerformanceKpiBinding {
-  id               String  @id @default(uuid())
-  kpiVersionId     String  @unique @map("kpi_version_id")
-  thresholdRuleKey String? @map("threshold_rule_key")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  kpiVersion KpiVersion @relation("PerformanceThresholdKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
-  @@index([thresholdRuleKey])
-  @@map("kpi_bindings")
   @@schema("performance")
 }

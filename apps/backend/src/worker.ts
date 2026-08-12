@@ -22,6 +22,8 @@ import { StubSiemForwarder } from "./modules/audit/siem-forwarder";
 import { StrategyActivationService } from "./modules/strategy/strategy-activation.service";
 import { StrategyApprovalSubscriber } from "./modules/strategy/strategy-approval.subscriber";
 import { StrategyTraversalService } from "./modules/strategy/strategy-traversal.service";
+import { GovernanceEscalationService } from "./modules/governance/governance-escalation.service";
+import { GovernancePendingApprovalSubscriber } from "./modules/governance/governance-pending.subscriber";
 import { TraceabilityRefreshSubscriber } from "./modules/strategy/traceability-refresh.subscriber";
 
 import { CadenceEngine } from "./modules/cadence/cadence.engine";
@@ -41,7 +43,7 @@ import { ScheduleNotificationSubscriber } from "./modules/notifications/subscrib
 
 import { RulesService } from "./modules/rules/rules.service";
 import { MeasurementService } from "./modules/performance/measurement.service";
-import { KpiBindingService } from "./modules/performance/kpi-binding.service";
+import { ThresholdRuleBindingReader } from "./modules/registry/threshold-rule-binding.reader";
 import { RecomputeService } from "./modules/performance/recompute.service";
 import { PerformanceRecomputeSubscriber } from "./modules/performance/subscribers/performance-recompute.subscriber";
 
@@ -49,6 +51,7 @@ import { createEventDispatchWorker, createOutboxRelayWorker } from "./workers/ev
 import { createAuditVerificationWorker } from "./workers/audit.workers";
 import { createMaterializeWorker, createSchedulerTickWorker, createTransitionWorker } from "./workers/scheduler.workers";
 import { createDigestSweepWorker, createNotificationDeliveryWorker } from "./workers/notification.workers";
+import { createGovernanceEscalationWorker } from "./workers/governance.workers";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -77,6 +80,18 @@ async function bootstrap(): Promise<void> {
     logger.child("event-bus"),
   );
   const subscriberRegistry = new EventSubscriberRegistry();
+
+  const governanceEscalation =
+    new GovernanceEscalationService(
+      prisma,
+      eventBus,
+    );
+
+  subscriberRegistry.register(
+    new GovernancePendingApprovalSubscriber(
+      queueService,
+    ),
+  );
 
   const journal = new JournalService(prisma);
   const siemForwarder = new StubSiemForwarder(logger.child("siem"));
@@ -193,7 +208,7 @@ async function bootstrap(): Promise<void> {
           eventBus,
           logger.child("performance-measurement"),
         ),
-        new KpiBindingService(prisma),
+        new ThresholdRuleBindingReader(prisma),
         new RulesService(prisma),
         eventBus,
         logger.child("performance-recompute"),
@@ -216,6 +231,13 @@ async function bootstrap(): Promise<void> {
 
   await Promise.all([prisma.connect(), redis.connect()]);
   const concurrency = environment.WORKER_CONCURRENCY;
+
+  workerFactory.create(
+    createGovernanceEscalationWorker(
+      governanceEscalation,
+      concurrency,
+    ),
+  );
 
   workerFactory.create(
     createAuditVerificationWorker(

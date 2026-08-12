@@ -38,7 +38,13 @@ const retire = vi.fn();
 const findSimilar = vi.fn();
 const retirementImpact = vi.fn();
 const listVersions = vi.fn();
+const listKpis = vi.fn();
+const getKpi = vi.fn();
+const bindThresholdRule = vi.fn();
+const getThresholdRuleBinding = vi.fn();
 const createOkr = vi.fn();
+const listOkrs = vi.fn();
+const getOkr = vi.fn();
 const updateProgress = vi.fn();
 const setAlignments = vi.fn();
 const setRollup = vi.fn();
@@ -66,8 +72,17 @@ function context(sessionOverride: typeof session | null = session) {
         findSimilar,
         retirementImpact,
         listVersions,
+        list: listKpis,
+        getById: getKpi,
+        bindThresholdRule,
+        getThresholdRuleBinding,
       },
-      okr: { create: createOkr, updateProgress },
+      okr: {
+        create: createOkr,
+        updateProgress,
+        list: listOkrs,
+        getById: getOkr,
+      },
       alignment: { set: setAlignments },
       hierarchy: { setRollup },
     },
@@ -140,6 +155,8 @@ describe("registry tRPC surface", () => {
     retire.mockResolvedValue({ ...definitionOutput, status: "retired" });
     findSimilar.mockResolvedValue([]);
     listVersions.mockResolvedValue([versionOutput]);
+    listKpis.mockResolvedValue([kpiWithVersion]);
+    getKpi.mockResolvedValue(kpiWithVersion);
     retirementImpact.mockResolvedValue({
       kpiDefinitionId,
       status: "active",
@@ -157,6 +174,19 @@ describe("registry tRPC surface", () => {
       updatedAt: new Date(),
       keyResults: [],
     });
+    listOkrs.mockResolvedValue([]);
+    getOkr.mockResolvedValue(null);
+    bindThresholdRule.mockResolvedValue({
+      id: "77777777-7777-4777-8777-777777777777",
+      kpiVersionId,
+      thresholdRuleId: ruleId,
+      ruleKey: "customer-satisfaction-threshold",
+      ruleVersion: 1,
+      createdAt: new Date(),
+      createdBy: userId,
+      supersedesBindingId: null,
+    });
+    getThresholdRuleBinding.mockResolvedValue(null);
     updateProgress.mockResolvedValue({
       id: keyResultId,
       okrId,
@@ -188,6 +218,16 @@ describe("registry tRPC surface", () => {
       await expect(
         caller.registry.kpi.findSimilar({ text: "anything" }),
       ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+
+      await expect(caller.registry.kpi.list()).rejects.toMatchObject({
+        code: "UNAUTHORIZED",
+      });
+      await expect(
+        caller.registry.kpi.get({ kpiDefinitionId }),
+      ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+      await expect(caller.registry.okr.list()).rejects.toMatchObject({
+        code: "UNAUTHORIZED",
+      });
 
       await expect(
         caller.registry.okr.create({
@@ -239,6 +279,14 @@ describe("registry tRPC surface", () => {
       });
 
       expect(createDraft).not.toHaveBeenCalled();
+
+      await expect(
+        appRouter.createCaller(context()).registry.kpi.bindThresholdRule({
+          kpiVersionId,
+          thresholdRuleId: ruleId,
+        }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(bindThresholdRule).not.toHaveBeenCalled();
     });
 
     it("restricts publish and retire to lifecycle roles", async () => {
@@ -285,6 +333,29 @@ describe("registry tRPC surface", () => {
       await expect(
         caller.registry.kpi.listVersions({ kpiDefinitionId }),
       ).resolves.toHaveLength(1);
+
+      await expect(caller.registry.kpi.list()).resolves.toHaveLength(1);
+      await expect(
+        caller.registry.kpi.get({ kpiDefinitionId }),
+      ).resolves.toEqual(kpiWithVersion);
+      await expect(caller.registry.okr.list()).resolves.toEqual([]);
+      await expect(caller.registry.okr.get({ okrId })).resolves.toBeNull();
+      await expect(
+        caller.registry.kpi.getThresholdRuleBinding({ kpiVersionId }),
+      ).resolves.toBeNull();
+    });
+
+    it("allows an author to bind and stamps the authenticated actor", async () => {
+      await appRouter.createCaller(context()).registry.kpi.bindThresholdRule({
+        kpiVersionId,
+        thresholdRuleId: ruleId,
+      });
+
+      expect(bindThresholdRule).toHaveBeenCalledWith({
+        kpiVersionId,
+        thresholdRuleId: ruleId,
+        actorUserId: userId,
+      });
     });
   });
 

@@ -50,6 +50,13 @@ const RETRY_POLICIES: Record<QueueName, JobsOptions> = {
     attempts: 3,
     backoff: { type: "jittered-exponential", delay: 10_000 },
   },
+  [QUEUE_NAMES.governanceEscalation]: {
+    attempts: 5,
+    backoff: {
+      type: "jittered-exponential",
+      delay: 2_000,
+    },
+  },
   [QUEUE_NAMES.deadLetter]: {
     attempts: 1,
   },

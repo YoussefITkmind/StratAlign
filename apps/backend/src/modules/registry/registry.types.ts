@@ -53,6 +53,17 @@ export interface KpiWithVersionView {
   version: KpiVersionView;
 }
 
+export interface KpiThresholdRuleBindingView {
+  id: string;
+  kpiVersionId: string;
+  thresholdRuleId: string;
+  ruleKey: string;
+  ruleVersion: number;
+  createdAt: Date;
+  createdBy: string;
+  supersedesBindingId: string | null;
+}
+
 /** Which column produced a trigram hit, and how strongly. */
 export interface SimilarityMatchField {
   field: "nameEn" | "nameAr" | "descriptionEn" | "descriptionAr";
@@ -90,10 +101,7 @@ export interface RetirementImpactView {
   affectedStrategyNodeIds: string[];
   /** Hierarchy edges where this KPI is the parent or the child. */
   affectedHierarchyEdges: KpiHierarchyEdgeView[];
-  /**
-   * False while no Strategy module adapter is wired, meaning the node ids
-   * are reported as recorded and have not been confirmed to exist.
-   */
+  /** Whether the configured Strategy adapter can verify referenced nodes. */
   strategyNodesVerified: boolean;
 }
 

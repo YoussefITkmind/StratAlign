@@ -1,0 +1,6 @@
+name: stratalign-dev-infrastructure
+runtime:
+  name: nodejs
+  options:
+    typescript: true
+description: StratAlign DEV data and storage infrastructure

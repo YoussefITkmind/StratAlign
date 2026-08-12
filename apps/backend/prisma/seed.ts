@@ -33,6 +33,11 @@ const testUsers = [
     email: "carol@example.test",
     displayName: "Carol Test User",
   },
+  {
+    email: "team@test.com",
+    displayName: "Team Development User",
+    password: "Team123!",
+  },
 ];
 
 const roleDescriptions: Record<(typeof PLATFORM_ROLES)[number], string> = {
@@ -129,7 +134,9 @@ async function seedTestUsers(): Promise<void> {
       },
     });
 
-    const passwordHash = await hashPassword(testPassword);
+    const passwordHash = await hashPassword(
+      testUser.password ?? testPassword,
+    );
 
     await prisma.localCredential.upsert({
       where: {
@@ -151,6 +158,7 @@ async function seedTestUsers(): Promise<void> {
 
   const administratorId = users.get("bob@example.test")!;
   const ordinaryUserId = users.get("alice@example.test")!;
+  const teamUserId = users.get("team@test.com")!;
   const analystRole = await prisma.role.findUniqueOrThrow({
     where: { name: "strategy_analyst" },
   });
@@ -161,6 +169,7 @@ async function seedTestUsers(): Promise<void> {
   for (const grant of [
     { userId: administratorId, roleId: administratorRole.id },
     { userId: ordinaryUserId, roleId: analystRole.id },
+    { userId: teamUserId, roleId: administratorRole.id },
   ]) {
     await prisma.scopeGrant.upsert({
       where: {

@@ -1,52 +1,256 @@
-import { test, expect } from "@playwright/test";
-import { loginAs } from "./utils";
+import {
+  execFile,
+} from "node:child_process";
 
-test.describe("STRAAL-36 — approvals inbox", () => {
-  test("lists pending approvals, excludes the viewer's own submission, and shows the escalated case", async ({
-    page,
-  }) => {
-    await loginAs(page, "platform_administrator");
-    await page.goto("/approvals");
+import {
+  resolve,
+} from "node:path";
 
-    const list = page.getByTestId("approvals-list");
-    // Seeded case-seed-role-grant was submitted by admin@stratalign.dev — must not appear.
-    await expect(list.getByText("role_grant")).toHaveCount(0);
-    // Seeded case-seed-group-mapping was submitted by demo@stratalign.dev and is escalated.
-    await expect(list.getByText("group_role_mapping_change")).toBeVisible();
-    await expect(list.getByTestId("escalated-badge")).toBeVisible();
-  });
+import {
+  promisify,
+} from "node:util";
 
-  test("case detail shows the before/after diff and approving it succeeds", async ({ page }) => {
-    await loginAs(page, "platform_administrator");
-    await page.goto("/approvals/case-seed-group-mapping");
+import {
+  test,
+  expect,
+} from "@playwright/test";
 
-    await expect(page.getByRole("cell", { name: "stratalign-analysts" }).first()).toBeVisible();
-    await expect(page.getByRole("cell", { name: "member" })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "platform_administrator" })).toBeVisible();
+import {
+  loginAs,
+} from "./utils";
 
-    await page.getByTestId("approve-case").click();
-    await expect(page.getByTestId("decision-badge")).toContainText("Approved");
-  });
+const execFileAsync =
+  promisify(execFile);
 
-  test("separation of duties: the submitter cannot approve their own case, even navigating there directly", async ({
-    page,
-  }) => {
-    await loginAs(page, "platform_administrator");
-    // case-seed-role-grant was submitted by admin@stratalign.dev (this session) —
-    // navigate straight to it, bypassing the list where it's correctly hidden.
-    await page.goto("/approvals/case-seed-role-grant");
+const workspaceRoot =
+  resolve(
+    __dirname,
+    "../../..",
+  );
 
-    await page.getByTestId("approve-case").click();
-    await expect(page.getByTestId("decision-error")).toContainText(
-      /cannot decide it yourself/i
+const APPROVER_CASE_ID =
+  "70000000-0000-4000-8000-000000000001";
+
+const OWN_CASE_ID =
+  "70000000-0000-4000-8000-000000000002";
+
+async function resetGovernanceFixtures() {
+  await execFileAsync(
+    "pnpm",
+    [
+      "--filter",
+      "@spm/backend",
+      "exec",
+      "tsx",
+      "prisma/e2e-governance-seed.ts",
+    ],
+    {
+      cwd:
+        workspaceRoot,
+
+      env:
+        process.env,
+    },
+  );
+}
+
+test.describe(
+  "Governance approvals — real backend",
+  () => {
+    test.beforeEach(
+      async () => {
+        await resetGovernanceFixtures();
+      },
     );
 
-    // Direct procedure call must reject it too, not just the button in the UI.
-    const response = await page.request.post("/api/trpc/governance.decide", {
-      data: { json: { id: "case-seed-role-grant", decision: "approved" } },
-    });
-    expect(response.status()).toBe(403);
-    const body = await response.json();
-    expect(body.error.json.data.ownSubmission).toBe(true);
-  });
-});
+    test(
+      "lists only real approvals assigned to the authenticated approver",
+      async ({
+        page,
+      }) => {
+        await loginAs(
+          page,
+          "platform_administrator",
+        );
+
+        await page.goto(
+          "/approvals",
+        );
+
+        const list =
+          page.getByTestId(
+            "approvals-list",
+          );
+
+        /*
+         * Alice's case is assigned to Bob,
+         * therefore Bob sees it.
+         */
+        await expect(
+          list.getByText(
+            "GroupRoleMapping",
+          ),
+        ).toBeVisible();
+
+        /*
+         * Bob submitted the RoleGrant
+         * himself, so the real backend
+         * myPendingApprovals query must
+         * exclude it.
+         */
+        await expect(
+          list.getByText(
+            "RoleGrant",
+          ),
+        ).toHaveCount(
+          0,
+        );
+      },
+    );
+
+    test(
+      "shows the persisted before/after diff and approves through real Governance",
+      async ({
+        page,
+      }) => {
+        await loginAs(
+          page,
+          "platform_administrator",
+        );
+
+        await page.goto(
+          `/approvals/${APPROVER_CASE_ID}`,
+        );
+
+        await expect(
+          page.getByRole(
+            "cell",
+            {
+              name:
+                "stratalign-analysts",
+            },
+          ).first(),
+        ).toBeVisible();
+
+        await expect(
+          page.getByRole(
+            "cell",
+            {
+              name:
+                "member",
+            },
+          ),
+        ).toBeVisible();
+
+        await expect(
+          page.getByRole(
+            "cell",
+            {
+              name:
+                "platform_administrator",
+            },
+          ),
+        ).toBeVisible();
+
+        await page
+          .getByTestId(
+            "approve-case",
+          )
+          .click();
+
+        await expect(
+          page.getByTestId(
+            "decision-badge",
+          ),
+        ).toContainText(
+          "Approved",
+        );
+
+        /*
+         * Reload proves this is persisted
+         * PostgreSQL state, not local UI state.
+         */
+        await page.reload();
+
+        await expect(
+          page.getByTestId(
+            "decision-badge",
+          ),
+        ).toContainText(
+          "Approved",
+        );
+      },
+    );
+
+    test(
+      "enforces separation of duties through the real backend",
+      async ({
+        page,
+      }) => {
+        await loginAs(
+          page,
+          "platform_administrator",
+        );
+
+        /*
+         * This case was submitted by Bob,
+         * the same authenticated user.
+         */
+        await page.goto(
+          `/approvals/${OWN_CASE_ID}`,
+        );
+
+        await page
+          .getByTestId(
+            "approve-case",
+          )
+          .click();
+
+        await expect(
+          page.getByTestId(
+            "decision-error",
+          ),
+        ).toContainText(
+          /different user/i,
+        );
+
+        /*
+         * Bypass the button and call the
+         * frontend tRPC endpoint directly.
+         *
+         * The backend must still reject it.
+         */
+        const response =
+          await page.request.post(
+            "/api/trpc/governance.decide",
+            {
+              data: {
+                json: {
+                  id:
+                    OWN_CASE_ID,
+
+                  decision:
+                    "approved",
+                },
+              },
+            },
+          );
+
+        expect(
+          response.status(),
+        ).toBe(
+          403,
+        );
+
+        const body =
+          await response.json();
+
+        expect(
+          body.error.json.data.code,
+        ).toBe(
+          "FORBIDDEN",
+        );
+      },
+    );
+  },
+);

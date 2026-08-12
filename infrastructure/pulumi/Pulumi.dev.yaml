@@ -1,0 +1,18 @@
+config:
+  stratalign-dev-infrastructure:postgresPort: "15432"
+  stratalign-dev-infrastructure:redisPort: "16379"
+  stratalign-dev-infrastructure:minioApiPort: "19000"
+  stratalign-dev-infrastructure:minioConsolePort: "19001"
+  stratalign-dev-infrastructure:postgresUser: spm
+  stratalign-dev-infrastructure:postgresDatabase: spm_platform
+  stratalign-dev-infrastructure:postgresImage: postgres:17-alpine
+  stratalign-dev-infrastructure:redisImage: redis:7-alpine
+  stratalign-dev-infrastructure:minioImage: minio/minio:RELEASE.2025-09-07T16-13-09Z
+  stratalign-dev-infrastructure:minioClientImage: minio/mc:RELEASE.2025-08-13T08-35-41Z
+  stratalign-dev-infrastructure:postgresPassword:
+    secure: v1:MXHdDnJHPEXvdprc:u6EhIWmg2h7+V5yf1pQEeUY0iwEY8GWZx27sYCE4L8FvO3Ku5AsIEl+gGSoOMWxFKS+7nlrpAvmWuq+ZlR4mMGDnRlQAmuCZht4YJmN02cI=
+  stratalign-dev-infrastructure:minioRootUser:
+    secure: v1:sEyPkQOvNUh1PiEr:K5rayRJehUWz6VqwrvBPUWyKS+UfYWwz/traRpE9m1bYlGZkaA66fGTPLA==
+  stratalign-dev-infrastructure:minioRootPassword:
+    secure: v1:8aZ3nEWe6roWxh9V:T3dfreQFvOJFl40LKYtTDSjopQTDS592AESGc3gVnljFlZc9gnlWPQt0py4SD0d5SkR1MrD0xUO5FjWQPz8PJmFlacm6jQosbTWQZYcc8Ds=
+encryptionsalt: v1:Bn5ZemoKipg=:v1:v36zTZfupiKmyRiF:FniYIh+xOlKxCESX4oUKViDwhoIzdw==

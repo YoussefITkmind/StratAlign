@@ -1,59 +1,80 @@
-import { RegistryApprovalError } from "../registry.errors";
+import {
+  RegistryApprovalError,
+} from "../registry.errors";
 
-/**
- * Integration seam onto the Workflow module (Prompt 1.5).
- *
- * The registry must not publish a KPI version unless an ApprovalCase exists
- * and is APPROVED. That case is owned by the Workflow module, which does not
- * exist in this repository yet — there is no `approval_cases` table and the
- * registry deliberately does not create one, because approval cases are not
- * registry data.
- *
- * The dependency is therefore expressed as a port. `KpiRegistryService` calls
- * `assertApproved` and never reasons about approval itself, so wiring the real
- * workflow engine later is a composition-root change only.
- */
 export interface ApprovalGateway {
   /**
-   * Resolves normally when `approvalCaseId` identifies a case that is
-   * APPROVED and governs `subject`. Throws `RegistryApprovalError` otherwise.
+   * Resolves only when the referenced approval case is
+   * APPROVED and governs the exact requested subject.
    *
-   * Implementations must fail closed: an unknown case, an unreachable
-   * workflow service, or any ambiguity is a refusal, never an approval.
+   * Implementations must fail closed.
    */
-  assertApproved(input: ApprovalCheck): Promise<void>;
+  assertApproved(
+    input: ApprovalCheck,
+  ): Promise<void>;
 }
 
 export interface ApprovalCheck {
   approvalCaseId: string;
-  /** Aggregate the case is expected to govern, e.g. "KpiDefinition". */
   subjectType: string;
   subjectId: string;
 }
 
 /**
- * The production adapter until Prompt 1.5 lands.
+ * Minimal structural contract exposed by Governance.
  *
- * It refuses every publication. That is the correct behaviour for an absent
- * authorisation dependency: the alternative — allowing publication because the
- * checker is missing — would turn a governance control into a no-op the moment
- * it is most likely to be overlooked.
- *
- * Consequence: `registry.kpi.publishVersion` is inert in production until the
- * workflow module is delivered and a real adapter replaces this one in
- * `main.ts`. Draft creation, alignment, hierarchy and search are unaffected.
- *
- * TODO(1.5): replace with an adapter backed by the workflow module's
- * ApprovalCase store, checking status === APPROVED and that the case subject
- * matches the KPI definition being published.
+ * Keeping Registry dependent on this small port avoids
+ * coupling the Registry module to Governance internals.
  */
-export class UnavailableApprovalGateway implements ApprovalGateway {
-  assertApproved(input: ApprovalCheck): Promise<void> {
-    return Promise.reject(
-      new RegistryApprovalError(
-        `Approval case ${input.approvalCaseId} cannot be verified: ` +
-          "the workflow module is not available in this deployment",
-      ),
-    );
+export interface GovernanceApprovalVerifier {
+  assertApproved(input: {
+    approvalCaseId: string;
+    entityType: string;
+    entityId: string;
+  }): Promise<void>;
+}
+
+/**
+ * Production adapter from Registry publication checks to
+ * the Governance ApprovalCase store.
+ *
+ * Governance owns the approval state and verifies:
+ *
+ *   - the ApprovalCase exists
+ *   - its state is APPROVED
+ *   - entityType matches
+ *   - entityId matches
+ *
+ * Any failure is translated into the Registry domain's
+ * fail-closed approval error.
+ */
+export class GovernanceApprovalGateway
+  implements ApprovalGateway
+{
+  constructor(
+    private readonly governance:
+      GovernanceApprovalVerifier,
+  ) {}
+
+  async assertApproved(
+    input: ApprovalCheck,
+  ): Promise<void> {
+    try {
+      await this.governance.assertApproved({
+        approvalCaseId:
+          input.approvalCaseId,
+
+        entityType:
+          input.subjectType,
+
+        entityId:
+          input.subjectId,
+      });
+    } catch {
+      throw new RegistryApprovalError(
+        `Approval case ${input.approvalCaseId} is not approved ` +
+          `for ${input.subjectType} ${input.subjectId}`,
+      );
+    }
   }
 }

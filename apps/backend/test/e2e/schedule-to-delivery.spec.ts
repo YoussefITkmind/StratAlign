@@ -344,7 +344,27 @@ describe("End to end: compressed schedule through to delivery", () => {
       where: { eventType: SCHEDULE_EVENT_TYPES.reviewDue },
     });
 
+    // The review-due delivery can finish before one of the other three
+    // milestone deliveries. Establish a quiescent baseline so a legitimate
+    // in-flight milestone cannot be mistaken for a duplicate review email.
+    await waitFor("all milestone deliveries to be sent before replay", async () => {
+      const rows = await harness.prisma.notificationDelivery.findMany({
+        where: { recipientUserId: "user:ada" },
+      });
+
+      return rows.length === 4 &&
+        rows.every((row) => row.status === NotificationDeliveryStatus.SENT)
+        ? rows
+        : null;
+    });
+
     const sentBefore = harness.emailSender.messages().length;
+    expect(sentBefore).toBe(4);
+    expect(
+      harness.emailSender.messages().filter(
+        (message) => message.deliveryId === delivery.id,
+      ),
+    ).toHaveLength(1);
 
     // Replay the event through the subscriber, as an at-least-once transport
     // legitimately might.
@@ -363,6 +383,11 @@ describe("End to end: compressed schedule through to delivery", () => {
     });
 
     expect(harness.emailSender.messages()).toHaveLength(sentBefore);
+    expect(
+      harness.emailSender.messages().filter(
+        (message) => message.deliveryId === delivery.id,
+      ),
+    ).toHaveLength(1);
 
     expect(
       await harness.prisma.notificationDelivery.count({

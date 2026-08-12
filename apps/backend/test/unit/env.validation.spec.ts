@@ -8,6 +8,10 @@ const validEnvironment = {
   DATABASE_URL:
     "postgresql://spm:spm_dev_password@localhost:5432/spm_platform",
   REDIS_URL: "redis://localhost:6379",
+  OBJECT_STORAGE_ENDPOINT: "http://localhost:19000",
+  OBJECT_STORAGE_ACCESS_KEY: "test-access-key",
+  OBJECT_STORAGE_SECRET_KEY: "test-secret-key",
+  OBJECT_STORAGE_BUCKET: "artifacts",
   AUTH_SECRET: "test-auth-secret-at-least-32-characters-long",
   AUTH_OIDC_ISSUER: "http://localhost:8092/",
   AUTH_OIDC_CLIENT_ID: "spm-web",

@@ -18,6 +18,8 @@ import { AuthenticationFreshnessService } from "./modules/iam/authentication-fre
 import { IamAuthorizationService } from "./modules/iam/iam-authorization.service";
 import { IamAdminService } from "./modules/iam/iam-admin.service";
 import { RulesService } from "./modules/rules/rules.service";
+import { GovernanceService } from "./modules/governance/governance.service";
+import { GovernanceEscalationService } from "./modules/governance/governance-escalation.service";
 import { SnapshotService } from "./modules/audit/snapshot.service";
 import { ApiAuditTapService } from "./modules/audit/api-audit-tap.service";
 import { StrategyService } from "./modules/strategy/strategy.service";
@@ -26,13 +28,15 @@ import { KpiRegistryService } from "./modules/registry/kpi-registry.service";
 import { OkrService } from "./modules/registry/okr.service";
 import { AlignmentService } from "./modules/registry/alignment.service";
 import { KpiHierarchyService } from "./modules/registry/kpi-hierarchy.service";
-import { UnavailableApprovalGateway } from "./modules/registry/gateways/approval.gateway";
+import { GovernanceApprovalGateway } from "./modules/registry/gateways/approval.gateway";
 import { PrismaStrategyNodeGateway } from "./modules/registry/gateways/strategy-node.gateway";
 import { MeasurementService } from "./modules/performance/measurement.service";
+import { CaptureWorkspaceService } from "./modules/performance/capture-workspace.service";
 import { CaptureSessionService } from "./modules/performance/capture-session.service";
 import { CommentaryService } from "./modules/performance/commentary.service";
 import { PerformanceResultsService } from "./modules/performance/performance-results.service";
 import { PerformanceService } from "./modules/performance/performance.service";
+import { KpiDetailService } from "./modules/performance/kpi-detail.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -59,10 +63,23 @@ async function bootstrap(): Promise<void> {
   const authorization = new IamAuthorizationService(prisma, authenticationFreshness);
   const iam = new IamAdminService(prisma);
   const rules = new RulesService(prisma);
+  const governance = new GovernanceService(
+    prisma,
+    eventBus,
+    rules,
+  );
+  const governanceEscalation =
+    new GovernanceEscalationService(
+      prisma,
+      eventBus,
+    );
   const strategy = new StrategyService(prisma);
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
 
-  const approvalGateway = new UnavailableApprovalGateway();
+  const approvalGateway =
+    new GovernanceApprovalGateway(
+      governance,
+    );
   const strategyNodeGateway = new PrismaStrategyNodeGateway(prisma);
 
   const registry = {
@@ -91,9 +108,16 @@ async function bootstrap(): Promise<void> {
       measurements,
       logger.child("performance-capture"),
     ),
+    new CaptureWorkspaceService(prisma, {
+      endpoint: environment.OBJECT_STORAGE_ENDPOINT,
+      accessKey: environment.OBJECT_STORAGE_ACCESS_KEY,
+      secretKey: environment.OBJECT_STORAGE_SECRET_KEY,
+      bucket: environment.OBJECT_STORAGE_BUCKET,
+    }),
     measurements,
     new CommentaryService(prisma),
     new PerformanceResultsService(prisma),
+    new KpiDetailService(prisma),
   );
 
   const server = createHTTPServer({
@@ -114,6 +138,8 @@ async function bootstrap(): Promise<void> {
         authorization,
         iam,
         rules,
+        governance,
+        governanceEscalation,
         strategy,
         strategyTraversal,
         registry,

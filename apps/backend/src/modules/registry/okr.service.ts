@@ -57,9 +57,8 @@ interface OkrRow {
  * OKRs and their key results.
  *
  * An OKR hangs off an objective strategy node. That node is owned by the
- * Strategy module and has no foreign key here, so existence is checked
- * through `StrategyNodeGateway` — which cannot confirm anything until a real
- * adapter is wired.
+ * Strategy module, so existence and type are checked through the configured
+ * `StrategyNodeGateway` without duplicating Strategy write ownership.
  */
 export class OkrService {
   constructor(
@@ -182,6 +181,15 @@ export class OkrService {
     });
 
     return okr ? this.toOkrView(okr) : null;
+  }
+
+  async list(): Promise<OkrView[]> {
+    const okrs = await this.prisma.okr.findMany({
+      include: { keyResults: { orderBy: { createdAt: "asc" } } },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return okrs.map((okr) => this.toOkrView(okr));
   }
 
   private toOkrView(okr: OkrRow): OkrView {

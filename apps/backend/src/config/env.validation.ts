@@ -102,6 +102,24 @@ const environmentSchema = z.object({
       message: "REDIS_URL must be a Redis connection URL",
     }),
 
+  OBJECT_STORAGE_ENDPOINT: z
+    .string()
+    .url(),
+
+  OBJECT_STORAGE_ACCESS_KEY: z
+    .string()
+    .min(1),
+
+  OBJECT_STORAGE_SECRET_KEY: z
+    .string()
+    .min(1),
+
+  OBJECT_STORAGE_BUCKET: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, {
+      message: "OBJECT_STORAGE_BUCKET must be a valid S3 bucket name",
+    }),
+
   LOG_LEVEL: z
     .enum(["debug", "info", "warn", "error"])
     .default("info"),

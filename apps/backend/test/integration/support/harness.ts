@@ -85,6 +85,10 @@ export async function createTestHarness(
     FRONTEND_URL: "http://localhost:3000",
     DATABASE_URL: urls.databaseUrl,
     REDIS_URL: urls.redisUrl,
+    OBJECT_STORAGE_ENDPOINT: "http://localhost:19000",
+    OBJECT_STORAGE_ACCESS_KEY: "test-access-key",
+    OBJECT_STORAGE_SECRET_KEY: "test-secret-key",
+    OBJECT_STORAGE_BUCKET: "artifacts",
     LOG_LEVEL: "error",
     QUEUE_PREFIX: uniqueQueuePrefix(options.label),
 
