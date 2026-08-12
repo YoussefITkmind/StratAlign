@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance"]
+  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance", "scorecard"]
 }
 
 model SystemSetting {
@@ -879,17 +879,6 @@ model NotificationDelivery {
 // Registry (KPI / OKR)
 //
 // Ownership boundary: this schema owns KPI and OKR definitions only.
-//
-// Two references deliberately have no foreign key because the modules that
-// would own them do not exist in this repository yet:
-//
-//   - `strategy_node_id` / `objective_node_id` point at the Strategy module
-//     (Prompts 2.1-2.3). Validated through StrategyNodeGateway instead.
-//   - Publication approval lives in the Workflow module (Prompt 1.5).
-//     `approval_case_id` is recorded for traceability and checked through
-//     ApprovalGateway; no approval_cases table is defined here.
-//
-// `rollup_method_rule_id` DOES have a foreign key: RuleDefinition exists.
 // ---------------------------------------------------------------------------
 
 enum KpiStatus {
@@ -937,9 +926,6 @@ enum AlignmentType {
   @@schema("registry")
 }
 
-/// Stable identity for a KPI across every version it ever has.
-/// Carries no descriptive attributes: those live on KpiVersion so that
-/// renaming or re-specifying a KPI never rewrites history.
 model KpiDefinition {
   id              String    @id @default(uuid())
   activeVersionId String?   @unique @map("active_version_id")
@@ -961,8 +947,6 @@ model KpiDefinition {
   @@schema("registry")
 }
 
-/// Append-only. Rows are never updated or deleted; a database trigger
-/// (see the registry migration) rejects UPDATE and DELETE outright.
 model KpiVersion {
   id                   String            @id @default(uuid())
   kpiDefinitionId      String            @map("kpi_definition_id")
@@ -980,8 +964,6 @@ model KpiVersion {
   stewardUserId        String?           @map("steward_user_id")
   activeFrom           DateTime          @map("active_from")
   supersedesVersionId  String?           @unique @map("supersedes_version_id")
-  /// Workflow case that authorised publication. No foreign key: the Workflow
-  /// module (Prompt 1.5) owns approval cases and does not exist yet.
   approvalCaseId       String?           @map("approval_case_id")
   publishedAt          DateTime?         @map("published_at")
   createdAt            DateTime          @default(now()) @map("created_at")
@@ -998,8 +980,7 @@ model KpiVersion {
   performanceStatuses     StatusResult[]   @relation("PerformanceStatusKpiVersion")
   performanceCommentary   Commentary[]     @relation("PerformanceCommentaryKpiVersion")
   performanceSessions     CaptureSession[] @relation("PerformanceCaptureKpiVersion")
-
-  thresholdRuleBindings       KpiThresholdRuleBinding[] @relation("KpiThresholdBindingVersion")
+  thresholdRuleBindings   KpiThresholdRuleBinding[] @relation("KpiThresholdBindingVersion")
 
   @@unique([kpiDefinitionId, version])
   @@index([kpiDefinitionId, activeFrom])
@@ -1012,18 +993,13 @@ model KpiVersion {
 
 model Okr {
   id String @id @default(uuid())
-
-  /// Strategy node of type objective.
   objectiveNodeId String       @map("objective_node_id") @db.Uuid
   objectiveNode   StrategyNode @relation("RegistryOkrObjective", fields: [objectiveNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
   nameEn    String   @map("name_en")
   nameAr    String   @map("name_ar")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-
   keyResults KeyResult[]
-
   @@index([objectiveNodeId])
   @@map("okrs")
   @@schema("registry")
@@ -1033,39 +1009,26 @@ model KeyResult {
   id    String        @id @default(uuid())
   okrId String        @map("okr_id")
   type  KeyResultType
-
   targetValue Decimal @map("target_value") @db.Decimal(20, 6)
   unit        String
-
-  /// Progress tracked on the key result itself. Prompt 2.4 carries no
-  /// measurement data model, so this is the definition-side latest value
-  /// rather than a time series.
   currentValue      Decimal?  @map("current_value") @db.Decimal(20, 6)
   progressUpdatedAt DateTime? @map("progress_updated_at")
-
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-
   okr Okr @relation(fields: [okrId], references: [id], onDelete: Cascade)
-
   @@index([okrId])
   @@map("key_results")
   @@schema("registry")
 }
 
-/// Many-to-many between a KPI and the strategy nodes it measures.
 model Alignment {
   id              String @id @default(uuid())
   kpiDefinitionId String @map("kpi_definition_id")
-
   strategyNodeId String @map("strategy_node_id") @db.Uuid
-
   alignmentType AlignmentType @map("alignment_type")
   createdAt     DateTime      @default(now()) @map("created_at")
-
   kpiDefinition KpiDefinition @relation(fields: [kpiDefinitionId], references: [id], onDelete: Cascade)
   strategyNode  StrategyNode  @relation("RegistryStrategyAlignment", fields: [strategyNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
   @@unique([kpiDefinitionId, strategyNodeId, alignmentType])
   @@index([kpiDefinitionId])
   @@index([strategyNodeId])
@@ -1073,23 +1036,16 @@ model Alignment {
   @@schema("registry")
 }
 
-/// Parent/child KPI edge carrying the rollup rule used to derive the parent.
 model KpiHierarchyNode {
   id          String @id @default(uuid())
   parentKpiId String @map("parent_kpi_id")
   childKpiId  String @map("child_kpi_id")
-
-  /// Must reference a RuleDefinition whose ruleType is ROLLUP. Enforced in
-  /// KpiHierarchyService; the foreign key alone cannot express the type check.
   rollupMethodRuleId String @map("rollup_method_rule_id")
-
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-
   parentKpi        KpiDefinition  @relation("KpiHierarchyParent", fields: [parentKpiId], references: [id], onDelete: Cascade)
   childKpi         KpiDefinition  @relation("KpiHierarchyChild", fields: [childKpiId], references: [id], onDelete: Cascade)
   rollupMethodRule RuleDefinition @relation("KpiHierarchyRollupRule", fields: [rollupMethodRuleId], references: [id], onDelete: Restrict)
-
   @@unique([parentKpiId, childKpiId])
   @@index([childKpiId])
   @@index([rollupMethodRuleId])
@@ -1097,9 +1053,6 @@ model KpiHierarchyNode {
   @@schema("registry")
 }
 
-/// Registry-owned, append-preserving history of threshold rule assignments.
-/// Each row references an immutable KPI version and an immutable Rules-owned
-/// RuleDefinition version. Exactly one row per KPI version may be current.
 model KpiThresholdRuleBinding {
   id              String   @id @default(uuid())
   kpiVersionId    String   @map("kpi_version_id")
@@ -1108,13 +1061,11 @@ model KpiThresholdRuleBinding {
   supersedesId    String?  @unique @map("supersedes_id")
   createdAt       DateTime @default(now()) @map("created_at")
   createdById     String   @map("created_by")
-
   kpiVersion    KpiVersion               @relation("KpiThresholdBindingVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   thresholdRule RuleDefinition           @relation("KpiThresholdBindingRule", fields: [thresholdRuleId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   createdBy     User                     @relation("KpiThresholdBindingCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Cascade)
   supersedes    KpiThresholdRuleBinding? @relation("KpiThresholdBindingHistory", fields: [supersedesId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   supersededBy  KpiThresholdRuleBinding? @relation("KpiThresholdBindingHistory")
-
   @@index([kpiVersionId, isCurrent])
   @@index([thresholdRuleId])
   @@index([createdById])
@@ -1124,19 +1075,12 @@ model KpiThresholdRuleBinding {
 
 // ---------------------------------------------------------------------------
 // Performance data (Prompt 2.7)
-//
-// Performance references the real Registry and Strategy models:
-// - kpi_version_id  -> registry.kpi_versions
-// - scope_node_id   -> strategy.strategy_nodes
-// - parent_kpi_id   -> registry.kpi_definitions
-// - plan_version_id -> strategy.plan_versions.
 // ---------------------------------------------------------------------------
 
 enum MeasurementSource {
   MANUAL   @map("manual")
   FEED     @map("feed")
   TEMPLATE @map("template")
-
   @@schema("performance")
 }
 
@@ -1144,13 +1088,9 @@ enum CaptureSessionState {
   DRAFT     @map("draft")
   SUBMITTED @map("submitted")
   RECALLED  @map("recalled")
-
   @@schema("performance")
 }
 
-/// Append-only. The application database role holds SELECT and INSERT only;
-/// UPDATE and DELETE are revoked in PostgreSQL. Corrections insert a new row
-/// carrying `supersedes_id`.
 model Measurement {
   id            String            @id @default(uuid())
   kpiVersionId  String            @map("kpi_version_id")
@@ -1161,17 +1101,13 @@ model Measurement {
   locked        Boolean           @default(false)
   supersedesId  String?           @unique @map("supersedes_id")
   submittedById String            @map("submitted_by")
-  /// Opaque object-storage reference. No upload workflow exists yet (2.8).
   evidenceRef   String?           @map("evidence_ref")
   createdAt     DateTime          @default(now()) @map("created_at")
-
   submittedBy  User         @relation("MeasurementSubmitter", fields: [submittedById], references: [id], onDelete: Restrict)
   supersedes   Measurement? @relation("MeasurementSupersession", fields: [supersedesId], references: [id], onDelete: Restrict)
   supersededBy Measurement? @relation("MeasurementSupersession")
-
   kpiVersion KpiVersion   @relation("PerformanceMeasurementKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   scopeNode  StrategyNode @relation("PerformanceMeasurementScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
   @@index([kpiVersionId, scopeNodeId, period, createdAt])
   @@index([kpiVersionId])
   @@index([scopeNodeId])
@@ -1191,18 +1127,15 @@ model TargetSeries {
   planVersionId String   @map("plan_version_id") @db.Uuid
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
-
   kpiVersion  KpiVersion   @relation("PerformanceTargetKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   scopeNode   StrategyNode @relation("PerformanceTargetScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   planVersion PlanVersion  @relation("PerformanceTargetPlan", fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
   @@unique([kpiVersionId, scopeNodeId, period, planVersionId], map: "target_series_kpi_scope_period_plan_key")
   @@index([kpiVersionId, scopeNodeId, period])
   @@map("target_series")
   @@schema("performance")
 }
 
-/// Produced by the Rule Engine. Performance never derives a status itself.
 model StatusResult {
   id              String   @id @default(uuid())
   kpiVersionId    String   @map("kpi_version_id")
@@ -1210,17 +1143,11 @@ model StatusResult {
   period          String
   status          String
   computedAt      DateTime @default(now()) @map("computed_at")
-  /// The `rules.rule_definitions` row that produced this status. That row *is*
-  /// the immutable rule version.
   ruleVersionUsed String   @map("rule_version_used")
-  /// Stable per (result, triggering event); makes worker retries a no-op.
   dedupeKey       String   @unique @map("dedupe_key")
-
   ruleVersion RuleDefinition @relation("StatusResultRuleVersion", fields: [ruleVersionUsed], references: [id], onDelete: Restrict)
-
   kpiVersion KpiVersion   @relation("PerformanceStatusKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   scopeNode  StrategyNode @relation("PerformanceStatusScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
   @@index([kpiVersionId, scopeNodeId, period, computedAt])
   @@index([computedAt])
   @@index([ruleVersionUsed])
@@ -1234,17 +1161,13 @@ model RollupResult {
   scopeNodeId     String   @map("scope_node_id") @db.Uuid
   period          String
   aggregatedValue Decimal? @map("aggregated_value") @db.Decimal(20, 6)
-  /// Mirrors `@spm/rules` `rollupMethodSchema`; the rule document is authoritative.
   method          String
   computedAt      DateTime @default(now()) @map("computed_at")
   ruleVersionUsed String   @map("rule_version_used")
   dedupeKey       String   @unique @map("dedupe_key")
-
   ruleVersion RuleDefinition @relation("RollupResultRuleVersion", fields: [ruleVersionUsed], references: [id], onDelete: Restrict)
-
   parentKpi KpiDefinition @relation("PerformanceRollupParent", fields: [parentKpiId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   scopeNode StrategyNode  @relation("PerformanceRollupScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
   @@index([parentKpiId, scopeNodeId, period, computedAt])
   @@index([computedAt])
   @@index([ruleVersionUsed])
@@ -1262,12 +1185,9 @@ model Commentary {
   bodyAr       String?  @map("body_ar")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
-
   author User @relation("CommentaryAuthor", fields: [authorId], references: [id], onDelete: Restrict)
-
   kpiVersion KpiVersion   @relation("PerformanceCommentaryKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   scopeNode  StrategyNode @relation("PerformanceCommentaryScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
   @@index([kpiVersionId, scopeNodeId, period, createdAt])
   @@index([authorId])
   @@map("commentary")
@@ -1281,30 +1201,127 @@ model CaptureSession {
   period       String
   state        CaptureSessionState @default(DRAFT)
   ownerId      String              @map("owner_id")
-
-  /// Set on submit. The measurement this session produced, so a recall knows
-  /// exactly which row a subsequent correction must supersede.
   submittedMeasurementId String?   @map("submitted_measurement_id")
   submittedAt            DateTime? @map("submitted_at")
   recalledAt             DateTime? @map("recalled_at")
-  /// Recall cutoff. Past this instant the submission is final.
   recallDeadlineAt       DateTime? @map("recall_deadline_at")
-  /// Set once a downstream consumer has taken the submission. Hard cutoff.
   consumedAt             DateTime? @map("consumed_at")
   draftValue             Decimal?  @map("draft_value") @db.Decimal(30, 10)
   draftEvidenceRef       String?   @map("draft_evidence_ref")
-
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
-
   owner User @relation("CaptureSessionOwner", fields: [ownerId], references: [id], onDelete: Restrict)
-
   kpiVersion KpiVersion   @relation("PerformanceCaptureKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   scopeNode  StrategyNode @relation("PerformanceCaptureScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-
   @@index([kpiVersionId, scopeNodeId, period, state])
   @@index([ownerId])
   @@index([state])
   @@map("capture_sessions")
   @@schema("performance")
+}
+
+// ---------------------------------------------------------------------------
+// Scorecard (Phase 3.1)
+// ---------------------------------------------------------------------------
+
+enum ScorecardStrategyMapState {
+  DRAFT     @map("draft")
+  PUBLISHED @map("published")
+
+  @@map("strategy_map_state")
+  @@schema("scorecard")
+}
+
+enum ScorecardMapLinkStrength {
+  WEAK   @map("weak")
+  STRONG @map("strong")
+
+  @@map("map_link_strength")
+  @@schema("scorecard")
+}
+
+model Scorecard {
+  id            String   @id @default(uuid()) @db.Uuid
+  nameEn        String   @map("name_en")
+  nameAr        String   @map("name_ar")
+  scopeNodeId   String?  @map("scope_node_id") @db.Uuid
+  planVersionId String   @map("plan_version_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([scopeNodeId])
+  @@index([planVersionId])
+  @@map("scorecards")
+  @@schema("scorecard")
+}
+
+model Perspective {
+  id          String   @id @default(uuid()) @db.Uuid
+  scorecardId String   @map("scorecard_id") @db.Uuid
+  nameEn      String   @map("name_en")
+  nameAr      String   @map("name_ar")
+  order       Int
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([scorecardId, order])
+  @@index([scorecardId])
+  @@map("perspectives")
+  @@schema("scorecard")
+}
+
+model Placement {
+  id              String   @id @default(uuid()) @db.Uuid
+  perspectiveId   String   @map("perspective_id") @db.Uuid
+  objectiveNodeId String   @map("objective_node_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([perspectiveId, objectiveNodeId])
+  @@index([objectiveNodeId])
+  @@map("placements")
+  @@schema("scorecard")
+}
+
+model WeightingVersion {
+  id                 String   @id @default(uuid()) @db.Uuid
+  scorecardId        String   @map("scorecard_id") @db.Uuid
+  perspectiveWeights Json     @map("perspective_weights")
+  scoringFormulaId   String   @map("scoring_formula_id")
+  activeFrom         DateTime @map("active_from")
+  supersedesId       String?  @unique @map("supersedes_id") @db.Uuid
+  approvalCaseId     String?  @map("approval_case_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@index([scorecardId, activeFrom])
+  @@index([scoringFormulaId])
+  @@map("weighting_versions")
+  @@schema("scorecard")
+}
+
+model StrategyMap {
+  id             String                    @id @default(uuid()) @db.Uuid
+  scorecardId    String                    @map("scorecard_id") @db.Uuid
+  state          ScorecardStrategyMapState @default(DRAFT)
+  approvalCaseId String?                   @map("approval_case_id") @db.Uuid
+  createdAt      DateTime                  @default(now()) @map("created_at")
+  updatedAt      DateTime                  @updatedAt @map("updated_at")
+
+  @@index([scorecardId, state])
+  @@map("strategy_maps")
+  @@schema("scorecard")
+}
+
+model MapLink {
+  id              String                       @id @default(uuid()) @db.Uuid
+  strategyMapId   String                       @map("strategy_map_id") @db.Uuid
+  fromObjectiveId String                       @map("from_objective_id") @db.Uuid
+  toObjectiveId   String                       @map("to_objective_id") @db.Uuid
+  strength        ScorecardMapLinkStrength
+  createdAt       DateTime                     @default(now()) @map("created_at")
+
+  @@unique([strategyMapId, fromObjectiveId, toObjectiveId])
+  @@index([fromObjectiveId])
+  @@index([toObjectiveId])
+  @@map("map_links")
+  @@schema("scorecard")
 }
