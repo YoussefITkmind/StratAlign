@@ -105,7 +105,12 @@ export class PortfolioService {
       })),
     });
 
-    if (result.ruleType !== "rag_aggregation") {
+    if (
+      !("status" in result) ||
+      !("score" in result) ||
+      typeof result.score !== "number" ||
+      (result.status !== "on_track" && result.status !== "watch" && result.status !== "off_track")
+    ) {
       throw portfolioErrors.ragRuleNotFound();
     }
 
