@@ -99,9 +99,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-    
-      - name: Build shared API
-        run: pnpm --filter @spm/api... build
+
+      - name: Build backend workspace dependencies
+        run: pnpm --filter @spm/backend^... build
 
       - name: Generate Prisma Client
         run: pnpm --filter @spm/backend run db:generate
