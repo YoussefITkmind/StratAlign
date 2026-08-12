@@ -16,25 +16,21 @@ pnpm dev
 
 Open http://localhost:3000/login.
 
-Sign in with the **temporary demo credentials** (see the big warning in
-`src/lib/auth/auth.ts`):
+For local end-to-end tests, sign in with the deterministic credentials seeded
+by the test setup:
 
 ```
 email:    demo@stratalign.dev
 password: password123
 ```
 
-The "Continue with SSO" button is wired to a placeholder OIDC provider
-pointed at a local mock IdP (`src/app/api/mock-idp/*`) that implements a
-real authorization-code + PKCE exchange.
-
-⚠️ **`src/lib/auth/auth.ts` is a throwaway stub**, not the real Prompt 1.1
-auth config. It exists only so the page is clickable locally. A teammate's
-`feature/1.1-authentication` branch has the real Auth.js config (argon2-backed
-credentials provider against the real backend, real generic OIDC config,
-rate limiting) — this branch was intentionally kept independent of that work
-per project decision; reconcile the two `auth.ts` implementations when both
-land on `main`.
+Production authentication is configured in `src/auth.ts`: Auth.js delegates
+credential validation and OIDC identity reconciliation to the persisted
+backend IAM service. The "Continue with SSO" path uses the configured generic
+OIDC provider. Local Playwright tests point that provider at
+`src/app/api/mock-idp/*`, an in-memory authorization-code + PKCE test IdP whose
+deterministic identities live in `src/lib/mock-idp/users.ts`; it is testing
+infrastructure, not a business-data persistence layer.
 
 ## Files
 
@@ -50,13 +46,11 @@ apps/frontend/src/
 │   ├── register-form.tsx          create-account form (client component)
 │   └── logout-button.tsx          drop into the app shell's user menu
 ├── lib/auth/
-│   ├── auth.ts                    throwaway Auth.js stub (see warning above)
+│   ├── auth.ts                    compatibility re-export of canonical src/auth.ts
 │   ├── constants.ts               provider id + route constants
 │   └── error-messages.ts          error code → user-facing copy
 ├── lib/mock-idp/, app/api/mock-idp/  in-memory OAuth2/PKCE mock IdP
-└── server/                        in-memory mock tRPC backend (iam/audit/governance)
-    routers so the UI has real request/response shapes to call while the
-    real backend prompts (1.2/1.3/1.5) are built.
+└── server/                        authenticated tRPC adapters for persisted backend services
 ```
 
 ## One deliberate change from the visual reference
@@ -73,7 +67,7 @@ password link, loading states on both auth paths, inline + banner error
 states, session-expired banner, keyboard focus, `aria-live` error region,
 logout button, EN/AR i18n.
 
-Stubbed / awaiting the real backend: the actual `credentials` and `oidc`
-Auth.js provider configs, rate-limit UI copy, and everything under
-`src/server/` (in-memory mock, not real persistence) — see the warning
-comments in `src/server/mock-db.ts` and `src/lib/auth/auth.ts`.
+The local mock OIDC routes and identities are intentionally retained only for
+authentication testing. Application IAM, audit, governance, Registry, Rules,
+Strategy, Capture, and Performance data flow through persisted backend
+services rather than browser or frontend-local business stores.

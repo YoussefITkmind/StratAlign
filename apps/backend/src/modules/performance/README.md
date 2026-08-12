@@ -202,13 +202,12 @@ Performance now uses the real Registry/Strategy/Plan models:
 
 Performance therefore does not maintain a parallel KPI registry.
 
-The remaining architectural dependency is **Prompt 2.6 Rule Builder**.
-Until 2.6 provides the permanent KPI-to-threshold-rule binding,
-`performance.kpi_bindings` remains a narrow temporary seam containing only the
-KPI version and threshold rule key.
+Threshold evaluation resolves the current Registry-owned
+`KpiThresholdRuleBinding` and records the exact published Rules definition used
+for each result. Performance does not maintain a temporary KPI-binding table.
 
-Performance does not yet have a production ApprovalCase integration, so
-`consumedAt` and `recallDeadlineAt` provide the documented recall cutoff.
+Governance approval gates publication upstream. `consumedAt` and
+`recallDeadlineAt` enforce the capture recall cutoff.
 
 **No object-storage abstraction exists**, hence the opaque `evidenceRef`.
 Prompt 2.7 stores the stable reference; it does not implement the upload system.

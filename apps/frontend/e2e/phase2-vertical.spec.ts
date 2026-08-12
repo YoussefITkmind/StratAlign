@@ -161,9 +161,13 @@ test("Phase 2 vertical: strategy to persisted KPI performance commentary", async
   await expect(page.getByText(strategyName)).toBeVisible();
 
   await page.getByPlaceholder("Add commentary").fill(commentary);
+  const commentaryCreated = page.waitForResponse((response) =>
+    response.url().includes("/api/trpc/capture.addCommentary") && response.request().method() === "POST" && response.ok(),
+  );
   await page.getByRole("button", { name: "Post" }).click();
-  await expect(page.getByText(commentary)).toBeVisible();
+  await commentaryCreated;
+  await expect(page.locator("p").getByText(commentary, { exact: true })).toBeVisible();
   await page.reload();
   await page.getByTestId("persisted-kpi-row").filter({ hasText: kpiName }).locator("..").getByRole("button", { name: "Open KPI Detail" }).click();
-  await expect(page.getByText(commentary)).toBeVisible();
+  await expect(page.locator("p").getByText(commentary, { exact: true })).toBeVisible();
 });
