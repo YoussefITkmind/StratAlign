@@ -2,16 +2,10 @@
 
 import { cookies } from "next/headers";
 import { createBackendRegistryClient } from "@/server/backend-registry-client";
-import { getCurrentAuthorization } from "@/services/iam.service";
 
 async function backend() {
   const store = await cookies();
   return createBackendRegistryClient(store.toString());
-}
-
-export async function getMapAuthorization() {
-  const authorization = await getCurrentAuthorization();
-  return { roles: authorization.roles };
 }
 
 export async function placeObjective(input: { perspectiveId: string; objectiveNodeId: string }) {
