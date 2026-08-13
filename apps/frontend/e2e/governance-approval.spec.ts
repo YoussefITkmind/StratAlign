@@ -88,6 +88,14 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
     const previewBody = await previewGet.json();
     expect(previewGet.status(), JSON.stringify(previewBody)).toBe(200);
     expect(Math.round(previewBody.result.data.json.currentScore)).toBe(70);
+
+    // The requirement is that the approved change is *visible* on the real
+    // Master Scorecard UI (Prompt 3.2), not just reflected in an API response.
+    await page.goto(`/balanced-scorecards/${fixture.scorecardId}`);
+    await expect(page.getByTestId("master-scorecard-page")).toBeVisible();
+    await expect(page.getByTestId("overall-score")).toContainText("70");
+    await expect(page.getByTestId("perspective-weight-84000000-0000-4000-8000-000000000011")).toContainText("70");
+    await expect(page.getByTestId("perspective-weight-84000000-0000-4000-8000-000000000012")).toContainText("30");
   });
 
   test("the submitter cannot decide their own case, even by calling governance.decide directly", async ({ page }) => {
@@ -129,5 +137,39 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
     const caseBody = await getCase.json();
     expect(caseBody.result.data.json.status).toBe("rejected");
     expect(caseBody.result.data.json.decisionReason).toBe(rationale);
+  });
+
+  test("request changes with a captured rationale, then verify it's persisted via governance.getCase and the real Decision Log", async ({ page }) => {
+    await loginAs(page, "member"); // alice
+    const proposed = await trpcJson(page, "scorecard.weighting.propose", {
+      scorecardId: fixture.scorecardId,
+      draftWeights: { "84000000-0000-4000-8000-000000000011": 45, "84000000-0000-4000-8000-000000000012": 55 },
+      activeFrom: new Date().toISOString(),
+      approvalParticipantId: fixture.bobId,
+    });
+    const caseId: string = proposed.body.result.data.json.id;
+
+    await page.context().clearCookies();
+    await loginAs(page, "platform_administrator"); // bob
+    await page.goto("/governance");
+    const card = page.locator(`[data-testid="approval-card"][data-case-id="${caseId}"]`);
+    await expect(card).toBeVisible();
+
+    const rationale = "Add the customer-impact justification before this can move forward.";
+    await card.getByTestId("decision-rationale").fill(rationale);
+    await card.getByTestId("request-changes-case").click();
+    await expect(card).toHaveCount(0);
+
+    const getCase = await page.request.get(`/api/trpc/governance.getCase?input=${encodeURIComponent(JSON.stringify({ json: { id: caseId } }))}`);
+    const caseBody = await getCase.json();
+    expect(caseBody.result.data.json.status).toBe("changes_requested");
+    expect(caseBody.result.data.json.decisionReason).toBe(rationale);
+
+    // And the real Decision Log tab (not mock data) shows it too.
+    await page.goto("/governance");
+    await page.getByTestId("governance-tab-decision-log").click();
+    const logEntry = page.locator('[data-testid="decision-log-entry"]', { hasText: rationale });
+    await expect(logEntry).toBeVisible();
+    await expect(logEntry).toContainText("Changes Requested");
   });
 });

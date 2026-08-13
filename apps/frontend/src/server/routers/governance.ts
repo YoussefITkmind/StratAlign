@@ -404,4 +404,38 @@ export const governanceRouter =
             }
           },
         ),
+
+    listDecisions:
+      authenticatedProcedure
+        .query(
+          async ({ ctx }) => {
+            try {
+              const entries =
+                await backend(ctx)
+                  .governance
+                  .listDecisions
+                  .query();
+
+              return entries.map((entry) => ({
+                id: entry.id,
+                caseId: entry.caseId,
+                entityType: entry.entityType,
+                entityId: entry.entityId,
+                decision: (entry.decision === "APPROVED"
+                  ? "approved"
+                  : entry.decision === "REJECTED"
+                    ? "rejected"
+                    : "changes_requested") as
+                  | "approved"
+                  | "rejected"
+                  | "changes_requested",
+                decidedBy: entry.decidedBy,
+                decidedAt: String(entry.decidedAt),
+                rationale: entry.rationale,
+              }));
+            } catch (error) {
+              translateBackendGovernanceError(error);
+            }
+          },
+        ),
   });
