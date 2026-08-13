@@ -1,6 +1,6 @@
-import EditableMapCanvas from "@/components/strategy-map/EditableMapCanvas";
+import StrategyMapCanvas from "@/components/strategy-map/StrategyMapCanvas";
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <EditableMapCanvas scorecardId={id} />;
+  return <StrategyMapCanvas scorecardId={id} />;
 }
