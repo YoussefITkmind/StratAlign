@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { createBackendRegistryClient } from "@/server/backend-registry-client";
+export { getMapAuthorization } from "./authorization";
 
 async function backend() {
   const store = await cookies();
