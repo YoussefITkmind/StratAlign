@@ -153,14 +153,20 @@ function toFrontendCase(
   const runtime =
     item as BackendGovernanceCase & {
       escalations?: unknown[];
-      decisionLog?: {
+      decisionLog?: Array<{
         decidedBy?: string;
         decidedAt?:
           string | Date;
         rationale?:
           string | null;
-      } | null;
+      }> | null;
     };
+
+  // decisionLog is ordered most-recent-first (a case can accumulate several
+  // entries over its lifetime via changes_requested -> resubmit -> decide),
+  // so the latest entry is what the card summary should reflect.
+  const latestDecision =
+    runtime.decisionLog?.[0];
 
   return {
     id:
@@ -209,21 +215,20 @@ function toFrontendCase(
       ),
 
     decidedBy:
-      runtime.decisionLog
+      latestDecision
         ?.decidedBy,
 
     decidedAt:
-      runtime.decisionLog
+      latestDecision
         ?.decidedAt
         ? String(
-            runtime
-              .decisionLog
+            latestDecision
               .decidedAt,
           )
         : undefined,
 
     decisionReason:
-      runtime.decisionLog
+      latestDecision
         ?.rationale ??
       undefined,
   };
