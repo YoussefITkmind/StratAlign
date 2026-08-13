@@ -32,6 +32,7 @@ export interface ScorecardServiceContract {
     perspectiveId: string;
     objectiveNodeId: string;
   }): Promise<{ perspectiveId: string; objectiveNodeId: string }>;
+  listPlacementDetails(scorecardId: string): Promise<unknown[]>;
   previewWeighting(input: {
     scorecardId: string;
     draftWeights: Record<string, number>;
@@ -148,6 +149,9 @@ export const scorecardRouter = router({
       .mutation(async ({ ctx, input }) => {
         try { return await service(ctx).setPlacement(input); } catch (error) { return fail(error); }
       }),
+    list: protectedProcedure.input(z.object({ scorecardId: id }).strict()).query(async ({ ctx, input }) => {
+      try { return await service(ctx).listPlacementDetails(input.scorecardId); } catch (error) { return fail(error); }
+    }),
   }),
   weighting: router({
     preview: protectedProcedure
