@@ -8,14 +8,7 @@ import MapLanes, { type MapPlacement } from "./MapLanes";
 import MapLinks, { type MapLinkRow } from "./MapLinks";
 import ObjectivePlacementControls from "./ObjectivePlacementControls";
 import LinkEditControls from "./LinkEditControls";
-import {
-  draftMapLink,
-  getMapAuthorization,
-  placeObjective,
-  proposeMap,
-  publishMap,
-  removeMapLink,
-} from "@/app/(app)/strategy-maps/actions";
+import { draftMapLink, getMapAuthorization, placeObjective, proposeMap, publishMap, removeMapLink } from "@/app/(app)/strategy-maps/actions";
 
 interface Perspective { id: string; nameEn: string; nameAr: string; order: number }
 interface ScorecardDetail {
@@ -48,10 +41,7 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void getMapAuthorization()
-      .then((result) => setRoles(result.roles))
-      .catch(() => setRoles([]))
-      .finally(() => setAuthLoaded(true));
+    void getMapAuthorization().then((result) => setRoles(result.roles)).catch(() => setRoles([])).finally(() => setAuthLoaded(true));
   }, []);
 
   const isAnalyst = roles.includes("strategy_analyst");
@@ -60,7 +50,7 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
     node.type.toLowerCase() === "objective" && node.planVersionId === scorecard?.planVersionId && !placedIds.has(node.id) &&
     (!node.state || node.state.toLowerCase() === "active")), [strategyNodes, scorecard?.planVersionId, placedIds]);
   const objectiveNames = useMemo(() => new Map(placements.map((item) => [item.objectiveNodeId, item.objectiveNameEn])), [placements]);
-  const visibleLinks = editing ? draftLinks : (scorecard?.publishedMap?.links ?? []);
+  const visibleLinks = editing && draftMapId ? draftLinks : (scorecard?.publishedMap?.links ?? []);
 
   if (!authLoaded || scorecardQuery.isLoading || placementsQuery.isLoading || nodesQuery.isLoading) return <p className="p-8 text-sm text-gray-500">Loading strategy map…</p>;
   if (!scorecard || scorecardQuery.error) return <div data-testid="map-canvas-not-found" className="p-8 text-center">Strategy map not found.</div>;
@@ -71,21 +61,17 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
     finally { setBusy(false); }
   };
 
-  const startEditing = () => run(async () => {
-    if (!isAnalyst) return;
-    if (!draftMapId) {
-      let mapId: string | undefined;
-      const copied: MapLinkRow[] = [];
-      for (const link of scorecard.publishedMap?.links ?? []) {
-        const result = await draftMapLink({ scorecardId, strategyMapId: mapId, link: {
-          fromObjectiveId: link.fromObjectiveId, toObjectiveId: link.toObjectiveId, strength: link.strength,
-        } }) as { map: { id: string }; link: MapLinkRow };
-        mapId = result.map.id; copied.push(result.link);
-      }
-      setDraftMapId(mapId ?? null); setDraftLinks(copied);
+  const copyPublishedToDraft = async () => {
+    let mapId: string | undefined;
+    const copied: MapLinkRow[] = [];
+    for (const link of scorecard.publishedMap?.links ?? []) {
+      const result = await draftMapLink({ scorecardId, strategyMapId: mapId, link: {
+        fromObjectiveId: link.fromObjectiveId, toObjectiveId: link.toObjectiveId, strength: link.strength,
+      } }) as { map: { id: string }; link: MapLinkRow };
+      mapId = result.map.id; copied.push(result.link);
     }
-    setEditing(true);
-  });
+    return { mapId: mapId ?? null, copied };
+  };
 
   const addObjective = (objectiveNodeId: string, perspectiveId: string) => run(async () => {
     await placeObjective({ objectiveNodeId, perspectiveId });
@@ -94,10 +80,16 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
   });
 
   const addLink = (sourceId: string, targetId: string, strength: "weak" | "strong") => run(async () => {
-    const result = await draftMapLink({ scorecardId, strategyMapId: draftMapId ?? undefined, link: {
+    let mapId = draftMapId;
+    let current = draftLinks;
+    if (!mapId) {
+      const seeded = await copyPublishedToDraft();
+      mapId = seeded.mapId; current = seeded.copied;
+    }
+    const result = await draftMapLink({ scorecardId, strategyMapId: mapId ?? undefined, link: {
       fromObjectiveId: sourceId, toObjectiveId: targetId, strength,
     } }) as { map: { id: string }; link: MapLinkRow };
-    setDraftMapId(result.map.id); setDraftLinks((current) => [...current, result.link]);
+    setDraftMapId(result.map.id); setDraftLinks([...current, result.link]);
   });
 
   const removeLink = (linkId: string) => run(async () => {
@@ -125,13 +117,13 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
       <Link href="/strategy-maps" className="inline-flex items-center gap-1 text-sm text-gray-500"><ChevronLeft className="h-4 w-4 rtl:rotate-180" /> Back to Strategy Maps</Link>
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{scorecard.nameEn}</h1><span data-testid="map-status-badge" className="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">{scorecard.publishedMap ? "Published" : "No published map"}</span></div><p dir="rtl" className="text-sm text-gray-500">{scorecard.nameAr}</p></div>
-        <div className="flex items-center gap-2"><span data-testid="viewer-role-label" className="text-xs text-gray-500">{isAnalyst ? "Strategy analyst" : "Read-only viewer"}</span><button data-testid="edit-mode-toggle" disabled={!isAnalyst || busy} onClick={() => editing ? setEditing(false) : void startEditing()} className="rounded-full border px-4 py-2 text-sm disabled:opacity-40">{editing ? "Exit edit mode" : "Edit map"}</button></div>
+        <div className="flex items-center gap-2"><span data-testid="viewer-role-label" className="text-xs text-gray-500">{isAnalyst ? "Strategy analyst" : "Read-only viewer"}</span><button data-testid="edit-mode-toggle" disabled={!isAnalyst || busy} onClick={() => setEditing((value) => !value)} className="rounded-full border px-4 py-2 text-sm disabled:opacity-40">{editing ? "Exit edit mode" : "Edit map"}</button></div>
       </header>
       {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {message && <p data-testid="map-notice" className="rounded-lg bg-blue-50 p-3 text-sm text-blue-700">{message}</p>}
 
       <MapLanes perspectives={scorecard.perspectives} placements={placements} />
-      <MapLinks links={visibleLinks} objectiveName={(id) => objectiveNames.get(id) ?? id} editable={editing} onRemove={(id) => void removeLink(id)} />
+      <MapLinks links={visibleLinks} objectiveName={(id) => objectiveNames.get(id) ?? id} editable={editing && !!draftMapId} onRemove={(id) => void removeLink(id)} />
 
       {editing && isAnalyst && <div className="grid gap-4 lg:grid-cols-2" data-testid="edit-toolbar">
         <ObjectivePlacementControls objectives={eligibleObjectives} perspectives={scorecard.perspectives} busy={busy} onAdd={addObjective} />
