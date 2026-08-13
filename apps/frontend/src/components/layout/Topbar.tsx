@@ -104,7 +104,7 @@ export default function Topbar({
 
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 px-4 py-2 text-sm text-gray-500 sm:px-6">
         {breadcrumb.map((crumb, i) => (
-          <span key={crumb} className="flex items-center gap-1.5">
+          <span key={`${crumb}-${i}`} className="flex items-center gap-1.5">
             {i > 0 && <span className="text-gray-300">›</span>}
             <span className={i === breadcrumb.length - 1 ? "font-medium text-gray-700" : ""}>{crumb}</span>
           </span>

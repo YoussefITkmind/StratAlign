@@ -12,6 +12,8 @@ export interface Kpi {
   name: string;
   status: ScorecardStatus;
   owner: Owner;
+  score: number;
+  priorScore?: number;
 }
 
 export interface Perspective {
@@ -19,6 +21,8 @@ export interface Perspective {
   key: PerspectiveKey;
   owner: Owner;
   score: number;
+  weight: number;
+  priorScore?: number;
   kpis: Kpi[];
 }
 
@@ -30,6 +34,9 @@ export interface Scorecard {
   ownerName: string;
   status: ScorecardStatus;
   score: number;
+  priorScore?: number;
+  /** Id of a mock StrategyMap, used only by this list screen's still-mock preview — unrelated to the real scorecard.map.getPublished data Master Scorecard renders. */
+  mapId?: string;
   perspectives: Perspective[];
 }
 

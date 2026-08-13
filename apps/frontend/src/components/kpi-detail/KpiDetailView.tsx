@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { ArrowLeft, Link2, MessageSquare, Send, Workflow } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
+import { ragStatusTokens } from "@/lib/theme/ragStatus";
 import LinkedInitiativesPanel from "./LinkedInitiativesPanel";
 
 interface Props { kpiId: string; onBack: () => void; onNavigateKpi: (id: string) => void; onEditDefinition: (id: string) => void }
 const number = (value: number | null | undefined, unit: string) => value == null ? "—" : `${value.toLocaleString()} ${unit}`;
-const statusClass = (status: string | null | undefined) => status === "on_track" || status === "on-track" || status === "green" ? "bg-emerald-50 text-emerald-700" : status === "at_risk" || status === "at-risk" || status === "amber" ? "bg-amber-50 text-amber-700" : status ? "bg-red-50 text-red-700" : "bg-gray-50 text-gray-500";
+const statusClass = (status: string | null | undefined) => { const t = ragStatusTokens(status); return `${t.badgeBg} ${t.badgeText}`; };
 
 export default function KpiDetailView({ kpiId, onBack, onNavigateKpi, onEditDefinition }: Props) {
   const utils = trpc.useUtils();

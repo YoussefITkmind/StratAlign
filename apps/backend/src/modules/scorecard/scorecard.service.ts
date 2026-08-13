@@ -95,6 +95,82 @@ export class ScorecardService {
     return { ...scorecard, perspectives, weighting, publishedMap };
   }
 
+  /**
+   * Read-only detail behind each perspective's placements: the placed
+   * objective plus, via the same Placement -> Alignment -> KpiVersion ->
+   * StatusResult join computeWeightingScore() uses to roll up perspective
+   * RAG status, the aligned KPI's own name and latest status. Exists so the
+   * Master Scorecard grid can render objective/KPI cards without a second,
+   * disconnected data source — scorecard.get / weighting.preview alone don't
+   * expose objective or KPI identity, only aggregated perspective status.
+   */
+  async listPlacementDetails(scorecardId: string): Promise<Array<{
+    perspectiveId: string;
+    objectiveNodeId: string;
+    objectiveNameEn: string;
+    objectiveNameAr: string;
+    kpiDefinitionId: string | null;
+    kpiNameEn: string | null;
+    status: RagStatus | null;
+  }>> {
+    const perspectives = await this.listPerspectives(scorecardId);
+    if (perspectives.length === 0) return [];
+    const perspectiveIds = perspectives.map((p) => p.id);
+    const placements = await this.prisma.$queryRaw<PlacementRow[]>`
+      SELECT perspective_id AS "perspectiveId", objective_node_id AS "objectiveNodeId"
+      FROM scorecard.placements
+      WHERE perspective_id = ANY(${perspectiveIds}::uuid[])`;
+    if (placements.length === 0) return [];
+
+    const objectiveIds = [...new Set(placements.map((placement) => placement.objectiveNodeId))];
+    const [objectives, alignments] = await Promise.all([
+      this.prisma.strategyNode.findMany({ where: { id: { in: objectiveIds } } }),
+      this.prisma.alignment.findMany({
+        where: { strategyNodeId: { in: objectiveIds } },
+        include: { kpiDefinition: { include: { activeVersion: true } } },
+      }),
+    ]);
+    const objectiveById = new Map(objectives.map((node) => [node.id, node]));
+    const alignmentByObjective = new Map(alignments.map((alignment) => [alignment.strategyNodeId, alignment]));
+
+    const statusByKey = new Map<string, string>();
+    const withVersion = alignments.filter((alignment) => alignment.kpiDefinition.activeVersionId);
+    if (withVersion.length > 0) {
+      const statuses = await this.prisma.statusResult.findMany({
+        where: {
+          OR: withVersion.map((alignment) => ({
+            kpiVersionId: alignment.kpiDefinition.activeVersionId!,
+            scopeNodeId: alignment.strategyNodeId,
+          })),
+        },
+        orderBy: [{ computedAt: "desc" }, { id: "desc" }],
+      });
+      for (const status of statuses) {
+        const key = `${status.kpiVersionId}:${status.scopeNodeId}`;
+        if (!statusByKey.has(key)) statusByKey.set(key, status.status);
+      }
+    }
+
+    return placements
+      .map((placement) => {
+        const objective = objectiveById.get(placement.objectiveNodeId);
+        if (!objective) return null;
+        const alignment = alignmentByObjective.get(placement.objectiveNodeId);
+        const activeVersionId = alignment?.kpiDefinition.activeVersionId ?? null;
+        const rawStatus = activeVersionId ? statusByKey.get(`${activeVersionId}:${placement.objectiveNodeId}`) ?? null : null;
+        return {
+          perspectiveId: placement.perspectiveId,
+          objectiveNodeId: placement.objectiveNodeId,
+          objectiveNameEn: objective.nameEn,
+          objectiveNameAr: objective.nameAr,
+          kpiDefinitionId: alignment?.kpiDefinitionId ?? null,
+          kpiNameEn: alignment?.kpiDefinition.activeVersion?.nameEn ?? null,
+          status: rawStatus ? normalizeStatus(rawStatus) : null,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null);
+  }
+
   async createScorecard(input: {
     nameEn: string;
     nameAr: string;

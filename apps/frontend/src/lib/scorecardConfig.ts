@@ -22,6 +22,17 @@ export function scoreColor(score: number): { bar: string; text: string } {
   return { bar: "bg-red-500", text: "text-red-600" };
 }
 
+// Suggested starting weights shown in the "New Scorecard" creation form before
+// any real scorecard.weighting.propose/publish workflow has run for it. Once
+// a scorecard has a published WeightingVersion, its real weights (Prompt 3.1)
+// are used instead — see MasterScorecardPage, which reads those, not this.
+export const DEFAULT_PERSPECTIVE_WEIGHTS: Record<PerspectiveKey, number> = {
+  financial: 30,
+  customer: 25,
+  "internal-process": 25,
+  "learning-growth": 20,
+};
+
 export const PERSPECTIVE_CONFIG: Record<
   PerspectiveKey,
   { label: string; icon: LucideIcon; bg: string; text: string; bar: string }
