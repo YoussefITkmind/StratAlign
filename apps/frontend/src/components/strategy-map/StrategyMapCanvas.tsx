@@ -17,6 +17,8 @@ interface ScorecardDetail {
   publishedMap: { id: string; links: MapLinkRow[] } | null;
 }
 interface StrategyNode { id: string; type: string; nameEn: string; planVersionId: string; state?: string }
+const EMPTY_PLACEMENTS: MapPlacement[] = [];
+const EMPTY_NODES: StrategyNode[] = [];
 
 export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string }) {
   const utils = trpc.useUtils();
@@ -24,8 +26,8 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
   const placementsQuery = trpc.scorecard.placement.list.useQuery({ scorecardId });
   const nodesQuery = trpc.strategy.nodes.useQuery();
   const scorecard = scorecardQuery.data as ScorecardDetail | undefined;
-  const placements = (placementsQuery.data as MapPlacement[] | undefined) ?? [];
-  const strategyNodes = (nodesQuery.data as StrategyNode[] | undefined) ?? [];
+  const placements = (placementsQuery.data as MapPlacement[] | undefined) ?? EMPTY_PLACEMENTS;
+  const strategyNodes = (nodesQuery.data as StrategyNode[] | undefined) ?? EMPTY_NODES;
 
   const [roles, setRoles] = useState<string[]>([]);
   const [authLoaded, setAuthLoaded] = useState(false);
