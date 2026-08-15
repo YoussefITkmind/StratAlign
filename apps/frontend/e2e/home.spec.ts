@@ -85,11 +85,15 @@ test.describe("Home landing checkpoint — real Phase 2/3 data", () => {
     await expect(page.getByTestId("widget-map-thumbnail")).toHaveCount(0);
   });
 
-  test("Home mirrors under RTL", async ({ page, context }) => {
+  test("Home mirrors under RTL using the real locale control", async ({ page }) => {
     await loginAs(page, "executive_viewer");
-    await context.addCookies([{ name: "stratalign_locale", value: "ar", url: page.url() }]);
     await page.goto("/overview");
+    await expect(page.getByTestId("home-page")).toBeVisible({ timeout: 15_000 });
+
+    await page.locator("#locale-switcher").selectOption("ar");
+    await expect(page.locator("html")).toHaveAttribute("lang", "ar");
     await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+    await expect(page.getByTestId("home-page")).toHaveCSS("direction", "rtl");
     await expect(page.getByTestId("home-widgets")).toBeVisible();
     await expect(page.getByTestId("widget-scorecard-strip")).toBeVisible();
   });
