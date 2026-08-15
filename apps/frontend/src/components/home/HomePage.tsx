@@ -32,9 +32,21 @@ interface HomeTask {
   sessionState: string | null;
 }
 
+interface UpcomingReview {
+  id: string;
+  cadenceDefinitionId: string;
+  name: string;
+  subjectType: string;
+  subjectId: string;
+  periodKey: string | null;
+  status: string;
+  reviewDueAt: string | Date;
+}
+
 interface HomeSnapshot {
   kpis: HomeKpi[];
   tasks: HomeTask[];
+  upcomingReviews: UpcomingReview[];
 }
 
 const STATUS = {
@@ -192,14 +204,18 @@ function ScorecardStrip() {
   return <WidgetCard testId="widget-scorecard-strip" title="Master scorecard" href="/balanced-scorecards"><div className="flex gap-3 overflow-x-auto">{scorecards.map((scorecard) => <ScorecardItem key={scorecard.id} scorecard={scorecard} />)}{scorecards.length === 0 && <p className="text-xs text-gray-400">No scorecards yet.</p>}</div></WidgetCard>;
 }
 
-function ReviewCalendar() {
-  const query = trpc.governance.myPendingApprovals.useQuery();
-  const items = (query.data ?? []).slice(0, 5);
+function ReviewCalendar({ snapshot }: { snapshot: HomeSnapshot }) {
+  const items = snapshot.upcomingReviews.slice(0, 5);
   return (
-    <WidgetCard testId="widget-review-calendar" title="Review calendar" href="/governance">
+    <WidgetCard testId="widget-review-calendar" title="Review calendar">
       <div className="divide-y divide-gray-100">
-        {items.map((item) => <div key={item.id} data-testid={`calendar-item-${item.id}`} className="py-2.5 first:pt-0"><p className="text-[13px] font-medium text-gray-800">{item.entityType}</p><p className="text-xs text-gray-400">{item.entityId} · {new Date(item.createdAt).toLocaleDateString()}</p></div>)}
-        {items.length === 0 && <p className="text-xs text-gray-400">Nothing awaiting your review.</p>}
+        {items.map((item) => (
+          <div key={item.id} data-testid={`calendar-item-${item.id}`} className="py-2.5 first:pt-0">
+            <p className="text-[13px] font-medium text-gray-800">{item.name}</p>
+            <p className="text-xs text-gray-400">{item.periodKey ?? item.subjectType} · review {new Date(item.reviewDueAt).toLocaleDateString()} · {item.status.toLowerCase()}</p>
+          </div>
+        ))}
+        {items.length === 0 && <p className="text-xs text-gray-400">No upcoming scheduled reviews.</p>}
       </div>
     </WidgetCard>
   );
@@ -250,14 +266,14 @@ export function HomePage({ roles }: { roles: PlatformRole[] }) {
   const role = useMemo(() => resolveHomeRole(roles), [roles]);
   const widgets = useMemo(() => widgetsForRole(role), [role]);
   const snapshotQuery = trpc.home.snapshot.useQuery();
-  const snapshot = (snapshotQuery.data as HomeSnapshot | undefined) ?? { kpis: [], tasks: [] };
+  const snapshot = (snapshotQuery.data as HomeSnapshot | undefined) ?? { kpis: [], tasks: [], upcomingReviews: [] };
 
   const renderWidget = (key: WidgetKey) => {
     switch (key) {
       case "kpiTiles": return <KpiTiles snapshot={snapshot} />;
       case "exceptions": return <Exceptions snapshot={snapshot} />;
       case "scorecardStrip": return <ScorecardStrip />;
-      case "reviewCalendar": return <ReviewCalendar />;
+      case "reviewCalendar": return <ReviewCalendar snapshot={snapshot} />;
       case "mapThumbnail": return <MapThumbnail />;
       case "ownedKpis": return <OwnedKpis snapshot={snapshot} />;
       case "dueSubmissions": return <DueSubmissions snapshot={snapshot} />;
