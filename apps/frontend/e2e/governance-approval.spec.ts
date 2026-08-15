@@ -34,7 +34,7 @@ async function frontendTrpcJson(page: import("@playwright/test").Page, procedure
 }
 
 async function backendTrpcJson(page: import("@playwright/test").Page, procedure: string, input: unknown) {
-  const response = await page.request.post(`${backendTrpc}/${procedure}`, { data: { json: input } });
+  const response = await page.request.post(`${backendTrpc}/${procedure}`, { data: input });
   const body = await response.json();
   return { status: response.status(), body };
 }
@@ -45,7 +45,7 @@ function trpcData<T>(body: any): T {
 }
 
 test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () => {
-  test.describe.configure({ mode: "serial" }); // shared scorecard fixture, decided one case at a time
+  test.describe.configure({ mode: "serial" });
 
   let fixture: ScorecardFixture;
 
@@ -92,7 +92,8 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
     expect(published.status, JSON.stringify(published.body)).toBe(200);
 
     const previewGet = await page.request.get(`${backendTrpc}/scorecard.weighting.preview?input=${encodeURIComponent(JSON.stringify({
-      json: { scorecardId: fixture.scorecardId, draftWeights: { "84000000-0000-4000-8000-000000000011": 70, "84000000-0000-4000-8000-000000000012": 30 } },
+      scorecardId: fixture.scorecardId,
+      draftWeights: { "84000000-0000-4000-8000-000000000011": 70, "84000000-0000-4000-8000-000000000012": 30 },
     }))}`);
     const previewBody = await previewGet.json();
     expect(previewGet.status(), JSON.stringify(previewBody)).toBe(200);
