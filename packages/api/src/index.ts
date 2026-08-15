@@ -564,6 +564,17 @@ export interface GovernanceCaseOutput {
   updatedAt: Date;
 }
 
+export interface GovernanceDecisionLogOutput {
+  id: string;
+  caseId: string;
+  entityType: string;
+  entityId: string;
+  decision: "APPROVED" | "REJECTED" | "CHANGES_REQUESTED";
+  decidedBy: string;
+  decidedAt: Date;
+  rationale: string | null;
+}
+
 export type GovernanceDecisionInput =
   | {
       type: "APPROVE";
@@ -615,6 +626,10 @@ export interface GovernanceServiceContract {
     caseId: string;
     event: GovernanceDecisionInput;
   }): Promise<GovernanceCaseOutput>;
+
+  listDecisions(
+    limit?: number,
+  ): Promise<GovernanceDecisionLogOutput[]>;
 }
 
 export interface GovernanceEscalationOutput {
@@ -971,6 +986,17 @@ const governanceDecisionInputSchema = z.object({
     .min(1)
     .max(4000)
     .optional(),
+}).strict();
+
+const governanceDecisionLogOutputSchema = z.object({
+  id: z.string().uuid(),
+  caseId: z.string().uuid(),
+  entityType: z.string(),
+  entityId: z.string(),
+  decision: z.enum(["APPROVED", "REJECTED", "CHANGES_REQUESTED"]),
+  decidedBy: z.string().uuid(),
+  decidedAt: z.date(),
+  rationale: z.string().nullable(),
 }).strict();
 
 const governanceDecisionEvent = {
@@ -1642,6 +1668,20 @@ export const appRouter = router({
                   }),
             ),
         ),
+
+    listDecisions:
+      protectedProcedure
+        .output(
+          z.array(governanceDecisionLogOutputSchema),
+        )
+        .query(
+          ({ ctx }) =>
+            mapGovernanceErrors(
+              () =>
+                ctx.governance.listDecisions(),
+            ),
+        ),
+
     escalation: router({
       acknowledge:
         protectedProcedure

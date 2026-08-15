@@ -362,7 +362,7 @@ describe.sequential(
 
         expect(
           persisted.decisionLog,
-        ).toMatchObject({
+        ).toMatchObject([{
           decision:
             ApprovalDecision.APPROVED,
 
@@ -371,7 +371,7 @@ describe.sequential(
 
           rationale:
             "Reviewed and approved",
-        });
+        }]);
 
         const event =
           await prisma.domainEvent.findFirstOrThrow(
@@ -513,7 +513,7 @@ describe.sequential(
         });
 
         const decision =
-          await prisma.decisionLogEntry.findUniqueOrThrow(
+          await prisma.decisionLogEntry.findFirstOrThrow(
             {
               where: {
                 caseId:
@@ -547,6 +547,123 @@ describe.sequential(
             },
           }),
         ).toBe(1);
+      },
+    );
+
+    it(
+      "persists changes-requested rationale, then a second decision after resubmission",
+      async () => {
+        const created =
+          await createCase();
+
+        await submitCase(
+          created.id,
+        );
+
+        await governance.transition({
+          caseId: created.id,
+
+          event: {
+            type: "REQUEST_CHANGES",
+
+            actorUserId:
+              approverId,
+
+            rationale:
+              "Add the affected-KPI breakdown before this can be reviewed",
+          },
+        });
+
+        const afterRequestChanges =
+          await prisma.approvalCase.findUniqueOrThrow(
+            {
+              where: {
+                id: created.id,
+              },
+            },
+          );
+
+        expect(
+          afterRequestChanges.currentState,
+        ).toBe(
+          ApprovalCaseState.CHANGES_REQUESTED,
+        );
+
+        expect(
+          await prisma.decisionLogEntry.findFirstOrThrow(
+            {
+              where: {
+                caseId: created.id,
+              },
+            },
+          ),
+        ).toMatchObject({
+          decision:
+            ApprovalDecision.CHANGES_REQUESTED,
+
+          decidedBy:
+            approverId,
+
+          rationale:
+            "Add the affected-KPI breakdown before this can be reviewed",
+        });
+
+        // Resubmitting and later deciding must not collide with the
+        // changes-requested entry: DecisionLogEntry.caseId is intentionally
+        // not unique, since a single case can accumulate more than one
+        // decision across its lifetime.
+        await governance.transition({
+          caseId: created.id,
+
+          event: {
+            type: "RESUBMIT",
+            actorUserId: submitterId,
+          },
+        });
+
+        await governance.transition({
+          caseId: created.id,
+
+          event: {
+            type: "APPROVE",
+            actorUserId: approverId,
+            rationale: "Breakdown added — looks good now",
+          },
+        });
+
+        const decisions =
+          await prisma.decisionLogEntry.findMany(
+            {
+              where: {
+                caseId: created.id,
+              },
+              orderBy: {
+                decidedAt: "asc",
+              },
+            },
+          );
+
+        expect(decisions).toHaveLength(2);
+        expect(decisions[0]).toMatchObject({
+          decision: ApprovalDecision.CHANGES_REQUESTED,
+        });
+        expect(decisions[1]).toMatchObject({
+          decision: ApprovalDecision.APPROVED,
+          rationale: "Breakdown added — looks good now",
+        });
+
+        const finalCase =
+          await prisma.approvalCase.findUniqueOrThrow(
+            {
+              where: {
+                id: created.id,
+              },
+            },
+          );
+
+        expect(finalCase.currentState).toBe(
+          ApprovalCaseState.APPROVED,
+        );
       },
     );
 
@@ -598,6 +715,53 @@ describe.sequential(
         ).rejects.toMatchObject({
           code:
             "GOVERNANCE_APPROVAL_REFERENCE_INVALID",
+        });
+      },
+    );
+
+    it(
+      "listDecisions reflects newly decided cases, most recent first",
+      async () => {
+        const first =
+          await createCase();
+        await submitCase(first.id);
+        await governance.transition({
+          caseId: first.id,
+          event: {
+            type: "REJECT",
+            actorUserId: approverId,
+            rationale: "Not this cycle",
+          },
+        });
+
+        const second =
+          await createCase();
+        await submitCase(second.id);
+        await governance.transition({
+          caseId: second.id,
+          event: {
+            type: "APPROVE",
+            actorUserId: approverId,
+            rationale: "Looks good",
+          },
+        });
+
+        const decisions =
+          await governance.listDecisions();
+
+        const secondIndex = decisions.findIndex((d) => d.caseId === second.id);
+        const firstIndex = decisions.findIndex((d) => d.caseId === first.id);
+
+        expect(secondIndex).toBeGreaterThanOrEqual(0);
+        expect(firstIndex).toBeGreaterThanOrEqual(0);
+        expect(secondIndex).toBeLessThan(firstIndex);
+
+        expect(decisions[secondIndex]).toMatchObject({
+          entityType: "RuleDefinition",
+          entityId: "rule-definition-123",
+          decision: ApprovalDecision.APPROVED,
+          decidedBy: approverId,
+          rationale: "Looks good",
         });
       },
     );

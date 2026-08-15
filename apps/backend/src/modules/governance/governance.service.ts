@@ -468,6 +468,33 @@ export class GovernanceService {
           }
 
           if (
+            effects.has("recordChangesRequested")
+          ) {
+            if (
+              input.event.type !== "REQUEST_CHANGES"
+            ) {
+              throw new Error(
+                "recordChangesRequested action executed for a non-request-changes event",
+              );
+            }
+
+            await tx.decisionLogEntry.create({
+              data: {
+                caseId: approvalCase.id,
+
+                decision:
+                  ApprovalDecision.CHANGES_REQUESTED,
+
+                decidedBy:
+                  input.event.actorUserId,
+
+                rationale:
+                  input.event.rationale ?? null,
+              },
+            });
+          }
+
+          if (
             effects.has(
               "scheduleEscalation",
             )
@@ -635,7 +662,7 @@ export class GovernanceService {
 
         include: {
           workflowDefinition: true,
-          decisionLog: true,
+          decisionLog: { orderBy: { decidedAt: "desc" } },
           escalations: true,
         },
       });
@@ -652,9 +679,42 @@ export class GovernanceService {
   async getLatestCaseForEntity(entityType: string, entityId: string) {
     return this.prisma.approvalCase.findFirst({
       where: { entityType, entityId },
-      include: { workflowDefinition: true, decisionLog: true, escalations: true },
+      include: {
+        workflowDefinition: true,
+        decisionLog: { orderBy: { decidedAt: "desc" } },
+        escalations: true,
+      },
       orderBy: { createdAt: "desc" },
     });
+  }
+
+  /**
+   * Smallest read-only view over the real, persisted decision history:
+   * DecisionLogEntry rows joined back to their case's entity for display,
+   * no parallel governance subsystem. Most recent decisions first, capped
+   * to keep the Governance screen's Decision Log tab bounded.
+   */
+  async listDecisions(limit = 50) {
+    const entries = await this.prisma.decisionLogEntry.findMany({
+      take: limit,
+      orderBy: { decidedAt: "desc" },
+      include: {
+        approvalCase: {
+          select: { entityType: true, entityId: true },
+        },
+      },
+    });
+
+    return entries.map((entry) => ({
+      id: entry.id,
+      caseId: entry.caseId,
+      entityType: entry.approvalCase.entityType,
+      entityId: entry.approvalCase.entityId,
+      decision: entry.decision,
+      decidedBy: entry.decidedBy,
+      decidedAt: entry.decidedAt,
+      rationale: entry.rationale,
+    }));
   }
 
   async myPendingApprovals(
