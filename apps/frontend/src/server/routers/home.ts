@@ -76,25 +76,9 @@ export const homeRouter = router({
       }];
     });
 
-    const [tasks, upcomingReviews] = await Promise.all([
-      forward(() => api.performance.capture.tasks.query()),
-      forward(() => api.scheduler.upcomingReviews.query()),
-    ]);
-
     return {
       kpis,
-      tasks: tasks.map((task) => ({
-        id: task.id,
-        kpiVersionId: task.kpiVersionId,
-        kpiName: task.kpiName,
-        unit: task.unit,
-        scopeNodeId: task.scopeNodeId,
-        period: task.period,
-        dueAt: task.dueAt,
-        cadenceState: task.cadenceState,
-        sessionState: task.session?.state ?? null,
-      })),
-      upcomingReviews,
+      upcomingReviews: await forward(() => api.scheduler.upcomingReviews.query()),
     };
   }),
 });
