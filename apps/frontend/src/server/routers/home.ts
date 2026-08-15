@@ -76,7 +76,10 @@ export const homeRouter = router({
       }];
     });
 
-    const tasks = await forward(() => api.performance.capture.tasks.query());
+    const [tasks, upcomingReviews] = await Promise.all([
+      forward(() => api.performance.capture.tasks.query()),
+      forward(() => api.scheduler.upcomingReviews.query()),
+    ]);
 
     return {
       kpis,
@@ -91,6 +94,7 @@ export const homeRouter = router({
         cadenceState: task.cadenceState,
         sessionState: task.session?.state ?? null,
       })),
+      upcomingReviews,
     };
   }),
 });
