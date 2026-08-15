@@ -67,6 +67,12 @@ jobs:
       - name: Build backend workspace dependencies
         run: pnpm --filter @spm/backend^... build
 
+      - name: Prepare Playwright infrastructure
+        run: |
+          docker compose up -d postgres redis mock-oidc
+          pnpm --filter @spm/backend exec prisma generate
+          pnpm --filter @spm/backend exec prisma migrate deploy
+
       - name: Install Chromium
         run: pnpm --filter @spm/frontend exec playwright install --with-deps chromium
 
