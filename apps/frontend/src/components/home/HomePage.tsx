@@ -22,16 +22,6 @@ interface HomeKpi {
   ownedByViewer: boolean;
 }
 
-interface HomeTask {
-  id: string;
-  kpiVersionId: string;
-  kpiName: string;
-  period: string;
-  dueAt: string | Date;
-  cadenceState: string;
-  sessionState: string | null;
-}
-
 interface UpcomingReview {
   id: string;
   cadenceDefinitionId: string;
@@ -45,23 +35,17 @@ interface UpcomingReview {
 
 interface HomeSnapshot {
   kpis: HomeKpi[];
-  tasks: HomeTask[];
   upcomingReviews: UpcomingReview[];
 }
 
 const STATUS = {
-  on_track: { label: "On track", badge: "bg-emerald-50 text-emerald-700", text: "text-emerald-700" },
-  watch: { label: "Watch", badge: "bg-amber-50 text-amber-700", text: "text-amber-700" },
-  off_track: { label: "Off track", badge: "bg-red-50 text-red-700", text: "text-red-700" },
-  unknown: { label: "Unknown", badge: "bg-gray-100 text-gray-600", text: "text-gray-600" },
+  on_track: { label: "On track", badge: "bg-emerald-50 text-emerald-700" },
+  watch: { label: "Watch", badge: "bg-amber-50 text-amber-700" },
+  off_track: { label: "Off track", badge: "bg-red-50 text-red-700" },
+  unknown: { label: "Unknown", badge: "bg-gray-100 text-gray-600" },
 } as const;
 
-function WidgetCard({
-  testId,
-  title,
-  href,
-  children,
-}: {
+function WidgetCard({ testId, title, href, children }: {
   testId: string;
   title: string;
   href?: string;
@@ -164,17 +148,23 @@ function OwnedKpis({ snapshot }: { snapshot: HomeSnapshot }) {
   );
 }
 
-function DueSubmissions({ snapshot }: { snapshot: HomeSnapshot }) {
+function DueSubmissions() {
+  // This owner-only endpoint is deliberately queried only when this widget is
+  // rendered. The backend still enforces kpi_owner/data_steward; executive
+  // Home views never invoke an endpoint they are not authorized to call.
+  const query = trpc.capture.tasks.useQuery();
+  const tasks = query.data ?? [];
   return (
     <WidgetCard testId="widget-due-submissions" title="Due submissions" href="/kpis-okrs">
+      {query.error && <p role="alert" className="mb-2 text-xs text-red-600">{query.error.message}</p>}
       <div className="divide-y divide-gray-100">
-        {snapshot.tasks.slice(0, 6).map((task) => (
+        {tasks.slice(0, 6).map((task) => (
           <div key={task.id} data-testid={`due-submission-${task.id}`} className="py-2.5 first:pt-0">
             <p className="text-[13px] font-medium text-gray-800">{task.kpiName}</p>
-            <p className="text-xs text-gray-400">{task.period} · due {new Date(task.dueAt).toLocaleDateString()} · {task.sessionState ?? task.cadenceState}</p>
+            <p className="text-xs text-gray-400">{task.period} · due {new Date(task.dueAt).toLocaleDateString()} · {task.session?.state ?? task.cadenceState}</p>
           </div>
         ))}
-        {snapshot.tasks.length === 0 && <p className="text-xs text-gray-400">No due submissions.</p>}
+        {tasks.length === 0 && !query.isLoading && <p className="text-xs text-gray-400">No due submissions.</p>}
       </div>
     </WidgetCard>
   );
@@ -266,7 +256,7 @@ export function HomePage({ roles }: { roles: PlatformRole[] }) {
   const role = useMemo(() => resolveHomeRole(roles), [roles]);
   const widgets = useMemo(() => widgetsForRole(role), [role]);
   const snapshotQuery = trpc.home.snapshot.useQuery();
-  const snapshot = (snapshotQuery.data as HomeSnapshot | undefined) ?? { kpis: [], tasks: [], upcomingReviews: [] };
+  const snapshot = (snapshotQuery.data as HomeSnapshot | undefined) ?? { kpis: [], upcomingReviews: [] };
 
   const renderWidget = (key: WidgetKey) => {
     switch (key) {
@@ -276,7 +266,7 @@ export function HomePage({ roles }: { roles: PlatformRole[] }) {
       case "reviewCalendar": return <ReviewCalendar snapshot={snapshot} />;
       case "mapThumbnail": return <MapThumbnail />;
       case "ownedKpis": return <OwnedKpis snapshot={snapshot} />;
-      case "dueSubmissions": return <DueSubmissions snapshot={snapshot} />;
+      case "dueSubmissions": return <DueSubmissions />;
       case "governanceEscalations": return <GovernanceEscalations />;
       case "initiativesPlaceholder": return <InitiativesPlaceholder />;
     }
