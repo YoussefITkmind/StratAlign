@@ -62,6 +62,7 @@ test.describe("Home landing checkpoint — real Phase 2/3 data", () => {
     await expect(page.getByTestId("widget-kpi-tiles")).toContainText("E2E Revenue Growth");
     await expect(page.getByTestId("widget-exceptions")).toContainText("E2E Customer Satisfaction");
     await expect(page.getByTestId(`scorecard-strip-item-${fixture.scorecardId}`)).toBeVisible();
+    await expect(page.getByTestId("widget-review-calendar")).toContainText("Home checkpoint owner KPI capture");
     await expect(page.getByTestId("widget-map-thumbnail")).toContainText("Grow Revenue");
     await expect(page.getByTestId("widget-map-thumbnail")).toContainText("Improve Customer Satisfaction");
 
