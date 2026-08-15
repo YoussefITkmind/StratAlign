@@ -16,7 +16,7 @@ export const ROLE_WIDGETS: Partial<Record<PlatformRole, WidgetKey[]>> = {
   governance_committee: ["exceptions", "scorecardStrip", "reviewCalendar"],
   vmo_lead: ["kpiTiles", "exceptions", "scorecardStrip", "reviewCalendar", "mapThumbnail"],
   sector_leadership: ["kpiTiles", "scorecardStrip", "mapThumbnail"],
-  kpi_owner: ["ownedKpis", "dueSubmissions", "exceptions"],
+  kpi_owner: ["ownedKpis", "dueSubmissions"],
   initiative_owner: ["initiativesPlaceholder"],
   platform_administrator: [
     "kpiTiles",
