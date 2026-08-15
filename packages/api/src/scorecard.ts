@@ -176,6 +176,11 @@ export const scorecardRouter = router({
     getPublished: protectedProcedure.input(z.object({ scorecardId: id }).strict()).query(async ({ ctx, input }) => {
       try { return await service(ctx).getPublishedMap(input.scorecardId); } catch (error) { return fail(error); }
     }),
+    placeObjective: mapEditor()
+      .input(z.object({ perspectiveId: id, objectiveNodeId: id }).strict())
+      .mutation(async ({ ctx, input }) => {
+        try { return await service(ctx).setPlacement(input); } catch (error) { return fail(error); }
+      }),
     draftLink: mapEditor()
       .input(z.object({
         scorecardId: id,
