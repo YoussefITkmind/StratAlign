@@ -8,6 +8,8 @@ const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required");
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 const SCORECARD_ID = "84000000-0000-4000-8000-000000000010";
+const REVENUE_OBJECTIVE_ID = "84000000-0000-4000-8000-000000000002";
+const CSAT_OBJECTIVE_ID = "84000000-0000-4000-8000-000000000003";
 
 async function main() {
   const scorecard = await prisma.scorecard.findUniqueOrThrow({ where: { id: SCORECARD_ID } });
@@ -27,7 +29,13 @@ async function main() {
     },
   });
 
-  console.log(JSON.stringify({ objectiveId, perspectiveId: perspective.id }));
+  console.log(JSON.stringify({
+    objectiveId,
+    perspectiveId: perspective.id,
+    revenueObjectiveId: REVENUE_OBJECTIVE_ID,
+    csatObjectiveId: CSAT_OBJECTIVE_ID,
+    approverUserId: creator.id,
+  }));
 }
 
 main().finally(async () => prisma.$disconnect());
