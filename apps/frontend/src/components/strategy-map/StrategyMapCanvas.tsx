@@ -8,8 +8,8 @@ import MapLanes, { type MapPlacement } from "./MapLanes";
 import MapLinks, { type MapLinkRow } from "./MapLinks";
 import ObjectivePlacementControls from "./ObjectivePlacementControls";
 import LinkEditControls from "./LinkEditControls";
-import { draftMapLink, getMapAuthorization, placeObjective, proposeMap, publishMap, removeMapLink } from "@/app/(app)/strategy-maps/actions";
-
+import { draftMapLink, placeObjective, proposeMap, publishMap, removeMapLink } from "@/app/(app)/strategy-maps/actions";
+import { getMapAuthorization } from "@/app/(app)/strategy-maps/authorization";
 interface Perspective { id: string; nameEn: string; nameAr: string; order: number }
 interface ScorecardDetail {
   id: string; nameEn: string; nameAr: string; planVersionId: string;
