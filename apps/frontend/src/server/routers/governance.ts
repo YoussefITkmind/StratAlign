@@ -153,14 +153,20 @@ function toFrontendCase(
   const runtime =
     item as BackendGovernanceCase & {
       escalations?: unknown[];
-      decisionLog?: {
+      decisionLog?: Array<{
         decidedBy?: string;
         decidedAt?:
           string | Date;
         rationale?:
           string | null;
-      } | null;
+      }> | null;
     };
+
+  // decisionLog is ordered most-recent-first (a case can accumulate several
+  // entries over its lifetime via changes_requested -> resubmit -> decide),
+  // so the latest entry is what the card summary should reflect.
+  const latestDecision =
+    runtime.decisionLog?.[0];
 
   return {
     id:
@@ -209,21 +215,20 @@ function toFrontendCase(
       ),
 
     decidedBy:
-      runtime.decisionLog
+      latestDecision
         ?.decidedBy,
 
     decidedAt:
-      runtime.decisionLog
+      latestDecision
         ?.decidedAt
         ? String(
-            runtime
-              .decisionLog
+            latestDecision
               .decidedAt,
           )
         : undefined,
 
     decisionReason:
-      runtime.decisionLog
+      latestDecision
         ?.rationale ??
       undefined,
   };
@@ -345,6 +350,7 @@ export const governanceRouter =
               z.enum([
                 "approved",
                 "rejected",
+                "changes_requested",
               ]),
 
             reason:
@@ -374,7 +380,10 @@ export const governanceRouter =
                       input.decision ===
                         "approved"
                         ? "approve"
-                        : "reject",
+                        : input.decision ===
+                            "changes_requested"
+                          ? "request_changes"
+                          : "reject",
 
                     ...(input.reason
                       ? {
@@ -392,6 +401,40 @@ export const governanceRouter =
               translateBackendGovernanceError(
                 error,
               );
+            }
+          },
+        ),
+
+    listDecisions:
+      authenticatedProcedure
+        .query(
+          async ({ ctx }) => {
+            try {
+              const entries =
+                await backend(ctx)
+                  .governance
+                  .listDecisions
+                  .query();
+
+              return entries.map((entry) => ({
+                id: entry.id,
+                caseId: entry.caseId,
+                entityType: entry.entityType,
+                entityId: entry.entityId,
+                decision: (entry.decision === "APPROVED"
+                  ? "approved"
+                  : entry.decision === "REJECTED"
+                    ? "rejected"
+                    : "changes_requested") as
+                  | "approved"
+                  | "rejected"
+                  | "changes_requested",
+                decidedBy: entry.decidedBy,
+                decidedAt: String(entry.decidedAt),
+                rationale: entry.rationale,
+              }));
+            } catch (error) {
+              translateBackendGovernanceError(error);
             }
           },
         ),

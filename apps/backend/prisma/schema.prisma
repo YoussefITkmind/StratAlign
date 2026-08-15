@@ -261,6 +261,7 @@ enum ApprovalCaseState {
 enum ApprovalDecision {
   APPROVED @map("approved")
   REJECTED @map("rejected")
+  CHANGES_REQUESTED @map("changes_requested")
 
   @@schema("governance")
 }
@@ -307,7 +308,7 @@ model ApprovalCase {
   submitter           User               @relation("ApprovalCaseSubmitter", fields: [submittedBy], references: [id], onDelete: Restrict)
   approvalParticipant User?              @relation("ApprovalCaseParticipant", fields: [approvalParticipantId], references: [id], onDelete: Restrict)
   escalations         EscalationCase[]
-  decisionLog         DecisionLogEntry?
+  decisionLog         DecisionLogEntry[]
 
   @@index([workflowDefinitionId])
   @@index([entityType, entityId])
@@ -340,10 +341,12 @@ model EscalationCase {
   @@schema("governance")
 }
 
-/// Immutable terminal approval/rejection record.
+/// Immutable decision record. One case can accumulate several entries over
+/// its lifetime (e.g. changes_requested -> resubmit -> approved), so caseId
+/// is not unique; each row is still write-once.
 model DecisionLogEntry {
   id        String           @id @default(uuid()) @db.Uuid
-  caseId    String           @unique @map("case_id") @db.Uuid
+  caseId    String           @map("case_id") @db.Uuid
   decision  ApprovalDecision
   decidedBy String           @map("decided_by")
   decidedAt DateTime         @default(now()) @map("decided_at")
@@ -352,6 +355,7 @@ model DecisionLogEntry {
   approvalCase ApprovalCase @relation(fields: [caseId], references: [id], onDelete: Restrict)
   actor        User         @relation("DecisionLogActor", fields: [decidedBy], references: [id], onDelete: Restrict)
 
+  @@index([caseId])
   @@index([decidedBy])
   @@index([decidedAt])
   @@map("decision_log_entries")
