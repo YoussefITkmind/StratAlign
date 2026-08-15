@@ -9,7 +9,7 @@ async function backend() {
 }
 
 export async function placeObjective(input: { perspectiveId: string; objectiveNodeId: string }) {
-  return (await backend()).scorecard.placement.set.mutate(input);
+  return (await backend()).scorecard.map.placeObjective.mutate(input);
 }
 
 export async function draftMapLink(input: {
