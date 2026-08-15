@@ -121,7 +121,7 @@ test.describe("Strategy Map canvas — real data and governance", () => {
     });
     expect(linkResponse.status()).toBe(403);
 
-    const placementResponse = await page.request.post(`${backendTrpc}/scorecard.placement.set`, {
+    const placementResponse = await page.request.post(`${backendTrpc}/scorecard.map.placeObjective`, {
       data: { json: { perspectiveId: fixture.perspectiveId, objectiveNodeId: fixture.extraObjectiveId } },
     });
     expect(placementResponse.status()).toBe(403);
