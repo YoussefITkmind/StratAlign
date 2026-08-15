@@ -12,11 +12,10 @@ describe("Home role widget mapping", () => {
     ]);
   });
 
-  it("gives KPI owners an owner-focused composition", () => {
+  it("gives KPI owners exactly the owner-focused checkpoint composition", () => {
     expect(widgetsForRole("kpi_owner")).toEqual([
       "ownedKpis",
       "dueSubmissions",
-      "exceptions",
     ]);
   });
 
