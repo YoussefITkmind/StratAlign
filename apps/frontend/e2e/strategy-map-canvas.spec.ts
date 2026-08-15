@@ -12,7 +12,6 @@ interface Fixture {
   scorecardId: string;
   revenueObjectiveId: string;
   csatObjectiveId: string;
-  aliceId: string;
   bobId: string;
   extraObjectiveId: string;
   perspectiveId: string;
@@ -34,15 +33,14 @@ test.describe("Strategy Map canvas — real data and governance", () => {
 
   test.beforeAll(async () => {
     const base = await runSeed("e2e-scorecard-seed.ts");
-    const extra = await runSeed("e2e-strategy-map-seed.ts");
+    const map = await runSeed("e2e-strategy-map-seed.ts");
     fixture = {
       scorecardId: base.scorecardId,
-      revenueObjectiveId: base.revenueObjectiveId,
-      csatObjectiveId: base.csatObjectiveId,
-      aliceId: base.aliceId,
-      bobId: base.bobId,
-      extraObjectiveId: extra.objectiveId,
-      perspectiveId: extra.perspectiveId,
+      revenueObjectiveId: map.revenueObjectiveId,
+      csatObjectiveId: map.csatObjectiveId,
+      bobId: map.approverUserId,
+      extraObjectiveId: map.objectiveId,
+      perspectiveId: map.perspectiveId,
     };
   });
 
