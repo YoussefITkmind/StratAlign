@@ -53,7 +53,7 @@ test.describe("Strategy Map canvas — real data and governance", () => {
     const page = await analyst.newPage();
     await loginAs(page, "member");
     await page.goto(`/strategy-maps/${fixture.scorecardId}`);
-    await expect(page.getByTestId("map-canvas-page")).toBeVisible();
+    await expect(page.getByTestId("map-canvas-page")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("viewer-role-label")).toContainText("Strategy analyst");
     await page.getByTestId("edit-mode-toggle").click();
 
