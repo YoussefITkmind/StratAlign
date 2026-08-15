@@ -39,6 +39,11 @@ async function backendTrpcJson(page: import("@playwright/test").Page, procedure:
   return { status: response.status(), body };
 }
 
+function trpcData<T>(body: any): T {
+  const data = body?.result?.data;
+  return (data?.json ?? data) as T;
+}
+
 test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () => {
   test.describe.configure({ mode: "serial" }); // shared scorecard fixture, decided one case at a time
 
@@ -51,7 +56,6 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
   test("propose a real weighting change, see the before/after/delta, approve as a different user, then publish and confirm 3.2's data reflects it", async ({ page }) => {
     test.setTimeout(90_000);
 
-    // Analyst (alice) proposes a real weighting change via the canonical Prompt 3.1 backend API.
     await loginAs(page, "member");
     const proposed = await backendTrpcJson(page, "scorecard.weighting.propose", {
       scorecardId: fixture.scorecardId,
@@ -60,10 +64,9 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
       approvalParticipantId: fixture.bobId,
     });
     expect(proposed.status, JSON.stringify(proposed.body)).toBe(200);
-    const caseId: string = proposed.body.result.data.json.id;
+    const caseId = trpcData<{ id: string }>(proposed.body).id;
     expect(caseId).toMatch(/^[0-9a-f-]{36}$/i);
 
-    // A genuinely different user (bob) sees it in their real pending queue.
     await page.context().clearCookies();
     await loginAs(page, "platform_administrator");
     await page.goto("/governance");
@@ -73,7 +76,6 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
     await expect(card).toBeVisible();
     await expect(card).toHaveAttribute("data-entity-type", "scorecard_weighting");
 
-    // The real before/after/delta table, not a generic or fabricated view.
     const diff = card.getByTestId("scorecard-weighting-diff");
     await expect(diff).toBeVisible();
     await expect(diff).toContainText("70");
@@ -84,21 +86,18 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
     await card.getByTestId("approve-case").click();
     await expect(card).toHaveCount(0);
 
-    // The analyst returns to publish the approved structural change.
     await page.context().clearCookies();
     await loginAs(page, "member");
     const published = await backendTrpcJson(page, "scorecard.weighting.publish", { scorecardId: fixture.scorecardId, approvalCaseId: caseId });
     expect(published.status, JSON.stringify(published.body)).toBe(200);
 
-    // Verify the exact real data source Master Scorecard (Prompt 3.2) reads now reflects the published change.
     const previewGet = await page.request.get(`${backendTrpc}/scorecard.weighting.preview?input=${encodeURIComponent(JSON.stringify({
       json: { scorecardId: fixture.scorecardId, draftWeights: { "84000000-0000-4000-8000-000000000011": 70, "84000000-0000-4000-8000-000000000012": 30 } },
     }))}`);
     const previewBody = await previewGet.json();
     expect(previewGet.status(), JSON.stringify(previewBody)).toBe(200);
-    expect(Math.round(previewBody.result.data.json.currentScore)).toBe(70);
+    expect(Math.round(trpcData<{ currentScore: number }>(previewBody).currentScore)).toBe(70);
 
-    // The requirement is that the approved change is visible on the real Master Scorecard UI (Prompt 3.2), not just reflected in an API response.
     await page.goto(`/balanced-scorecards/${fixture.scorecardId}`);
     await expect(page.getByTestId("master-scorecard-page")).toBeVisible();
     await expect(page.getByTestId("overall-score")).toContainText("70");
@@ -107,7 +106,7 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
   });
 
   test("the submitter cannot decide their own case, even by calling governance.decide directly", async ({ page }) => {
-    await loginAs(page, "member"); // alice
+    await loginAs(page, "member");
     const proposed = await backendTrpcJson(page, "scorecard.weighting.propose", {
       scorecardId: fixture.scorecardId,
       draftWeights: { "84000000-0000-4000-8000-000000000011": 55, "84000000-0000-4000-8000-000000000012": 45 },
@@ -115,14 +114,14 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
       approvalParticipantId: fixture.bobId,
     });
     expect(proposed.status, JSON.stringify(proposed.body)).toBe(200);
-    const caseId: string = proposed.body.result.data.json.id;
+    const caseId = trpcData<{ id: string }>(proposed.body).id;
 
     const decision = await frontendTrpcJson(page, "governance.decide", { id: caseId, decision: "approved" });
     expect(decision.status).toBe(403);
   });
 
   test("reject with a captured rationale, then verify the real decision log via governance.getCase", async ({ page }) => {
-    await loginAs(page, "member"); // alice
+    await loginAs(page, "member");
     const proposed = await backendTrpcJson(page, "scorecard.weighting.propose", {
       scorecardId: fixture.scorecardId,
       draftWeights: { "84000000-0000-4000-8000-000000000011": 40, "84000000-0000-4000-8000-000000000012": 60 },
@@ -130,10 +129,10 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
       approvalParticipantId: fixture.bobId,
     });
     expect(proposed.status, JSON.stringify(proposed.body)).toBe(200);
-    const caseId: string = proposed.body.result.data.json.id;
+    const caseId = trpcData<{ id: string }>(proposed.body).id;
 
     await page.context().clearCookies();
-    await loginAs(page, "platform_administrator"); // bob
+    await loginAs(page, "platform_administrator");
     await page.goto("/governance");
     const card = page.locator(`[data-testid="approval-card"][data-case-id="${caseId}"]`);
     await expect(card).toBeVisible();
@@ -145,12 +144,13 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
 
     const getCase = await page.request.get(`/api/trpc/governance.getCase?input=${encodeURIComponent(JSON.stringify({ json: { id: caseId } }))}`);
     const caseBody = await getCase.json();
-    expect(caseBody.result.data.json.status).toBe("rejected");
-    expect(caseBody.result.data.json.decisionReason).toBe(rationale);
+    const rejectedCase = trpcData<{ status: string; decisionReason: string }>(caseBody);
+    expect(rejectedCase.status).toBe("rejected");
+    expect(rejectedCase.decisionReason).toBe(rationale);
   });
 
   test("request changes with a captured rationale, then verify it's persisted via governance.getCase and the real Decision Log", async ({ page }) => {
-    await loginAs(page, "member"); // alice
+    await loginAs(page, "member");
     const proposed = await backendTrpcJson(page, "scorecard.weighting.propose", {
       scorecardId: fixture.scorecardId,
       draftWeights: { "84000000-0000-4000-8000-000000000011": 45, "84000000-0000-4000-8000-000000000012": 55 },
@@ -158,10 +158,10 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
       approvalParticipantId: fixture.bobId,
     });
     expect(proposed.status, JSON.stringify(proposed.body)).toBe(200);
-    const caseId: string = proposed.body.result.data.json.id;
+    const caseId = trpcData<{ id: string }>(proposed.body).id;
 
     await page.context().clearCookies();
-    await loginAs(page, "platform_administrator"); // bob
+    await loginAs(page, "platform_administrator");
     await page.goto("/governance");
     const card = page.locator(`[data-testid="approval-card"][data-case-id="${caseId}"]`);
     await expect(card).toBeVisible();
@@ -173,10 +173,10 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
 
     const getCase = await page.request.get(`/api/trpc/governance.getCase?input=${encodeURIComponent(JSON.stringify({ json: { id: caseId } }))}`);
     const caseBody = await getCase.json();
-    expect(caseBody.result.data.json.status).toBe("changes_requested");
-    expect(caseBody.result.data.json.decisionReason).toBe(rationale);
+    const changedCase = trpcData<{ status: string; decisionReason: string }>(caseBody);
+    expect(changedCase.status).toBe("changes_requested");
+    expect(changedCase.decisionReason).toBe(rationale);
 
-    // And the real Decision Log tab (not mock data) shows it too.
     await page.goto("/governance");
     await page.getByTestId("governance-tab-decision-log").click();
     const logEntry = page.locator('[data-testid="decision-log-entry"]', { hasText: rationale });
