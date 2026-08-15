@@ -15,6 +15,7 @@ const PRIOR_MEASUREMENT_ID = "85000000-0000-4000-8000-000000000003";
 const CURRENT_MEASUREMENT_ID = "85000000-0000-4000-8000-000000000004";
 const TARGET_ID = "85000000-0000-4000-8000-000000000005";
 const STATUS_ID = "85000000-0000-4000-8000-000000000006";
+const CADENCE_INSTANCE_ID = "85000000-0000-4000-8000-000000000007";
 const CADENCE_KEY = "e2e-home-owner-kpi-capture";
 const CURRENT_PERIOD = "2026-08";
 const PRIOR_PERIOD = "2026-07";
@@ -23,11 +24,6 @@ async function main() {
   const erin = await prisma.user.findUniqueOrThrow({ where: { email: "erin@example.test" } });
   const alice = await prisma.user.findUniqueOrThrow({ where: { email: "alice@example.test" } });
 
-  // Reuse the real Phase 3.2 CSAT scope/plan and threshold-rule reference,
-  // but create a dedicated KPI/version for the Home checkpoint. KPI versions
-  // are append-only at the database layer, so changing the owner of an
-  // existing version would violate the production invariant this E2E is
-  // supposed to exercise.
   const referenceTarget = await prisma.targetSeries.findFirstOrThrow({
     where: { period: CURRENT_PERIOD, kpiVersion: { nameEn: "E2E Customer Satisfaction" } },
     orderBy: { createdAt: "desc" },
@@ -124,9 +120,15 @@ async function main() {
   const now = new Date();
   const dueAt = new Date(now.getTime() + 60 * 60 * 1000);
   const definition = await prisma.cadenceDefinition.upsert({
-    where: { key: CADENCE_KEY },
+    where: {
+      subjectType_subjectId_key: {
+        subjectType: "performance_kpi",
+        subjectId: KPI_VERSION_ID,
+        key: CADENCE_KEY,
+      },
+    },
     update: {
-      subjectId: KPI_VERSION_ID,
+      name: "Home checkpoint owner KPI capture",
       payload: { scopeNodeId: referenceTarget.scopeNodeId, period: CURRENT_PERIOD },
       anchorAt: now,
       startsAt: now,
@@ -151,13 +153,10 @@ async function main() {
   });
 
   await prisma.cadenceInstance.upsert({
-    where: {
-      cadenceDefinitionId_sequence: {
-        cadenceDefinitionId: definition.id,
-        sequence: 1,
-      },
-    },
+    where: { id: CADENCE_INSTANCE_ID },
     update: {
+      cadenceDefinitionId: definition.id,
+      sequence: 1,
       occurrenceAt: now,
       periodKey: CURRENT_PERIOD,
       windowOpensAt: now,
@@ -168,6 +167,7 @@ async function main() {
       payloadSnapshot: { scopeNodeId: referenceTarget.scopeNodeId, period: CURRENT_PERIOD },
     },
     create: {
+      id: CADENCE_INSTANCE_ID,
       cadenceDefinitionId: definition.id,
       sequence: 1,
       occurrenceAt: now,
@@ -187,6 +187,7 @@ async function main() {
     kpiVersionId: KPI_VERSION_ID,
     kpiName: KPI_NAME,
     cadenceDefinitionId: definition.id,
+    cadenceInstanceId: CADENCE_INSTANCE_ID,
   }));
 }
 
