@@ -1,0 +1,92 @@
+name: Governance E2E
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/frontend/e2e/governance-approval.spec.ts"
+      - "apps/frontend/e2e/auth-global-setup.ts"
+      - "apps/frontend/src/app/(app)/governance/**"
+      - "apps/frontend/src/components/governance/**"
+      - "apps/frontend/src/server/routers/governance.ts"
+      - "apps/backend/prisma/e2e-governance-seed.ts"
+      - "apps/backend/prisma/e2e-scorecard-seed.ts"
+      - "apps/backend/prisma/schema.prisma"
+      - "apps/backend/src/modules/governance/**"
+      - "packages/api/src/index.ts"
+      - ".github/workflows/governance-e2e.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: governance-e2e-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  governance-e2e:
+    name: Governance real-data Playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NODE_ENV: test
+      PORT: 4000
+      FRONTEND_URL: http://localhost:3000
+      NEXT_PUBLIC_TRPC_URL: http://localhost:4000/trpc
+      DATABASE_URL: postgresql://spm:spm_dev_password@localhost:5432/spm_platform?schema=public
+      REDIS_URL: redis://localhost:6379
+      OBJECT_STORAGE_ENDPOINT: http://localhost:19000
+      OBJECT_STORAGE_ACCESS_KEY: ci-only-object-storage-access-key
+      OBJECT_STORAGE_SECRET_KEY: ci-only-object-storage-secret-key
+      OBJECT_STORAGE_BUCKET: artifacts-test
+      AUTH_SECRET: ci-only-auth-secret-not-for-production-000000000000
+      AUTH_TRUST_HOST: true
+      AUTH_URL: http://localhost:3000
+      AUTH_OIDC_ISSUER: http://localhost:8092/
+      AUTH_OIDC_CLIENT_ID: ci-only-oidc-client
+      AUTH_OIDC_CLIENT_SECRET: ci-only-oidc-client-secret-not-real
+      AUTH_OIDC_JWKS_URI: http://localhost:8092/.well-known/jwks.json
+      AUTH_OIDC_SCOPES: openid profile email
+      AUTH_OIDC_TOKEN_ENDPOINT_AUTH_METHOD: client_secret_post
+      AUTH_OIDC_ALLOW_VERIFIED_EMAIL_LINKING: false
+      NOTIFICATION_SENDER_MODE: fake
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build backend workspace dependencies
+        run: pnpm --filter @spm/backend^... build
+
+      - name: Prepare Playwright infrastructure
+        run: |
+          docker compose up -d postgres redis mock-oidc
+          pnpm --filter @spm/backend exec prisma generate
+          pnpm --filter @spm/backend exec prisma migrate deploy
+
+      - name: Install Chromium
+        run: pnpm --filter @spm/frontend exec playwright install --with-deps chromium
+
+      - name: Run Governance acceptance flow
+        run: pnpm --filter @spm/frontend exec playwright test e2e/governance-approval.spec.ts
+
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v
