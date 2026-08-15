@@ -85,7 +85,16 @@ jobs:
         run: pnpm --filter @spm/frontend exec playwright install --with-deps chromium
 
       - name: Run Governance acceptance flow
-        run: pnpm --filter @spm/frontend exec playwright test e2e/governance-approval.spec.ts
+        shell: bash
+        run: |
+          set +e
+          pnpm --filter @spm/frontend exec playwright test e2e/governance-approval.spec.ts 2>&1 | tee /tmp/governance-e2e.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            failure=$(tail -n 80 /tmp/governance-e2e.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
+            echo "::error title=Governance Playwright failure::$failure"
+          fi
+          exit "$status"
 
       - name: Stop disposable services
         if: always()
