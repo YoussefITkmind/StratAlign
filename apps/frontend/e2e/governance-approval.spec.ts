@@ -12,19 +12,29 @@ const backendTrpc = process.env.NEXT_PUBLIC_TRPC_URL ?? "http://localhost:4000/t
 
 interface ScorecardFixture {
   scorecardId: string;
-  aliceId: string;
   bobId: string;
 }
 
-async function seedScorecardFixture(): Promise<ScorecardFixture> {
+async function runJsonFixture(script: string): Promise<Record<string, string>> {
   const result = await execFileAsync(
     "pnpm",
-    ["--filter", "@spm/backend", "exec", "tsx", "prisma/e2e-scorecard-seed.ts"],
+    ["--filter", "@spm/backend", "exec", "tsx", script],
     { cwd: workspaceRoot, env: process.env },
   );
   const line = result.stdout.trim().split("\n").at(-1);
-  if (!line) throw new Error("Scorecard E2E seed produced no output");
-  return JSON.parse(line) as ScorecardFixture;
+  if (!line) throw new Error(`${script} produced no output`);
+  return JSON.parse(line) as Record<string, string>;
+}
+
+async function seedScorecardFixture(): Promise<ScorecardFixture> {
+  const scorecard = await runJsonFixture("prisma/e2e-scorecard-seed.ts");
+  const users = await runJsonFixture("prisma/e2e-governance-users.ts");
+
+  if (!scorecard.scorecardId || !users.bobId) {
+    throw new Error("Governance E2E fixture is missing scorecardId or bobId");
+  }
+
+  return { scorecardId: scorecard.scorecardId, bobId: users.bobId };
 }
 
 async function frontendTrpcJson(page: import("@playwright/test").Page, procedure: string, input: unknown) {
