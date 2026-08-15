@@ -40,6 +40,7 @@ import { KpiDetailService } from "./modules/performance/kpi-detail.service";
 import { ScorecardService } from "./modules/scorecard/scorecard.service";
 import { ExecutionService } from "./modules/execution/execution.service";
 import { PortfolioService } from "./modules/portfolio/portfolio.service";
+import { SchedulerReadService } from "./modules/scheduler/scheduler-read.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -66,31 +67,16 @@ async function bootstrap(): Promise<void> {
   const authorization = new IamAuthorizationService(prisma, authenticationFreshness);
   const iam = new IamAdminService(prisma);
   const rules = new RulesService(prisma);
-  const governance = new GovernanceService(
-    prisma,
-    eventBus,
-    rules,
-  );
-  const governanceEscalation =
-    new GovernanceEscalationService(
-      prisma,
-      eventBus,
-    );
+  const governance = new GovernanceService(prisma, eventBus, rules);
+  const governanceEscalation = new GovernanceEscalationService(prisma, eventBus);
   const strategy = new StrategyService(prisma);
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
 
-  const approvalGateway =
-    new GovernanceApprovalGateway(
-      governance,
-    );
+  const approvalGateway = new GovernanceApprovalGateway(governance);
   const strategyNodeGateway = new PrismaStrategyNodeGateway(prisma);
 
   const registry = {
-    kpi: new KpiRegistryService(
-      prisma,
-      approvalGateway,
-      strategyNodeGateway,
-    ),
+    kpi: new KpiRegistryService(prisma, approvalGateway, strategyNodeGateway),
     okr: new OkrService(prisma, strategyNodeGateway),
     alignment: new AlignmentService(prisma, strategyNodeGateway),
     hierarchy: new KpiHierarchyService(prisma),
@@ -106,11 +92,7 @@ async function bootstrap(): Promise<void> {
   );
 
   const performance = new PerformanceService(
-    new CaptureSessionService(
-      prisma,
-      measurements,
-      logger.child("performance-capture"),
-    ),
+    new CaptureSessionService(prisma, measurements, logger.child("performance-capture")),
     new CaptureWorkspaceService(prisma, {
       endpoint: environment.OBJECT_STORAGE_ENDPOINT,
       accessKey: environment.OBJECT_STORAGE_ACCESS_KEY,
@@ -126,6 +108,7 @@ async function bootstrap(): Promise<void> {
   const scorecard = new ScorecardService(prisma, governance, rules);
   const execution = new ExecutionService(prisma);
   const portfolio = new PortfolioService(prisma, rules);
+  const schedulerRead = new SchedulerReadService(prisma);
 
   const server = createHTTPServer({
     router: rootRouter,
@@ -156,6 +139,7 @@ async function bootstrap(): Promise<void> {
         scorecard,
         execution,
         portfolio,
+        schedulerRead,
       };
     },
     middleware(request, response, next) {
