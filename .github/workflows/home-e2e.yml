@@ -1,0 +1,106 @@
+name: Home E2E
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "apps/frontend/e2e/home.spec.ts"
+      - "apps/frontend/e2e/auth-global-setup.ts"
+      - "apps/frontend/e2e/utils.ts"
+      - "apps/frontend/src/app/(app)/overview/**"
+      - "apps/frontend/src/components/home/**"
+      - "apps/frontend/src/lib/roleWidgetConfig.ts"
+      - "apps/frontend/src/server/routers/home.ts"
+      - "apps/frontend/src/server/routers/_app.ts"
+      - "apps/backend/prisma/e2e-home-seed.ts"
+      - "apps/backend/prisma/e2e-scorecard-seed.ts"
+      - ".github/workflows/home-e2e.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: home-e2e-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  home-e2e:
+    name: Home real-data Playwright
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NODE_ENV: test
+      PORT: 4000
+      FRONTEND_URL: http://localhost:3000
+      NEXT_PUBLIC_TRPC_URL: http://localhost:4000/trpc
+      DATABASE_URL: postgresql://spm:spm_dev_password@localhost:5432/spm_platform?schema=public
+      REDIS_URL: redis://localhost:6379
+      OBJECT_STORAGE_ENDPOINT: http://localhost:19000
+      OBJECT_STORAGE_ACCESS_KEY: ci-only-object-storage-access-key
+      OBJECT_STORAGE_SECRET_KEY: ci-only-object-storage-secret-key
+      OBJECT_STORAGE_BUCKET: artifacts-test
+      AUTH_SECRET: ci-only-auth-secret-not-for-production-000000000000
+      AUTH_TRUST_HOST: true
+      AUTH_URL: http://localhost:3000
+      AUTH_OIDC_ISSUER: http://localhost:8092/
+      AUTH_OIDC_CLIENT_ID: ci-only-oidc-client
+      AUTH_OIDC_CLIENT_SECRET: ci-only-oidc-client-secret-not-real
+      AUTH_OIDC_JWKS_URI: http://localhost:8092/.well-known/jwks.json
+      AUTH_OIDC_SCOPES: openid profile email
+      AUTH_OIDC_TOKEN_ENDPOINT_AUTH_METHOD: client_secret_post
+      AUTH_OIDC_ALLOW_VERIFIED_EMAIL_LINKING: false
+      NOTIFICATION_SENDER_MODE: fake
+      E2E_MEMBER_EMAIL: alice@example.test
+      E2E_ADMIN_EMAIL: bob@example.test
+      E2E_EXECUTIVE_VIEWER_EMAIL: dana@example.test
+      E2E_KPI_OWNER_EMAIL: erin@example.test
+      E2E_CREDENTIAL_PASSWORD: LocalTestPassword123!
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build backend workspace dependencies
+        run: pnpm --filter @spm/backend^... build
+
+      - name: Prepare Playwright infrastructure
+        run: |
+          docker compose up -d postgres redis mock-oidc
+          pnpm --filter @spm/backend exec prisma generate
+          pnpm --filter @spm/backend exec prisma migrate deploy
+
+      - name: Install Chromium
+        run: pnpm --filter @spm/frontend exec playwright install --with-deps chromium
+
+      - name: Run Home checkpoint flow
+        shell: bash
+        run: |
+          set +e
+          pnpm --filter @spm/frontend exec playwright test e2e/home.spec.ts 2>&1 | tee /tmp/home-e2e.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            failure=$(tail -n 30 /tmp/home-e2e.log | tr '\n' ' ' | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
+            echo "::error title=Home Playwright failure::$failure"
+          fi
+          exit "$status"
+
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v
