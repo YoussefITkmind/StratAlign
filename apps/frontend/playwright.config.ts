@@ -13,8 +13,8 @@ export default defineConfig({
       url: "http://localhost:4000/trpc/health.check",
       reuseExistingServer: true,
       timeout: 60_000,
-      stdout: "ignore",
-      stderr: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
     },
     {
       command: "pnpm --filter @spm/frontend dev",
@@ -22,16 +22,14 @@ export default defineConfig({
       url: "http://localhost:3000/login",
       reuseExistingServer: true,
       timeout: 60_000,
-      stdout: "ignore",
-      stderr: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
     },
   ],
   use: {
     baseURL: "http://localhost:3000",
     trace: "retain-on-failure",
   },
-  // The dev server is started and reset separately (in-memory mock state
-  // needs a clean process per run) — Playwright just points at it directly.
   projects: [
     {
       name: "chromium",
