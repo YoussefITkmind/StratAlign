@@ -8,6 +8,7 @@ import { loginAs } from "./utils";
 
 const execFileAsync = promisify(execFile);
 const workspaceRoot = resolve(__dirname, "../../..");
+const backendTrpc = process.env.NEXT_PUBLIC_TRPC_URL ?? "http://localhost:4000/trpc";
 
 interface ScorecardFixture {
   scorecardId: string;
@@ -26,8 +27,14 @@ async function seedScorecardFixture(): Promise<ScorecardFixture> {
   return JSON.parse(line) as ScorecardFixture;
 }
 
-async function trpcJson(page: import("@playwright/test").Page, procedure: string, input: unknown) {
+async function frontendTrpcJson(page: import("@playwright/test").Page, procedure: string, input: unknown) {
   const response = await page.request.post(`/api/trpc/${procedure}`, { data: { json: input } });
+  const body = await response.json();
+  return { status: response.status(), body };
+}
+
+async function backendTrpcJson(page: import("@playwright/test").Page, procedure: string, input: unknown) {
+  const response = await page.request.post(`${backendTrpc}/${procedure}`, { data: { json: input } });
   const body = await response.json();
   return { status: response.status(), body };
 }
@@ -44,9 +51,9 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
   test("propose a real weighting change, see the before/after/delta, approve as a different user, then publish and confirm 3.2's data reflects it", async ({ page }) => {
     test.setTimeout(90_000);
 
-    // Analyst (alice) proposes a real weighting change via the real Prompt 3.1 API.
+    // Analyst (alice) proposes a real weighting change via the canonical Prompt 3.1 backend API.
     await loginAs(page, "member");
-    const proposed = await trpcJson(page, "scorecard.weighting.propose", {
+    const proposed = await backendTrpcJson(page, "scorecard.weighting.propose", {
       scorecardId: fixture.scorecardId,
       draftWeights: { "84000000-0000-4000-8000-000000000011": 70, "84000000-0000-4000-8000-000000000012": 30 },
       activeFrom: new Date().toISOString(),
@@ -77,20 +84,21 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
     await card.getByTestId("approve-case").click();
     await expect(card).toHaveCount(0);
 
-    // Publish the approved change (mirrors the analyst-returns-to-publish step used elsewhere in this app).
-    const published = await trpcJson(page, "scorecard.weighting.publish", { scorecardId: fixture.scorecardId, approvalCaseId: caseId });
+    // The analyst returns to publish the approved structural change.
+    await page.context().clearCookies();
+    await loginAs(page, "member");
+    const published = await backendTrpcJson(page, "scorecard.weighting.publish", { scorecardId: fixture.scorecardId, approvalCaseId: caseId });
     expect(published.status, JSON.stringify(published.body)).toBe(200);
 
     // Verify the exact real data source Master Scorecard (Prompt 3.2) reads now reflects the published change.
-    const previewGet = await page.request.get(`/api/trpc/scorecard.weighting.preview?input=${encodeURIComponent(JSON.stringify({
+    const previewGet = await page.request.get(`${backendTrpc}/scorecard.weighting.preview?input=${encodeURIComponent(JSON.stringify({
       json: { scorecardId: fixture.scorecardId, draftWeights: { "84000000-0000-4000-8000-000000000011": 70, "84000000-0000-4000-8000-000000000012": 30 } },
     }))}`);
     const previewBody = await previewGet.json();
     expect(previewGet.status(), JSON.stringify(previewBody)).toBe(200);
     expect(Math.round(previewBody.result.data.json.currentScore)).toBe(70);
 
-    // The requirement is that the approved change is *visible* on the real
-    // Master Scorecard UI (Prompt 3.2), not just reflected in an API response.
+    // The requirement is that the approved change is visible on the real Master Scorecard UI (Prompt 3.2), not just reflected in an API response.
     await page.goto(`/balanced-scorecards/${fixture.scorecardId}`);
     await expect(page.getByTestId("master-scorecard-page")).toBeVisible();
     await expect(page.getByTestId("overall-score")).toContainText("70");
@@ -100,26 +108,28 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
 
   test("the submitter cannot decide their own case, even by calling governance.decide directly", async ({ page }) => {
     await loginAs(page, "member"); // alice
-    const proposed = await trpcJson(page, "scorecard.weighting.propose", {
+    const proposed = await backendTrpcJson(page, "scorecard.weighting.propose", {
       scorecardId: fixture.scorecardId,
       draftWeights: { "84000000-0000-4000-8000-000000000011": 55, "84000000-0000-4000-8000-000000000012": 45 },
       activeFrom: new Date().toISOString(),
       approvalParticipantId: fixture.bobId,
     });
+    expect(proposed.status, JSON.stringify(proposed.body)).toBe(200);
     const caseId: string = proposed.body.result.data.json.id;
 
-    const decision = await trpcJson(page, "governance.decide", { id: caseId, decision: "approved" });
+    const decision = await frontendTrpcJson(page, "governance.decide", { id: caseId, decision: "approved" });
     expect(decision.status).toBe(403);
   });
 
   test("reject with a captured rationale, then verify the real decision log via governance.getCase", async ({ page }) => {
     await loginAs(page, "member"); // alice
-    const proposed = await trpcJson(page, "scorecard.weighting.propose", {
+    const proposed = await backendTrpcJson(page, "scorecard.weighting.propose", {
       scorecardId: fixture.scorecardId,
       draftWeights: { "84000000-0000-4000-8000-000000000011": 40, "84000000-0000-4000-8000-000000000012": 60 },
       activeFrom: new Date().toISOString(),
       approvalParticipantId: fixture.bobId,
     });
+    expect(proposed.status, JSON.stringify(proposed.body)).toBe(200);
     const caseId: string = proposed.body.result.data.json.id;
 
     await page.context().clearCookies();
@@ -141,12 +151,13 @@ test.describe("Governance approvals — screen (real Prompt 1.5/3.1 data)", () =
 
   test("request changes with a captured rationale, then verify it's persisted via governance.getCase and the real Decision Log", async ({ page }) => {
     await loginAs(page, "member"); // alice
-    const proposed = await trpcJson(page, "scorecard.weighting.propose", {
+    const proposed = await backendTrpcJson(page, "scorecard.weighting.propose", {
       scorecardId: fixture.scorecardId,
       draftWeights: { "84000000-0000-4000-8000-000000000011": 45, "84000000-0000-4000-8000-000000000012": 55 },
       activeFrom: new Date().toISOString(),
       approvalParticipantId: fixture.bobId,
     });
+    expect(proposed.status, JSON.stringify(proposed.body)).toBe(200);
     const caseId: string = proposed.body.result.data.json.id;
 
     await page.context().clearCookies();
