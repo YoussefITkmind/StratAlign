@@ -75,8 +75,8 @@ test.describe("Home landing checkpoint — real Phase 2/3 data", () => {
 
     await expect(page.getByTestId("home-page")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("home-role-label")).toContainText("kpi owner");
-    await expect(page.getByTestId("widget-owned-kpis")).toContainText("E2E Customer Satisfaction");
-    await expect(page.getByTestId("widget-due-submissions")).toContainText("E2E Customer Satisfaction");
+    await expect(page.getByTestId("widget-owned-kpis")).toContainText("E2E Home Owner KPI");
+    await expect(page.getByTestId("widget-due-submissions")).toContainText("E2E Home Owner KPI");
     await expect(page.locator('[data-testid^="due-submission-"]').first()).toBeVisible();
 
     await expect(page.getByTestId("widget-kpi-tiles")).toHaveCount(0);
