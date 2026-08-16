@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
-import ApprovalCard, { type RealApprovalCase } from "../ApprovalCard";
+import ApprovalCard, { type ApprovalDecision, type RealApprovalCase } from "../ApprovalCard";
 
 export default function ApprovalsTab({
   approvals,
@@ -11,7 +11,7 @@ export default function ApprovalsTab({
   error,
 }: {
   approvals: RealApprovalCase[];
-  onDecide: (id: string, decision: "approved" | "rejected" | "changes_requested", reason: string) => void;
+  onDecide: (id: string, decision: ApprovalDecision, reason: string) => void;
   decidingId: string | null;
   error?: string | null;
 }) {
