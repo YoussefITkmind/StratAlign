@@ -22,6 +22,7 @@ import { StubSiemForwarder } from "./modules/audit/siem-forwarder";
 import { StrategyActivationService } from "./modules/strategy/strategy-activation.service";
 import { StrategyApprovalSubscriber } from "./modules/strategy/strategy-approval.subscriber";
 import { StrategyTraversalService } from "./modules/strategy/strategy-traversal.service";
+import { GovernanceService } from "./modules/governance/governance.service";
 import { GovernanceEscalationService } from "./modules/governance/governance-escalation.service";
 import { GovernancePendingApprovalSubscriber } from "./modules/governance/governance-pending.subscriber";
 import { TraceabilityRefreshSubscriber } from "./modules/strategy/traceability-refresh.subscriber";
@@ -46,6 +47,8 @@ import { MeasurementService } from "./modules/performance/measurement.service";
 import { ThresholdRuleBindingReader } from "./modules/registry/threshold-rule-binding.reader";
 import { RecomputeService } from "./modules/performance/recompute.service";
 import { PerformanceRecomputeSubscriber } from "./modules/performance/subscribers/performance-recompute.subscriber";
+import { ValueService } from "./modules/value/value.service";
+import { ValueCheckinDueSubscriber } from "./modules/value/value-checkin-due.subscriber";
 
 import { createEventDispatchWorker, createOutboxRelayWorker } from "./workers/event.workers";
 import { createAuditVerificationWorker } from "./workers/audit.workers";
@@ -60,48 +63,23 @@ async function bootstrap(): Promise<void> {
   const prisma = new PrismaService(environment.DATABASE_URL);
   const redis = new RedisService(environment.REDIS_URL);
   const queueConnectionProvider = new QueueConnectionProvider(environment.REDIS_URL);
-  const queueService = new QueueService(
-    queueConnectionProvider,
-    environment.QUEUE_PREFIX,
-    logger.child("queue"),
-  );
-  const deadLetterService = new DeadLetterService(
-    queueService,
-    logger.child("dead-letter"),
-  );
-  const workerFactory = new WorkerFactory(
-    queueConnectionProvider,
-    environment.QUEUE_PREFIX,
-    deadLetterService,
-    logger,
-  );
-  const eventBus = new EventBusService(
-    queueService,
-    logger.child("event-bus"),
-  );
+  const queueService = new QueueService(queueConnectionProvider, environment.QUEUE_PREFIX, logger.child("queue"));
+  const deadLetterService = new DeadLetterService(queueService, logger.child("dead-letter"));
+  const workerFactory = new WorkerFactory(queueConnectionProvider, environment.QUEUE_PREFIX, deadLetterService, logger);
+  const eventBus = new EventBusService(queueService, logger.child("event-bus"));
   const subscriberRegistry = new EventSubscriberRegistry();
 
-  const governanceEscalation =
-    new GovernanceEscalationService(
-      prisma,
-      eventBus,
-    );
+  const rules = new RulesService(prisma);
+  const governanceEscalation = new GovernanceEscalationService(prisma, eventBus);
+  const governance = new GovernanceService(prisma, eventBus, rules);
+  const value = new ValueService(prisma, governance, governanceEscalation, rules);
 
-  subscriberRegistry.register(
-    new GovernancePendingApprovalSubscriber(
-      queueService,
-    ),
-  );
+  subscriberRegistry.register(new GovernancePendingApprovalSubscriber(queueService));
+  subscriberRegistry.register(new ValueCheckinDueSubscriber(value));
 
   const journal = new JournalService(prisma);
   const siemForwarder = new StubSiemForwarder(logger.child("siem"));
-  subscriberRegistry.register(
-    new AuditEventSubscriber(
-      journal,
-      siemForwarder,
-      logger.child("audit-journal"),
-    ),
-  );
+  subscriberRegistry.register(new AuditEventSubscriber(journal, siemForwarder, logger.child("audit-journal")));
 
   const strategyActivation = new StrategyActivationService(prisma, eventBus);
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
@@ -110,12 +88,7 @@ async function bootstrap(): Promise<void> {
 
   const cadenceEngine = new CadenceEngine();
   const periodCalendarEngine = new PeriodCalendarEngine();
-  const transitionService = new ScheduleTransitionService(
-    prisma,
-    eventBus,
-    queueService,
-    logger.child("scheduler-transition"),
-  );
+  const transitionService = new ScheduleTransitionService(prisma, eventBus, queueService, logger.child("scheduler-transition"));
   const cadenceGenerator = new CadenceGeneratorService(
     prisma,
     cadenceEngine,
@@ -144,72 +117,40 @@ async function bootstrap(): Promise<void> {
   const templateService = new NotificationTemplateService(
     prisma,
     templateRenderer,
-    {
-      defaultLocale: environment.NOTIFICATION_DEFAULT_LOCALE,
-      fallbackLocale: environment.NOTIFICATION_FALLBACK_LOCALE,
-    },
+    { defaultLocale: environment.NOTIFICATION_DEFAULT_LOCALE, fallbackLocale: environment.NOTIFICATION_FALLBACK_LOCALE },
     logger.child("notification-template"),
   );
   const preferenceService = new NotificationPreferenceService(
     prisma,
-    {
-      locale: environment.NOTIFICATION_DEFAULT_LOCALE,
-      timezone: environment.SCHEDULER_DEFAULT_TIMEZONE,
-      digestIntervalMinutes: 1440,
-    },
+    { locale: environment.NOTIFICATION_DEFAULT_LOCALE, timezone: environment.SCHEDULER_DEFAULT_TIMEZONE, digestIntervalMinutes: 1440 },
   );
-  const senderRegistry = createSenderRegistry(
-    environment,
-    logger.child("notification-senders"),
-  );
+  const senderRegistry = createSenderRegistry(environment, logger.child("notification-senders"));
   const notificationService = new NotificationService(
     prisma,
     preferenceService,
     templateService,
     queueService,
-    {
-      enabled: environment.NOTIFICATION_ENABLED,
-      maxAttempts: environment.NOTIFICATION_MAX_ATTEMPTS,
-    },
+    { enabled: environment.NOTIFICATION_ENABLED, maxAttempts: environment.NOTIFICATION_MAX_ATTEMPTS },
     logger.child("notification"),
   );
-  const notificationDispatcher = new NotificationDispatcher(
-    prisma,
-    senderRegistry,
-    logger.child("notification-dispatcher"),
-  );
+  const notificationDispatcher = new NotificationDispatcher(prisma, senderRegistry, logger.child("notification-dispatcher"));
   const digestService = new DigestService(
     prisma,
     preferenceService,
     templateService,
     queueService,
-    {
-      enabled: environment.DIGEST_ENABLED,
-      maxItems: environment.DIGEST_MAX_ITEMS,
-      maxAttempts: environment.NOTIFICATION_MAX_ATTEMPTS,
-    },
+    { enabled: environment.DIGEST_ENABLED, maxItems: environment.DIGEST_MAX_ITEMS, maxAttempts: environment.NOTIFICATION_MAX_ATTEMPTS },
     logger.child("notification-digest"),
   );
-  subscriberRegistry.register(
-    new ScheduleNotificationSubscriber(
-      notificationService,
-      logger.child("schedule-notifications"),
-    ),
-  );
+  subscriberRegistry.register(new ScheduleNotificationSubscriber(notificationService, logger.child("schedule-notifications")));
 
-  // Performance recompute is carried by the existing event/outbox
-  // infrastructure so it inherits retry, DLQ and idempotency behaviour.
   subscriberRegistry.register(
     new PerformanceRecomputeSubscriber(
       new RecomputeService(
         prisma,
-        new MeasurementService(
-          prisma,
-          eventBus,
-          logger.child("performance-measurement"),
-        ),
+        new MeasurementService(prisma, eventBus, logger.child("performance-measurement")),
         new ThresholdRuleBindingReader(prisma),
-        new RulesService(prisma),
+        rules,
         eventBus,
         logger.child("performance-recompute"),
       ),
@@ -217,53 +158,20 @@ async function bootstrap(): Promise<void> {
     ),
   );
 
-  const eventDispatcher = new EventDispatcherService(
-    subscriberRegistry,
-    logger.child("event-dispatcher"),
-  );
-  const outboxRelay = new OutboxRelayService(
-    prisma,
-    queueService,
-    subscriberRegistry,
-    environment.EVENT_RELAY_BATCH_SIZE,
-    logger.child("outbox-relay"),
-  );
+  const eventDispatcher = new EventDispatcherService(subscriberRegistry, logger.child("event-dispatcher"));
+  const outboxRelay = new OutboxRelayService(prisma, queueService, subscriberRegistry, environment.EVENT_RELAY_BATCH_SIZE, logger.child("outbox-relay"));
 
   await Promise.all([prisma.connect(), redis.connect()]);
   const concurrency = environment.WORKER_CONCURRENCY;
 
-  workerFactory.create(
-    createGovernanceEscalationWorker(
-      governanceEscalation,
-      concurrency,
-    ),
-  );
-
-  workerFactory.create(
-    createAuditVerificationWorker(
-      journal,
-      logger.child("audit-verification"),
-    ),
-  );
+  workerFactory.create(createGovernanceEscalationWorker(governanceEscalation, concurrency));
+  workerFactory.create(createAuditVerificationWorker(journal, logger.child("audit-verification")));
   workerFactory.create(createSchedulerTickWorker(tickService));
   workerFactory.create(createMaterializeWorker(cadenceGenerator, concurrency));
-  workerFactory.create(
-    createTransitionWorker(
-      transitionService,
-      logger.child("scheduler-transition-worker"),
-      concurrency,
-    ),
-  );
+  workerFactory.create(createTransitionWorker(transitionService, logger.child("scheduler-transition-worker"), concurrency));
   workerFactory.create(createOutboxRelayWorker(outboxRelay));
-  workerFactory.create(
-    createEventDispatchWorker(eventDispatcher, concurrency * 2),
-  );
-  workerFactory.create(
-    createNotificationDeliveryWorker(
-      notificationDispatcher,
-      concurrency * 2,
-    ),
-  );
+  workerFactory.create(createEventDispatchWorker(eventDispatcher, concurrency * 2));
+  workerFactory.create(createNotificationDeliveryWorker(notificationDispatcher, concurrency * 2));
   workerFactory.create(createDigestSweepWorker(digestService));
 
   if (environment.SCHEDULER_ENABLED) {
@@ -289,9 +197,7 @@ async function bootstrap(): Promise<void> {
     );
   }
 
-  logger.info(
-    "SPM audit, strategy, scheduler, performance, event and notification workers started",
-  );
+  logger.info("SPM audit, strategy, scheduler, performance, value, event and notification workers started");
 
   async function shutdown(signal: string): Promise<void> {
     logger.info(`Received ${signal}. Shutting down worker.`);

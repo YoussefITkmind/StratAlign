@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance", "scorecard", "execution"]
+  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance", "scorecard", "execution", "value"]
 }
 
 model SystemSetting {
@@ -1462,4 +1462,140 @@ model RiskIndicator {
   updatedAt    DateTime        @updatedAt @map("updated_at")
   @@map("risk_indicators")
   @@schema("execution")
+}
+
+// ---------------------------------------------------------------------------
+// Value Management (Phase 5.1)
+// ---------------------------------------------------------------------------
+
+enum ValueLifecycleState {
+  IDENTIFICATION   @map("identification")
+  PENDING_APPROVAL @map("pending_approval")
+  APPROVED         @map("approved")
+  VALIDATION       @map("validation")
+  TRACKING         @map("tracking")
+  CLOSURE          @map("closure")
+
+  @@schema("value")
+}
+
+enum ValueEntryState {
+  PLANNED  @map("planned")
+  INFLIGHT @map("inflight")
+  REALIZED @map("realized")
+
+  @@schema("value")
+}
+
+enum ValueEntrySource {
+  MANUAL @map("manual")
+  FEED   @map("feed")
+
+  @@schema("value")
+}
+
+enum GateDecision {
+  CONTINUE  @map("continue")
+  INTERVENE @map("intervene")
+  STOP      @map("stop")
+
+  @@schema("value")
+}
+
+model ValueCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  nameEn    String   @map("name_en")
+  nameAr    String   @map("name_ar")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("value_categories")
+  @@schema("value")
+}
+
+model Benefit {
+  id               String              @id @default(uuid()) @db.Uuid
+  initiativeId     String              @map("initiative_id") @db.Uuid
+  categoryId       String              @map("category_id") @db.Uuid
+  driver           String
+  ownerUserId      String              @map("owner_user_id")
+  workflowCaseId   String?             @map("workflow_case_id") @db.Uuid
+  lifecycleState   ValueLifecycleState @default(IDENTIFICATION) @map("lifecycle_state")
+  workflowSnapshot Json                @default("{}") @map("workflow_snapshot")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  @@index([initiativeId])
+  @@index([ownerUserId])
+  @@index([workflowCaseId])
+  @@map("benefits")
+  @@schema("value")
+}
+
+model BenefitBaseline {
+  id         String   @id @default(uuid()) @db.Uuid
+  benefitId  String   @unique @map("benefit_id") @db.Uuid
+  amount     Decimal  @db.Decimal(20, 6)
+  currency   String
+  approvedAt DateTime @map("approved_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("benefit_baselines")
+  @@schema("value")
+}
+
+model BenefitFeedBinding {
+  benefitId  String   @id @map("benefit_id") @db.Uuid
+  bindingRef String   @map("binding_ref")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("benefit_feed_bindings")
+  @@schema("value")
+}
+
+model ValueStateEntry {
+  id         String           @id @default(uuid()) @db.Uuid
+  benefitId  String           @map("benefit_id") @db.Uuid
+  state      ValueEntryState
+  amount     Decimal          @db.Decimal(20, 6)
+  currency   String
+  period     String
+  source     ValueEntrySource
+  lineageRef String?          @map("lineage_ref")
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  @@index([benefitId, state, period])
+  @@map("value_state_entries")
+  @@schema("value")
+}
+
+model Checkin {
+  id                      String    @id @default(uuid()) @db.Uuid
+  benefitId               String    @map("benefit_id") @db.Uuid
+  dueAt                   DateTime  @map("due_at")
+  completedAt             DateTime? @map("completed_at")
+  monthsPostDelivery      Int       @map("months_post_delivery") @db.SmallInt
+  realizedAmountAtCheckin Decimal?  @map("realized_amount_at_checkin") @db.Decimal(20, 6)
+  escalationCaseId        String?   @map("escalation_case_id") @db.Uuid
+  createdAt               DateTime  @default(now()) @map("created_at")
+
+  @@unique([benefitId, monthsPostDelivery])
+  @@map("checkins")
+  @@schema("value")
+}
+
+model GateReview {
+  id                   String        @id @default(uuid()) @db.Uuid
+  initiativeId         String        @map("initiative_id") @db.Uuid
+  stage                String
+  criteriaEvalSnapshot Json          @map("criteria_eval_snapshot")
+  decision             GateDecision?
+  decidedBy            String?       @map("decided_by")
+  decidedAt            DateTime?     @map("decided_at")
+  createdBy            String        @map("created_by")
+  createdAt            DateTime      @default(now()) @map("created_at")
+
+  @@index([initiativeId, stage, createdAt])
+  @@map("gate_reviews")
+  @@schema("value")
 }
