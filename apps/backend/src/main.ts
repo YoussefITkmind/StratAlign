@@ -41,6 +41,7 @@ import { ScorecardService } from "./modules/scorecard/scorecard.service";
 import { ExecutionService } from "./modules/execution/execution.service";
 import { PortfolioService } from "./modules/portfolio/portfolio.service";
 import { SchedulerReadService } from "./modules/scheduler/scheduler-read.service";
+import { ValueService } from "./modules/value/value.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -109,6 +110,7 @@ async function bootstrap(): Promise<void> {
   const execution = new ExecutionService(prisma);
   const portfolio = new PortfolioService(prisma, rules);
   const schedulerRead = new SchedulerReadService(prisma);
+  const value = new ValueService(prisma, governance, governanceEscalation, rules);
 
   const server = createHTTPServer({
     router: rootRouter,
@@ -140,6 +142,7 @@ async function bootstrap(): Promise<void> {
         execution,
         portfolio,
         schedulerRead,
+        value,
       };
     },
     middleware(request, response, next) {
