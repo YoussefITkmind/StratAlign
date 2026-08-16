@@ -85,7 +85,7 @@ describe.sequential("Value Management Core with PostgreSQL Testcontainers", () =
       "scheduling"."cadence_instances",
       "scheduling"."cadence_definitions",
       "governance"."escalation_cases",
-      "governance"."decision_log",
+      "governance"."decision_log_entries",
       "governance"."approval_cases",
       "governance"."workflow_definitions",
       "rules"."rule_definitions",
