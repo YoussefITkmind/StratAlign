@@ -68,7 +68,7 @@ export default function GovernancePage() {
       </div>
 
       {/* tabs */}
-      <div className="mb-5 flex items-center gap-6 border-b border-gray-200">
+      <div className="mb-5 flex items-center gap-4 overflow-x-auto border-b border-gray-200 sm:gap-6">
         {tabs.map((t) => {
           const Icon = t.icon;
           const isActive = tab === t.key;
@@ -79,7 +79,7 @@ export default function GovernancePage() {
               type="button"
               onClick={() => setTab(t.key)}
               data-testid={`governance-tab-${t.key}`}
-              className={`relative flex items-center gap-2 border-b-2 pb-3 pt-1 text-sm font-medium transition ${
+              className={`relative flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 pb-3 pt-1 text-sm font-medium transition ${
                 isActive ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
