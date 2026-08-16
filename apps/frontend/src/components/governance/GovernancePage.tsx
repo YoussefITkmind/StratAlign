@@ -7,7 +7,7 @@ import { trpc } from "@/lib/trpc/client";
 import ApprovalsTab from "./tabs/ApprovalsTab";
 import DecisionLogTab, { type RealDecisionLogEntry } from "./tabs/DecisionLogTab";
 import UnsupportedTab from "./tabs/UnsupportedTab";
-import type { RealApprovalCase } from "./ApprovalCard";
+import type { ApprovalDecision, RealApprovalCase } from "./ApprovalCard";
 
 type TabKey = "approvals" | "decision-log" | "committees" | "risk-register" | "compliance" | "audit-trail";
 const EMPTY_APPROVALS: RealApprovalCase[] = [];
@@ -30,17 +30,35 @@ export default function GovernancePage() {
   const decisionsQuery = trpc.governance.listDecisions.useQuery(undefined, { enabled: tab === "decision-log" });
   const decisions = (decisionsQuery.data as RealDecisionLogEntry[] | undefined) ?? EMPTY_DECISIONS;
   const decide = trpc.governance.decide.useMutation();
+  const decideValueGate = trpc.valueGate.decide.useMutation();
   const [decidingId, setDecidingId] = useState<string | null>(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
 
   const pendingApprovals = approvals.length;
   const escalated = approvals.filter((a) => a.escalated).length;
 
-  const handleDecide = async (id: string, decision: "approved" | "rejected" | "changes_requested", reason: string) => {
+  const handleDecide = async (id: string, decision: ApprovalDecision, reason: string) => {
     setDecidingId(id);
     setDecisionError(null);
     try {
-      await decide.mutateAsync({ id, decision, ...(reason ? { reason } : {}) });
+      const approval = approvals.find((item) => item.id === id);
+      if (!approval) throw new Error("Approval is no longer available");
+
+      if (approval.entityType === "value_gate_review") {
+        if (decision !== "continue" && decision !== "intervene" && decision !== "stop") {
+          throw new Error("Use a Value Gate committee decision for this approval");
+        }
+        await decideValueGate.mutateAsync({
+          gateReviewId: approval.entityId,
+          decision,
+        });
+      } else {
+        if (decision !== "approved" && decision !== "rejected" && decision !== "changes_requested") {
+          throw new Error("Invalid governance decision for this approval");
+        }
+        await decide.mutateAsync({ id, decision, ...(reason ? { reason } : {}) });
+      }
+
       await Promise.all([
         utils.governance.myPendingApprovals.invalidate(),
         utils.governance.listDecisions.invalidate(),
@@ -54,7 +72,6 @@ export default function GovernancePage() {
 
   return (
     <div className="mx-auto max-w-[1400px] p-4 sm:p-6">
-      {/* header */}
       <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-[22px] font-bold text-gray-900">Governance</h1>
@@ -67,7 +84,6 @@ export default function GovernancePage() {
         </div>
       </div>
 
-      {/* tabs */}
       <div className="mb-5 flex items-center gap-4 overflow-x-auto border-b border-gray-200 sm:gap-6">
         {tabs.map((t) => {
           const Icon = t.icon;
