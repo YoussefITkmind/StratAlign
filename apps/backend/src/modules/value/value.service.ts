@@ -428,24 +428,32 @@ export class ValueService {
        ORDER BY c.due_at ASC`,
       now,
     );
-    const raised: Array<{ checkinId: string; escalationCaseId: string }> = [];
+
+    const raised: Array<{ checkinId: string; caseId: string }> = [];
     for (const checkin of overdue) {
-      const escalation = await this.governanceEscalation.raise({
-        approvalCaseId: null,
-        entityType: "value_checkin",
+      const submittedBy = checkin.original_submitter ?? checkin.owner_user_id;
+      const escalationCase = await this.governance.submitCase({
+        entityType: "value_checkin_overdue",
         entityId: checkin.id,
-        reason: `Value realization check-in is overdue for benefit ${checkin.benefit_id}`,
-        participant: checkin.owner_user_id,
-        originalSubmitter: checkin.original_submitter,
+        submittedBy,
+        approvalParticipantId: checkin.owner_user_id,
+        proposedChange: {
+          before: { completedAt: null },
+          after: { action: "complete_overdue_value_checkin" },
+          impactSummary: { benefitId: checkin.benefit_id, dueAt: checkin.due_at.toISOString() },
+        },
       });
-      const updated = await this.prisma.$executeRawUnsafe(
-        `UPDATE "value"."checkins"
-         SET escalation_case_id = $2::uuid
-         WHERE id = $1::uuid AND escalation_case_id IS NULL`,
+      await this.governanceEscalation.raise({
+        approvalCaseId: escalationCase.id,
+        participantUserId: checkin.owner_user_id,
+        deadline: checkin.due_at.toISOString(),
+      });
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE "value"."checkins" SET escalation_case_id = $2::uuid WHERE id = $1::uuid AND escalation_case_id IS NULL`,
         checkin.id,
-        escalation.id,
+        escalationCase.id,
       );
-      if (updated === 1) raised.push({ checkinId: checkin.id, escalationCaseId: escalation.id });
+      raised.push({ checkinId: checkin.id, caseId: escalationCase.id });
     }
     return raised;
   }
@@ -464,14 +472,22 @@ export class ValueService {
   }
 
   private async ensureWorkflowDefinition(): Promise<void> {
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "governance"."workflow_definitions" (key, version, definition)
-       VALUES ($1, $2, $3::jsonb)
-       ON CONFLICT (key, version) DO NOTHING`,
-      VALUE_REALIZATION_WORKFLOW_DEFINITION.key,
-      VALUE_REALIZATION_WORKFLOW_DEFINITION.version,
-      json(VALUE_REALIZATION_WORKFLOW_DEFINITION),
-    );
+    const definition = VALUE_REALIZATION_WORKFLOW_DEFINITION;
+    await this.prisma.workflowDefinition.upsert({
+      where: {
+        workflowKey_version: {
+          workflowKey: definition.key,
+          version: definition.version,
+        },
+      },
+      create: {
+        workflowKey: definition.key,
+        version: definition.version,
+        definitionJson: JSON.parse(JSON.stringify(definition)),
+        isCurrent: true,
+      },
+      update: {},
+    });
   }
 
   private async getBenefit(benefitId: string): Promise<BenefitRow> {
