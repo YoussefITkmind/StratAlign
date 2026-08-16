@@ -40,7 +40,25 @@ export const statusUpdateInputSchema = z.object({
   narrativeAr: z.string().trim().max(4000).nullable().optional(),
 }).strict();
 
+export interface ExecutionListItemView {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  strategicPlayNodeId: string;
+  ownerUserId: string;
+  stage: "design" | "pilot" | "execute" | "scale" | "done";
+  latestStatus: "on_track" | "at_risk" | "off_track" | null;
+  latestConfidence: "high" | "medium" | "low" | null;
+  hasJiraLink: boolean;
+  updatedAt: Date;
+}
+
 export interface ExecutionServiceContract {
+  list(input: {
+    status?: "on_track" | "at_risk" | "off_track";
+    scope: "all" | "mine";
+    actorUserId: string;
+  }): Promise<ExecutionListItemView[]>;
   registerInitiative(input: {
     nameEn: string;
     nameAr: string;
@@ -101,6 +119,18 @@ function mapExecutionError(error: unknown): never {
 
 export const executionRouter = router({
   initiative: router({
+    list: protectedProcedure
+      .input(z.object({
+        status: initiativeStatusSchema.optional(),
+        scope: z.enum(["all", "mine"]),
+      }).strict())
+      .query(async ({ ctx, input }) => {
+        try {
+          return await service(ctx).list({ ...input, actorUserId: ctx.session.user.id });
+        } catch (error) {
+          return mapExecutionError(error);
+        }
+      }),
     register: requireRole("objective_play_owner", "seo_administrator")
       .input(initiativeRegisterInputSchema)
       .mutation(async ({ ctx, input }) => {
