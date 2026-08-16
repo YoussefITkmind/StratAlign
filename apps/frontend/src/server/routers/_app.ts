@@ -7,6 +7,7 @@ import { rulesRouter } from "@/server/routers/rules";
 import { strategyRouter } from "@/server/routers/strategy";
 import { captureRouter } from "@/server/routers/capture";
 import { scorecardRouter } from "@/server/routers/scorecard";
+import { homeRouter } from "@/server/routers/home";
 
 export const appRouter = router({
   iam: iamRouter,
@@ -17,6 +18,7 @@ export const appRouter = router({
   strategy: strategyRouter,
   capture: captureRouter,
   scorecard: scorecardRouter,
+  home: homeRouter,
 });
 
 export type AppRouter = typeof appRouter;
