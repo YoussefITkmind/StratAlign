@@ -4,6 +4,7 @@ import { scorecardRouter } from "./scorecard";
 import { executionRouter } from "./execution";
 import { portfolioRouter } from "./portfolio";
 import { schedulerRouter } from "./scheduler";
+import { valueRouter } from "./value";
 
 export const rootRouter = mergeRouters(
   appRouter,
@@ -13,6 +14,7 @@ export const rootRouter = mergeRouters(
     execution: executionRouter,
     portfolio: portfolioRouter,
     scheduler: schedulerRouter,
+    value: valueRouter,
   }),
 );
 
