@@ -1,5 +1,17 @@
 -- Phase 5.2 Value Gates & Check-in Scheduling Refinement
 
+-- Persist the initiative creator independently of its current owner. Gate
+-- separation-of-duties is defined against the creator/requester, while older
+-- initiatives safely fall back to owner_user_id in the service layer.
+ALTER TABLE "execution"."initiatives"
+  ADD COLUMN "created_by" TEXT;
+ALTER TABLE "execution"."initiatives"
+  ADD CONSTRAINT "initiatives_created_by_fkey"
+    FOREIGN KEY ("created_by") REFERENCES "iam"."users"("id")
+    ON DELETE RESTRICT ON UPDATE CASCADE;
+CREATE INDEX "initiatives_created_by_idx"
+  ON "execution"."initiatives"("created_by");
+
 -- Gate reviews are created from execution stage-transition events. Keep the
 -- transition identity so at-least-once event delivery cannot create duplicates.
 ALTER TABLE "value"."gate_reviews"
@@ -44,9 +56,10 @@ CREATE TABLE "value"."gate_review_evidence" (
 CREATE INDEX "gate_review_evidence_review_idx"
   ON "value"."gate_review_evidence"("gate_review_id", "created_at");
 
--- An intervene decision does not silently mutate unrelated Phase-2 KPI
--- commentary. Instead it creates the same explicit human-commentary obligation
--- pattern, linked to the initiative and gate review, for downstream UI/workflow.
+-- Intervene creates an explicit corrective-action commentary requirement linked
+-- to the initiative. The requirement is resolved only when a commentary
+-- reference is supplied, following Phase 2's evidence/commentary pattern
+-- without coupling an initiative to a KPI-specific Commentary row.
 CREATE TABLE "value"."gate_corrective_action_requirements" (
   "id" UUID NOT NULL DEFAULT gen_random_uuid(),
   "gate_review_id" UUID NOT NULL,
@@ -96,8 +109,8 @@ END;
 $$;
 
 -- Structural anti-auto-advance guardrail. No ordinary SQL path can populate or
--- alter a human gate decision. The ValueService decision workflow opens this
--- transaction-local capability only around its guarded human decision write.
+-- alter a human gate decision. The guarded Value Gate decision workflow opens
+-- this transaction-local capability only around its human-authenticated write.
 CREATE OR REPLACE FUNCTION "value"."enforce_human_gate_decision"()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
