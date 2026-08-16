@@ -49,6 +49,8 @@ import { RecomputeService } from "./modules/performance/recompute.service";
 import { PerformanceRecomputeSubscriber } from "./modules/performance/subscribers/performance-recompute.subscriber";
 import { ValueService } from "./modules/value/value.service";
 import { ValueCheckinDueSubscriber } from "./modules/value/value-checkin-due.subscriber";
+import { ValueGateCore } from "./modules/value/value-gate.core";
+import { ValueGateStageSubscriber } from "./modules/value/value-gate-stage.subscriber";
 
 import { createEventDispatchWorker, createOutboxRelayWorker } from "./workers/event.workers";
 import { createAuditVerificationWorker } from "./workers/audit.workers";
@@ -73,9 +75,11 @@ async function bootstrap(): Promise<void> {
   const governanceEscalation = new GovernanceEscalationService(prisma, eventBus);
   const governance = new GovernanceService(prisma, eventBus, rules);
   const value = new ValueService(prisma, governance, governanceEscalation, rules);
+  const valueGates = new ValueGateCore(prisma, governance, rules);
 
   subscriberRegistry.register(new GovernancePendingApprovalSubscriber(queueService));
   subscriberRegistry.register(new ValueCheckinDueSubscriber(value));
+  subscriberRegistry.register(new ValueGateStageSubscriber(valueGates));
 
   const journal = new JournalService(prisma);
   const siemForwarder = new StubSiemForwarder(logger.child("siem"));
@@ -152,7 +156,7 @@ async function bootstrap(): Promise<void> {
         new ThresholdRuleBindingReader(prisma),
         rules,
         eventBus,
-        logger.child("performance-recompute"),
+        logger.child("performance-recompute-subscriber"),
       ),
       logger.child("performance-recompute-subscriber"),
     ),
@@ -197,7 +201,7 @@ async function bootstrap(): Promise<void> {
     );
   }
 
-  logger.info("SPM audit, strategy, scheduler, performance, value, event and notification workers started");
+  logger.info("SPM audit, strategy, scheduler, performance, value-gate, event and notification workers started");
 
   async function shutdown(signal: string): Promise<void> {
     logger.info(`Received ${signal}. Shutting down worker.`);

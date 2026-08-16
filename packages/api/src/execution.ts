@@ -14,6 +14,11 @@ export const initiativeRegisterInputSchema = z.object({
   stage: initiativeStageSchema,
 }).strict();
 
+export const initiativeTransitionInputSchema = z.object({
+  initiativeId: z.string().uuid(),
+  toStage: initiativeStageSchema,
+}).strict();
+
 export const jiraLinkInputSchema = z.object({
   initiativeId: z.string().uuid(),
   jiraProjectKey: z.string().trim().min(1).max(100).regex(/^[A-Za-z][A-Za-z0-9_-]*$/),
@@ -47,6 +52,12 @@ export interface ExecutionServiceContract {
     strategicPlayNodeId: string;
     ownerUserId: string;
     stage: "design" | "pilot" | "execute" | "scale" | "done";
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
+  }): Promise<unknown>;
+  transitionStage(input: {
+    initiativeId: string;
+    toStage: "design" | "pilot" | "execute" | "scale" | "done";
     actorUserId: string;
     actorIsSeoAdministrator: boolean;
   }): Promise<unknown>;
@@ -90,10 +101,15 @@ function mapExecutionError(error: unknown): never {
   const code = typeof error === "object" && error !== null && "code" in error
     ? String((error as { code: unknown }).code)
     : "";
-  if (code === "EXECUTION_PLAY_OWNERSHIP_REQUIRED") {
-    throw new TRPCError({ code: "FORBIDDEN", message: "You do not own this strategic play" });
+  if (code === "EXECUTION_PLAY_OWNERSHIP_REQUIRED" || code === "EXECUTION_STAGE_OWNERSHIP_REQUIRED") {
+    throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Execution ownership is required" });
   }
-  if (code === "EXECUTION_INVALID_PLAY" || code === "EXECUTION_INITIATIVE_NOT_FOUND" || code === "EXECUTION_JIRA_LINK_NOT_FOUND") {
+  if (
+    code === "EXECUTION_INVALID_PLAY" ||
+    code === "EXECUTION_INITIATIVE_NOT_FOUND" ||
+    code === "EXECUTION_JIRA_LINK_NOT_FOUND" ||
+    code === "EXECUTION_INVALID_STAGE_TRANSITION"
+  ) {
     throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Invalid execution request" });
   }
   throw new TRPCError({ code: "BAD_REQUEST", message: "Unable to complete execution operation" });
@@ -106,6 +122,19 @@ export const executionRouter = router({
       .mutation(async ({ ctx, input }) => {
         try {
           return await service(ctx).registerInitiative({
+            ...input,
+            actorUserId: ctx.session.user.id,
+            actorIsSeoAdministrator: ctx.authorizationState.roles.includes("seo_administrator"),
+          });
+        } catch (error) {
+          return mapExecutionError(error);
+        }
+      }),
+    transitionStage: requireRole("initiative_owner", "objective_play_owner", "seo_administrator")
+      .input(initiativeTransitionInputSchema)
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await service(ctx).transitionStage({
             ...input,
             actorUserId: ctx.session.user.id,
             actorIsSeoAdministrator: ctx.authorizationState.roles.includes("seo_administrator"),
