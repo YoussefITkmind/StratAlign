@@ -2,9 +2,8 @@ import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { Client } from "pg";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
-import { createActor } from "xstate";
+import { createActor, valueLifecycleMachine } from "@spm/machines";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { valueLifecycleMachine } from "@spm/machines";
 
 import { PrismaService } from "../../src/database/prisma.service";
 import { createLogger } from "../../src/logging/logger";
