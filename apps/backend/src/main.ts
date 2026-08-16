@@ -41,7 +41,9 @@ import { ScorecardService } from "./modules/scorecard/scorecard.service";
 import { ExecutionService } from "./modules/execution/execution.service";
 import { PortfolioService } from "./modules/portfolio/portfolio.service";
 import { SchedulerReadService } from "./modules/scheduler/scheduler-read.service";
-import { ValueService } from "./modules/value/value.service";
+import { SchedulerService } from "./modules/scheduler/scheduler.service";
+import { CadenceEngine } from "./modules/cadence/cadence.engine";
+import { ScheduledValueService } from "./modules/value/scheduled-value.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -52,17 +54,12 @@ async function bootstrap(): Promise<void> {
   const queueConnectionProvider = new QueueConnectionProvider(environment.REDIS_URL);
   const queueService = new QueueService(queueConnectionProvider, environment.QUEUE_PREFIX, logger.child("queue"));
   const eventBus = new EventBusService(queueService, logger.child("event-bus"));
-
   await Promise.all([prisma.connect(), redis.connect()]);
 
   const credentials = await CredentialService.create(prisma);
   const loginRateLimiter = new LoginRateLimiterService(redis.getClient());
   const sessions = new SessionService(environment.AUTH_SECRET);
-  const oidcTokenValidator = new OidcTokenValidationService({
-    issuer: environment.AUTH_OIDC_ISSUER,
-    clientId: environment.AUTH_OIDC_CLIENT_ID,
-    jwksUri: environment.AUTH_OIDC_JWKS_URI,
-  });
+  const oidcTokenValidator = new OidcTokenValidationService({ issuer: environment.AUTH_OIDC_ISSUER, clientId: environment.AUTH_OIDC_CLIENT_ID, jwksUri: environment.AUTH_OIDC_JWKS_URI });
   const oidcIdentities = new OidcIdentityService(prisma, oidcTokenValidator, environment.AUTH_OIDC_ALLOW_VERIFIED_EMAIL_LINKING);
   const authenticationFreshness = new AuthenticationFreshnessService(redis.getClient(), environment.AUTH_SECRET);
   const authorization = new IamAuthorizationService(prisma, authenticationFreshness);
@@ -72,45 +69,36 @@ async function bootstrap(): Promise<void> {
   const governanceEscalation = new GovernanceEscalationService(prisma, eventBus);
   const strategy = new StrategyService(prisma);
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
-
   const approvalGateway = new GovernanceApprovalGateway(governance);
   const strategyNodeGateway = new PrismaStrategyNodeGateway(prisma);
-
   const registry = {
     kpi: new KpiRegistryService(prisma, approvalGateway, strategyNodeGateway),
     okr: new OkrService(prisma, strategyNodeGateway),
     alignment: new AlignmentService(prisma, strategyNodeGateway),
     hierarchy: new KpiHierarchyService(prisma),
   };
-
   const audit = new SnapshotService(prisma);
   const auditTap = new ApiAuditTapService(prisma, eventBus);
-
-  const measurements = new MeasurementService(
-    prisma,
-    eventBus,
-    logger.child("performance-measurement"),
-  );
-
+  const measurements = new MeasurementService(prisma, eventBus, logger.child("performance-measurement"));
   const performance = new PerformanceService(
     new CaptureSessionService(prisma, measurements, logger.child("performance-capture")),
-    new CaptureWorkspaceService(prisma, {
-      endpoint: environment.OBJECT_STORAGE_ENDPOINT,
-      accessKey: environment.OBJECT_STORAGE_ACCESS_KEY,
-      secretKey: environment.OBJECT_STORAGE_SECRET_KEY,
-      bucket: environment.OBJECT_STORAGE_BUCKET,
-    }),
+    new CaptureWorkspaceService(prisma, { endpoint: environment.OBJECT_STORAGE_ENDPOINT, accessKey: environment.OBJECT_STORAGE_ACCESS_KEY, secretKey: environment.OBJECT_STORAGE_SECRET_KEY, bucket: environment.OBJECT_STORAGE_BUCKET }),
     measurements,
     new CommentaryService(prisma),
     new PerformanceResultsService(prisma),
     new KpiDetailService(prisma),
   );
-
   const scorecard = new ScorecardService(prisma, governance, rules);
   const execution = new ExecutionService(prisma);
   const portfolio = new PortfolioService(prisma, rules);
   const schedulerRead = new SchedulerReadService(prisma);
-  const value = new ValueService(prisma, governance, governanceEscalation, rules);
+  const scheduler = new SchedulerService(
+    prisma,
+    new CadenceEngine(),
+    { defaultTimezone: environment.SCHEDULER_DEFAULT_TIMEZONE, defaultLookaheadSeconds: environment.SCHEDULER_LOOKAHEAD_SECONDS },
+    logger.child("value-checkin-scheduler"),
+  );
+  const value = new ScheduledValueService(prisma, governance, governanceEscalation, rules, scheduler);
 
   const server = createHTTPServer({
     router: rootRouter,
@@ -120,29 +108,10 @@ async function bootstrap(): Promise<void> {
       if (typeof req.headers.cookie === "string") headers.set("cookie", req.headers.cookie);
       if (typeof req.headers.authorization === "string") headers.set("authorization", req.headers.authorization);
       return {
-        health,
-        credentials,
-        loginRateLimiter,
-        clientIp: req.socket.remoteAddress ?? "unknown",
-        session: await sessions.getSession({ headers }),
-        oidcIdentities,
-        authenticationFreshness,
-        authorization,
-        iam,
-        rules,
-        governance,
-        governanceEscalation,
-        strategy,
-        strategyTraversal,
-        registry,
-        audit,
-        auditTap,
-        performance,
-        scorecard,
-        execution,
-        portfolio,
-        schedulerRead,
-        value,
+        health, credentials, loginRateLimiter, clientIp: req.socket.remoteAddress ?? "unknown",
+        session: await sessions.getSession({ headers }), oidcIdentities, authenticationFreshness,
+        authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal,
+        registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
       };
     },
     middleware(request, response, next) {
@@ -150,18 +119,11 @@ async function bootstrap(): Promise<void> {
       response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
       response.setHeader("Access-Control-Allow-Credentials", "true");
-      if (request.method === "OPTIONS") {
-        response.statusCode = 204;
-        response.end();
-        return;
-      }
+      if (request.method === "OPTIONS") { response.statusCode = 204; response.end(); return; }
       next();
     },
   });
-
-  server.listen(environment.PORT, () => {
-    console.log(`SPM tRPC backend running at http://localhost:${environment.PORT}/trpc`);
-  });
+  server.listen(environment.PORT, () => console.log(`SPM tRPC backend running at http://localhost:${environment.PORT}/trpc`));
 
   async function shutdown(signal: string): Promise<void> {
     console.log(`Received ${signal}. Shutting down.`);
@@ -169,7 +131,6 @@ async function bootstrap(): Promise<void> {
     await queueService.close();
     await Promise.all([strategyTraversal.destroy(), prisma.disconnect(), redis.disconnect()]);
   }
-
   process.once("SIGINT", () => { void shutdown("SIGINT"); });
   process.once("SIGTERM", () => { void shutdown("SIGTERM"); });
 }
