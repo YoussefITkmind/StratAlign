@@ -1,5 +1,6 @@
 import {
   createActor,
+  VALUE_REALIZATION_WORKFLOW_DEFINITION,
   valueLifecycleMachine,
   type ValueLifecycleEvent,
   type ValueLifecycleState,
@@ -109,6 +110,8 @@ export class ValueService {
     driver: string;
     ownerUserId: string;
   }): Promise<BenefitRow> {
+    await this.ensureValueWorkflowDefinition();
+
     const rows = await this.prisma.$queryRawUnsafe<BenefitRow[]>(
       `INSERT INTO "value"."benefits"
         (initiative_id, category_id, driver, owner_user_id, workflow_snapshot)
@@ -457,6 +460,25 @@ export class ValueService {
         months,
       );
     }
+  }
+
+  private async ensureValueWorkflowDefinition(): Promise<void> {
+    const definition = VALUE_REALIZATION_WORKFLOW_DEFINITION;
+    await this.prisma.workflowDefinition.upsert({
+      where: {
+        workflowKey_version: {
+          workflowKey: definition.key,
+          version: definition.version,
+        },
+      },
+      create: {
+        workflowKey: definition.key,
+        version: definition.version,
+        definitionJson: JSON.parse(JSON.stringify(definition)),
+        isCurrent: true,
+      },
+      update: {},
+    });
   }
 
   private async getBenefit(benefitId: string): Promise<BenefitRow> {
