@@ -5,7 +5,7 @@ import {
 } from "../execution/execution-stage.events";
 
 export interface StageGateReaction {
-  createPendingGateReviewFromTransition(payload: InitiativeStageChangedPayload): Promise<unknown>;
+  createPendingFromStageTransition(payload: InitiativeStageChangedPayload): Promise<unknown>;
 }
 
 /**
@@ -21,7 +21,7 @@ export class ValueGateStageSubscriber implements EventSubscriber {
 
   async handle(envelope: DomainEventEnvelope): Promise<void> {
     if (envelope.eventType !== EXECUTION_STAGE_EVENT_TYPE) return;
-    await this.value.createPendingGateReviewFromTransition(
+    await this.value.createPendingFromStageTransition(
       envelope.payload as InitiativeStageChangedPayload,
     );
   }
