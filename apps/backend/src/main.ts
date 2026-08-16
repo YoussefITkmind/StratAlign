@@ -38,12 +38,12 @@ import { PerformanceResultsService } from "./modules/performance/performance-res
 import { PerformanceService } from "./modules/performance/performance.service";
 import { KpiDetailService } from "./modules/performance/kpi-detail.service";
 import { ScorecardService } from "./modules/scorecard/scorecard.service";
-import { ExecutionService } from "./modules/execution/execution.service";
+import { StageAwareExecutionService } from "./modules/execution/stage-aware-execution.service";
 import { PortfolioService } from "./modules/portfolio/portfolio.service";
 import { SchedulerReadService } from "./modules/scheduler/scheduler-read.service";
 import { SchedulerService } from "./modules/scheduler/scheduler.service";
 import { CadenceEngine } from "./modules/cadence/cadence.engine";
-import { ScheduledValueService } from "./modules/value/scheduled-value.service";
+import { ValueManagementService } from "./modules/value/value-management.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -89,7 +89,7 @@ async function bootstrap(): Promise<void> {
     new KpiDetailService(prisma),
   );
   const scorecard = new ScorecardService(prisma, governance, rules);
-  const execution = new ExecutionService(prisma);
+  const execution = new StageAwareExecutionService(prisma, prisma, eventBus);
   const portfolio = new PortfolioService(prisma, rules);
   const schedulerRead = new SchedulerReadService(prisma);
   const scheduler = new SchedulerService(
@@ -98,7 +98,7 @@ async function bootstrap(): Promise<void> {
     { defaultTimezone: environment.SCHEDULER_DEFAULT_TIMEZONE, defaultLookaheadSeconds: environment.SCHEDULER_LOOKAHEAD_SECONDS },
     logger.child("value-checkin-scheduler"),
   );
-  const value = new ScheduledValueService(prisma, governance, governanceEscalation, rules, scheduler);
+  const value = new ValueManagementService(prisma, governance, governanceEscalation, rules, scheduler);
 
   const server = createHTTPServer({
     router: rootRouter,
