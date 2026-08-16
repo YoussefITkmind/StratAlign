@@ -1,17 +1,15 @@
 import {
   createActor,
-  type SnapshotFrom,
   valueLifecycleMachine,
   type ValueLifecycleEvent,
   type ValueLifecycleState,
+  type ValueLifecycleSnapshot,
 } from "@spm/machines";
 
 import type { PrismaService } from "../../database/prisma.service";
 import type { GovernanceService } from "../governance/governance.service";
 import type { GovernanceEscalationService } from "../governance/governance-escalation.service";
 import type { RulesService } from "../rules/rules.service";
-
-type ValueSnapshot = SnapshotFrom<typeof valueLifecycleMachine>;
 
 type BenefitRow = {
   id: string;
@@ -110,7 +108,7 @@ export class ValueService {
     categoryId: string;
     driver: string;
     ownerUserId: string;
-  }) {
+  }): Promise<BenefitRow> {
     const rows = await this.prisma.$queryRawUnsafe<BenefitRow[]>(
       `INSERT INTO "value"."benefits"
         (initiative_id, category_id, driver, owner_user_id, workflow_snapshot)
@@ -134,13 +132,12 @@ export class ValueService {
       },
     });
     actor.start();
-    const persisted = actor.getPersistedSnapshot();
     await this.prisma.$executeRawUnsafe(
       `UPDATE "value"."benefits" SET workflow_snapshot = $2::jsonb WHERE id = $1::uuid`,
       benefit.id,
-      json(persisted),
+      json(actor.getPersistedSnapshot()),
     );
-    return { ...benefit, workflow_snapshot: persisted };
+    return this.getBenefit(benefit.id);
   }
 
   async setBaseline(input: {
@@ -215,11 +212,18 @@ export class ValueService {
     approvalParticipantId?: string;
     stopReason?: string | null;
     now?: Date;
-  }) {
+  }): Promise<BenefitRow> {
     let benefit = await this.getBenefit(input.benefitId);
     const facts = await this.getFacts(benefit.id);
     const actor = createActor(valueLifecycleMachine, {
-      snapshot: benefit.workflow_snapshot as ValueSnapshot,
+      input: {
+        benefitId: benefit.id,
+        approvalCaseId: benefit.workflow_case_id,
+        baselineExists: facts.baselineExists,
+        realizedEntryCount: facts.realizedEntryCount,
+        stopReason: null,
+      },
+      snapshot: benefit.workflow_snapshot as ValueLifecycleSnapshot,
     });
     actor.start();
     actor.send({
