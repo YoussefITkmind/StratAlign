@@ -11,6 +11,41 @@ export const VALUE_LIFECYCLE_STATES = [
 
 export type ValueLifecycleState = (typeof VALUE_LIFECYCLE_STATES)[number];
 
+export const VALUE_REALIZATION_WORKFLOW_DEFINITION = {
+  key: "value_realization",
+  version: 1,
+  initial: "identification",
+  states: {
+    identification: {
+      on: {
+        SUBMIT_FOR_APPROVAL: { target: "pending_approval" },
+      },
+    },
+    pending_approval: {
+      subcase: "generic_approval",
+      on: {
+        APPROVAL_GRANTED: { target: "approved" },
+      },
+    },
+    approved: {
+      on: {
+        BEGIN_VALIDATION: { target: "validation", guard: "baselineExists" },
+      },
+    },
+    validation: {
+      on: {
+        START_TRACKING: { target: "tracking" },
+      },
+    },
+    tracking: {
+      on: {
+        CLOSE: { target: "closure", guard: "realizedValueExists" },
+      },
+    },
+    closure: { type: "final" },
+  },
+} as const;
+
 export interface ValueLifecycleContext {
   benefitId: string;
   approvalCaseId: string | null;
@@ -35,6 +70,10 @@ export type ValueLifecycleEvent =
  * id and this machine receives APPROVAL_GRANTED only after governance has
  * approved that sub-case, preserving the existing separation-of-duties,
  * decision log, SLA and escalation semantics.
+ *
+ * VALUE_REALIZATION_WORKFLOW_DEFINITION is persisted in the existing governance
+ * WorkflowDefinition table by ValueService. The XState machine below is the
+ * executable implementation of that definition.
  */
 export const valueLifecycleMachine = setup({
   types: {
@@ -64,7 +103,7 @@ export const valueLifecycleMachine = setup({
   },
 }).createMachine({
   id: "value-lifecycle",
-  initial: "identification",
+  initial: VALUE_REALIZATION_WORKFLOW_DEFINITION.initial,
   context: ({ input }) => ({ ...input }),
   on: {
     REFRESH_FACTS: { actions: "refreshFacts" },
