@@ -785,3 +785,5 @@ StratAlign combines strategy management with the engineering controls required f
 * unit, integration, and end-to-end testing.
 
 The result is a platform architecture designed not only to display strategic information, but to support the rules, approvals, accountability, and operational workflows required to execute strategy reliably.
+
+
