@@ -374,23 +374,13 @@ export const authConfig = {
           return null;
         }
 
-        try {
-          const platformUser =
-            await trpcClient.auth.login.mutate({
-              email,
-              password,
-            });
-
-          return {
-            id: platformUser.id,
-            email: platformUser.email,
-            name:
-              platformUser.displayName ??
-              platformUser.email,
-          };
-        } catch {
-          return null;
-        }
+        // Open demo mode: any email/password is accepted without a backend
+        // credential check, so the app is reachable without a live backend.
+        return {
+          id: email,
+          email,
+          name: email,
+        };
       },
     }),
   ],
