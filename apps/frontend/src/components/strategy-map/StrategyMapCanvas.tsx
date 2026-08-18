@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
-import MapLanes, { type MapPlacement } from "./MapLanes";
-import MapLinks, { type MapLinkRow } from "./MapLinks";
+import StrategyMapFlowCanvas from "./StrategyMapFlowCanvas";
+import type { MapPlacement, MapLinkRow } from "@/lib/buildStrategyMapFlow";
+import MapLinks from "./MapLinks";
 import ObjectivePlacementControls from "./ObjectivePlacementControls";
 import LinkEditControls from "./LinkEditControls";
 import { draftMapLink, placeObjective, proposeMap, publishMap, removeMapLink } from "@/app/(app)/strategy-maps/actions";
 import { getMapAuthorization } from "@/app/(app)/strategy-maps/authorization";
+import { STATUS_DOT, STATUS_LABEL } from "@/lib/strategyMapVisualConfig";
 interface Perspective { id: string; nameEn: string; nameAr: string; order: number }
 interface ScorecardDetail {
   id: string; nameEn: string; nameAr: string; planVersionId: string;
@@ -41,6 +43,7 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
   const [submitted, setSubmitted] = useState<{ id: string; mapId: string } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedObjectiveId, setSelectedObjectiveId] = useState<string | null>(null);
 
   useEffect(() => {
     void getMapAuthorization().then((result) => setRoles(result.roles)).catch(() => setRoles([])).finally(() => setAuthLoaded(true));
@@ -53,6 +56,7 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
     (!node.state || node.state.toLowerCase() === "active")), [strategyNodes, scorecard?.planVersionId, placedIds]);
   const objectiveNames = useMemo(() => new Map(placements.map((item) => [item.objectiveNodeId, item.objectiveNameEn])), [placements]);
   const visibleLinks = editing && draftMapId ? draftLinks : (scorecard?.publishedMap?.links ?? []);
+  const selectedPlacement = placements.find((item) => item.objectiveNodeId === selectedObjectiveId) ?? null;
 
   if (!authLoaded || scorecardQuery.isLoading || placementsQuery.isLoading || nodesQuery.isLoading) return <p className="p-8 text-sm text-gray-500">Loading strategy map…</p>;
   if (!scorecard || scorecardQuery.error) return <div data-testid="map-canvas-not-found" className="p-8 text-center">Strategy map not found.</div>;
@@ -115,7 +119,7 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
   });
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-4 p-4 sm:p-6" data-testid="map-canvas-page">
+    <div className="mx-auto max-w-[1600px] space-y-4 p-4 sm:p-6" data-testid="map-canvas-page">
       <Link href="/strategy-maps" className="inline-flex items-center gap-1 text-sm text-gray-500"><ChevronLeft className="h-4 w-4 rtl:rotate-180" /> Back to Strategy Maps</Link>
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div><div className="flex items-center gap-2"><h1 className="text-2xl font-bold">{scorecard.nameEn}</h1><span data-testid="map-status-badge" className="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">{scorecard.publishedMap ? "Published" : "No published map"}</span></div><p dir="rtl" className="text-sm text-gray-500">{scorecard.nameAr}</p></div>
@@ -124,17 +128,57 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
       {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {message && <p data-testid="map-notice" className="rounded-lg bg-blue-50 p-3 text-sm text-blue-700">{message}</p>}
 
-      <MapLanes perspectives={scorecard.perspectives} placements={placements} />
-      <MapLinks links={visibleLinks} objectiveName={(id) => objectiveNames.get(id) ?? id} editable={editing && !!draftMapId} onRemove={(id) => void removeLink(id)} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
+        <StrategyMapFlowCanvas
+          perspectives={scorecard.perspectives}
+          placements={placements}
+          links={visibleLinks}
+          editing={editing}
+          selectedObjectiveId={selectedObjectiveId}
+          onSelectObjective={setSelectedObjectiveId}
+          onRemoveLink={(id) => void removeLink(id)}
+        />
 
-      {editing && isAnalyst && <div className="grid gap-4 lg:grid-cols-2" data-testid="edit-toolbar">
-        <ObjectivePlacementControls objectives={eligibleObjectives} perspectives={scorecard.perspectives} busy={busy} onAdd={addObjective} />
-        <LinkEditControls placements={placements} busy={busy} onAdd={addLink} />
-        <section className="rounded-2xl border bg-white p-4 lg:col-span-2"><h2 className="mb-2 font-semibold">Submit draft for approval</h2><div className="flex gap-2"><input data-testid="approval-participant-id" value={approverId} onChange={(e) => setApproverId(e.target.value)} placeholder="Approver user UUID" className="min-w-0 flex-1 rounded-lg border p-2 text-sm" /><button data-testid="submit-for-approval-button" disabled={busy || !draftMapId || !approverId.trim()} onClick={() => void submit()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Submit</button></div></section>
-      </div>}
+        <aside className="flex flex-col gap-4">
+          <div data-testid="node-properties-panel" className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <h2 className="mb-2 text-sm font-semibold text-gray-800">Objective detail</h2>
+            {selectedPlacement ? (
+              <div className="flex flex-col gap-2 text-sm">
+                <p className="font-medium text-gray-900">{selectedPlacement.objectiveNameEn}</p>
+                <p dir="rtl" className="text-xs text-gray-500">{selectedPlacement.objectiveNameAr}</p>
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span>KPI</span>
+                  <span className="font-medium text-gray-700">{selectedPlacement.kpiNameEn ?? "Not linked"}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span>Status</span>
+                  <span className="flex items-center gap-1.5 font-medium text-gray-700">
+                    {selectedPlacement.status ? (
+                      <>
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_DOT[selectedPlacement.status] }} />
+                        {STATUS_LABEL[selectedPlacement.status]}
+                      </>
+                    ) : "—"}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400">Select an objective on the canvas to view its details.</p>
+            )}
+          </div>
 
-      {submitted && <p data-testid="submitted-map-case" data-case-id={submitted.id} data-map-id={submitted.mapId} className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Pending approval · {submitted.id}</p>}
-      {isAnalyst && <section data-testid="publish-approved-map" className="rounded-2xl border bg-white p-4"><h2 className="mb-2 font-semibold">Publish approved draft</h2><div className="grid gap-2 md:grid-cols-[1fr_1fr_auto]"><input data-testid="publish-map-id" value={publishMapId} onChange={(e) => setPublishMapId(e.target.value)} placeholder="Strategy map UUID" className="rounded-lg border p-2 text-sm" /><input data-testid="publish-case-id" value={publishCaseId} onChange={(e) => setPublishCaseId(e.target.value)} placeholder="Approved case UUID" className="rounded-lg border p-2 text-sm" /><button data-testid="publish-map-button" disabled={busy || !publishMapId.trim() || !publishCaseId.trim()} onClick={() => void publish()} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Publish</button></div></section>}
+          <MapLinks links={visibleLinks} objectiveName={(id) => objectiveNames.get(id) ?? id} editable={editing && !!draftMapId} onRemove={(id) => void removeLink(id)} />
+
+          {editing && isAnalyst && <div className="flex flex-col gap-4" data-testid="edit-toolbar">
+            <ObjectivePlacementControls objectives={eligibleObjectives} perspectives={scorecard.perspectives} busy={busy} onAdd={addObjective} />
+            <LinkEditControls placements={placements} busy={busy} onAdd={addLink} />
+            <section className="rounded-2xl border bg-white p-4"><h2 className="mb-2 font-semibold">Submit draft for approval</h2><div className="flex flex-col gap-2"><input data-testid="approval-participant-id" value={approverId} onChange={(e) => setApproverId(e.target.value)} placeholder="Approver user UUID" className="w-full rounded-lg border p-2 text-sm" /><button data-testid="submit-for-approval-button" disabled={busy || !draftMapId || !approverId.trim()} onClick={() => void submit()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Submit</button></div></section>
+          </div>}
+
+          {submitted && <p data-testid="submitted-map-case" data-case-id={submitted.id} data-map-id={submitted.mapId} className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Pending approval · {submitted.id}</p>}
+          {isAnalyst && <section data-testid="publish-approved-map" className="rounded-2xl border bg-white p-4"><h2 className="mb-2 font-semibold">Publish approved draft</h2><div className="flex flex-col gap-2"><input data-testid="publish-map-id" value={publishMapId} onChange={(e) => setPublishMapId(e.target.value)} placeholder="Strategy map UUID" className="rounded-lg border p-2 text-sm" /><input data-testid="publish-case-id" value={publishCaseId} onChange={(e) => setPublishCaseId(e.target.value)} placeholder="Approved case UUID" className="rounded-lg border p-2 text-sm" /><button data-testid="publish-map-button" disabled={busy || !publishMapId.trim() || !publishCaseId.trim()} onClick={() => void publish()} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Publish</button></div></section>}
+        </aside>
+      </div>
     </div>
   );
 }
