@@ -235,7 +235,7 @@ export default function MasterScorecardPage({ scorecardId }: { scorecardId: stri
 
       {view === "map" ? (
         scorecard.publishedMap ? (
-          <ReadOnlyMapView map={scorecard.publishedMap} planVersionId={scorecard.planVersionId} />
+          <ReadOnlyMapView perspectives={scorecard.perspectives} placements={placements} links={scorecard.publishedMap.links} />
         ) : (
           <div data-testid="map-empty-state" className="flex h-[40vh] min-h-[280px] items-center justify-center rounded-xl border border-dashed border-gray-300 bg-gray-50 text-center">
             <p className="max-w-sm text-sm text-gray-500">{t("scorecard.noMapLinked")}</p>
