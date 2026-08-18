@@ -15,8 +15,32 @@ export const TYPE_CONFIG: Record<NodeType, { label: string; icon: LucideIcon; bg
   area_of_focus: { label: "Area of Focus", icon: Compass, bg: "bg-rose-100", text: "text-rose-600" },
 };
 
-export const STATE_CONFIG: Record<NodeState, { label: string; dot: string; badgeBg: string; badgeText: string }> = {
-  draft: { label: "Draft", dot: "bg-gray-400", badgeBg: "bg-gray-100", badgeText: "text-gray-600" },
-  active: { label: "Active", dot: "bg-emerald-500", badgeBg: "bg-emerald-50", badgeText: "text-emerald-700" },
-  retired: { label: "Retired", dot: "bg-red-400", badgeBg: "bg-red-50", badgeText: "text-red-600" },
+export const STATE_CONFIG: Record<NodeState, { label: string; dot: string; badgeBg: string; badgeText: string; barColor: string }> = {
+  draft: { label: "Draft", dot: "bg-gray-400", badgeBg: "bg-gray-100", badgeText: "text-gray-600", barColor: "bg-gray-400" },
+  active: { label: "Active", dot: "bg-emerald-500", badgeBg: "bg-emerald-50", badgeText: "text-emerald-700", barColor: "bg-emerald-500" },
+  retired: { label: "Retired", dot: "bg-red-400", badgeBg: "bg-red-50", badgeText: "text-red-600", barColor: "bg-red-400" },
 };
+
+const OWNER_PALETTE = ["bg-indigo-500", "bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-purple-500", "bg-cyan-600", "bg-teal-500"];
+
+function hashSeed(seed: string): number {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  return hash;
+}
+
+/**
+ * The real strategy node has no owner/progress fields — these are decorative
+ * placeholders (deterministic per node id) matching the designed layout until
+ * the backend exposes real ownership and rollup progress.
+ */
+export function placeholderOwner(nameEn: string, id: string): { initials: string; color: string } {
+  const words = nameEn.trim().split(/\s+/).filter(Boolean);
+  const initials = ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? words[0]?.[1] ?? "")).toUpperCase() || "—";
+  const hash = hashSeed(id);
+  return { initials, color: OWNER_PALETTE[hash % OWNER_PALETTE.length] };
+}
+
+export function placeholderProgress(id: string): number {
+  return 40 + (hashSeed(id) % 56);
+}

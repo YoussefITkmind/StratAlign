@@ -66,7 +66,6 @@ export default function TreeRow({ node, depth, lines, hasNextSibling, expandedId
               <Icon className={`h-3.5 w-3.5 ${typeCfg.text}`} />
             </span>
             <span className="truncate text-[15px] text-gray-900">{node.nameEn}</span>
-            <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">{typeCfg.label}</span>
             <button
               onClick={(e) => { e.stopPropagation(); onAddChild(node.id); }}
               title="Add child node"
@@ -76,9 +75,17 @@ export default function TreeRow({ node, depth, lines, hasNextSibling, expandedId
             </button>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2 pl-9 md:pl-0">
-            <span className={`h-2 w-2 shrink-0 rounded-full ${stateCfg.dot}`} />
-            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${stateCfg.badgeBg} ${stateCfg.badgeText}`}>{stateCfg.label}</span>
+          <div className="flex items-center gap-3 pl-9 sm:gap-4 md:shrink-0 md:gap-6 md:pl-0">
+            <div className="flex items-center gap-2 md:w-16">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${stateCfg.dot}`} title={stateCfg.label} />
+              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${node.owner.color}`}>{node.owner.initials}</span>
+            </div>
+            <div className="flex min-w-0 flex-1 items-center gap-2 md:w-36 md:flex-none">
+              <div className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-gray-100 sm:w-16 md:w-24">
+                <div className={`h-full rounded-full ${stateCfg.barColor}`} style={{ width: `${node.progress}%` }} />
+              </div>
+              <span className="w-9 shrink-0 text-right text-sm text-gray-600">{node.progress}%</span>
+            </div>
           </div>
         </div>
       </div>

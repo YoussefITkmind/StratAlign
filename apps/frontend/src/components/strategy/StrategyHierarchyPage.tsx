@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, Download, Maximize2, Minimize2, LayoutList, Network, Plus, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, Search, Download, Share2, Sparkles, Maximize2, Minimize2, LayoutList, Network, Plus, RefreshCw } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
-import { NODE_TYPES, TYPE_CONFIG, STATE_CONFIG, type NodeType, type NodeState, type EdgeType } from "@/lib/strategyHierarchyConfig";
+import { NODE_TYPES, TYPE_CONFIG, STATE_CONFIG, placeholderOwner, placeholderProgress, type NodeType, type NodeState, type EdgeType } from "@/lib/strategyHierarchyConfig";
 import { buildForest, filterForest, flatten, collectIds, isFiltering, type Filters } from "@/lib/strategyTreeUtils";
 import TreeRow from "./TreeRow";
 
@@ -44,7 +45,10 @@ export default function StrategyHierarchyPage() {
   const [form, setForm] = useState({ type: "objective" as NodeType, nameEn: "", nameAr: "", parentId: "", edgeType: "contains" as EdgeType, approverId: "" });
 
   const forest = useMemo(
-    () => buildForest(planNodes.map((node) => ({ id: node.id, type: node.type as NodeType, nameEn: node.nameEn, nameAr: node.nameAr, state: (node.state ?? "draft") as NodeState })), planEdges),
+    () => buildForest(planNodes.map((node) => ({
+      id: node.id, type: node.type as NodeType, nameEn: node.nameEn, nameAr: node.nameAr, state: (node.state ?? "draft") as NodeState,
+      owner: placeholderOwner(node.nameEn, node.id), progress: placeholderProgress(node.id),
+    })), planEdges),
     [planNodes, planEdges],
   );
   const filteredForest = useMemo(() => filterForest(forest, filters), [forest, filters]);
@@ -113,6 +117,12 @@ export default function StrategyHierarchyPage() {
 
   return (
     <div className="space-y-4 p-4 sm:p-6" data-testid="persisted-strategy-explorer">
+      <div className="flex items-center gap-1.5 text-sm text-gray-500">
+        <Link href="/" className="hover:text-gray-700">Home</Link>
+        <ChevronRight className="h-3.5 w-3.5" />
+        <span className="font-medium text-gray-900">Strategy Hierarchy</span>
+      </div>
+
       {/* header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -125,6 +135,12 @@ export default function StrategyHierarchyPage() {
           </button>
           <button onClick={exportJson} className="flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
             <Download className="h-4 w-4" /> Export
+          </button>
+          <button disabled title="Coming soon" className="flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-400">
+            <Share2 className="h-4 w-4" /> Share
+          </button>
+          <button disabled title="Coming soon" className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-blue-500 px-4 py-2 text-sm font-medium text-white opacity-60">
+            <Sparkles className="h-4 w-4" /> Generate Strategy Brief
           </button>
           <button
             onClick={() => setForm((current) => ({ ...current, parentId: "", nameEn: "", nameAr: "" }))}
@@ -198,7 +214,10 @@ export default function StrategyHierarchyPage() {
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
           <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
             <span>Name</span>
-            <span>State</span>
+            <div className="hidden items-center gap-6 md:flex">
+              <span className="w-16">Own</span>
+              <span className="w-36">Progress</span>
+            </div>
           </div>
 
           {filteredForest.length === 0 && (
@@ -230,6 +249,7 @@ export default function StrategyHierarchyPage() {
                 key={node.id}
                 data-testid="persisted-strategy-node"
                 onClick={() => setSelectedNodeId(node.id)}
+                title={stateCfg.label}
                 className={`flex cursor-pointer flex-col gap-1.5 border-b border-gray-100 px-4 py-2.5 hover:bg-gray-50 md:h-[52px] md:flex-row md:items-center md:justify-between md:gap-4 md:py-0 ${selectedNodeId === node.id ? "bg-blue-50/60" : ""}`}
               >
                 <div className="flex min-w-0 items-center gap-2.5">
@@ -239,9 +259,17 @@ export default function StrategyHierarchyPage() {
                   <span className="truncate text-[15px] text-gray-900">{node.nameEn}</span>
                   <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">{typeCfg.label}</span>
                 </div>
-                <div className="flex shrink-0 items-center gap-2 pl-9 md:pl-0">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${stateCfg.dot}`} />
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${stateCfg.badgeBg} ${stateCfg.badgeText}`}>{stateCfg.label}</span>
+                <div className="flex items-center gap-3 pl-9 sm:gap-4 md:shrink-0 md:gap-6 md:pl-0">
+                  <div className="flex items-center gap-2 md:w-16">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${stateCfg.dot}`} />
+                    <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${node.owner.color}`}>{node.owner.initials}</span>
+                  </div>
+                  <div className="flex min-w-0 flex-1 items-center gap-2 md:w-36 md:flex-none">
+                    <div className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-gray-100 sm:w-16 md:w-24">
+                      <div className={`h-full rounded-full ${stateCfg.barColor}`} style={{ width: `${node.progress}%` }} />
+                    </div>
+                    <span className="w-9 shrink-0 text-right text-sm text-gray-600">{node.progress}%</span>
+                  </div>
                 </div>
               </div>
             );

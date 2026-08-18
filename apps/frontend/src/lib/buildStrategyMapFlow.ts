@@ -3,7 +3,7 @@ import {
   LANE_HEIGHT, NODE_WIDTH, NODE_HEIGHT, COLUMN_WIDTH, COLUMN_START_X, LANE_LABEL_WIDTH,
 } from "@/lib/strategyMapVisualConfig";
 
-export interface MapPerspective { id: string; nameEn: string; nameAr: string; order: number }
+export interface MapPerspective { id: string; nameEn: string; nameAr: string; order: number; weight?: number }
 export interface MapPlacement {
   perspectiveId: string;
   objectiveNodeId: string;
@@ -40,7 +40,7 @@ export function buildLaneAndObjectiveNodes(
     type: "lane",
     position: { x: 0, y: laneIndex * LANE_HEIGHT },
     style: { width: laneWidth, height: LANE_HEIGHT },
-    data: { nameEn: perspective.nameEn, nameAr: perspective.nameAr, laneIndex },
+    data: { nameEn: perspective.nameEn, nameAr: perspective.nameAr, laneIndex, weight: perspective.weight },
     draggable: false,
     selectable: false,
     focusable: false,

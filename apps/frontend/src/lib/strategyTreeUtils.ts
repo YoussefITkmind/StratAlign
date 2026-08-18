@@ -6,6 +6,8 @@ export interface HierarchyNode {
   nameEn: string;
   nameAr: string;
   state: NodeState;
+  owner: { initials: string; color: string };
+  progress: number;
 }
 
 export interface HierarchyTreeNode extends HierarchyNode {
