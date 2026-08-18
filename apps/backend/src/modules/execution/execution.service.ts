@@ -17,6 +17,19 @@ export interface InitiativeView {
   createdAt: Date;
 }
 
+export interface InitiativeListItemView {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  strategicPlayNodeId: string;
+  ownerUserId: string;
+  stage: InitiativeStage;
+  latestStatus: InitiativeStatus | null;
+  latestConfidence: ConfidenceLevel | null;
+  hasJiraLink: boolean;
+  updatedAt: Date;
+}
+
 export interface StatusUpdateView {
   id: string;
   initiativeId: string;
@@ -38,6 +51,19 @@ interface InitiativeRow {
   owner_user_id: string;
   stage: InitiativeStage;
   created_at: Date;
+}
+
+interface InitiativeListRow {
+  id: string;
+  name_en: string;
+  name_ar: string;
+  strategic_play_node_id: string;
+  owner_user_id: string;
+  stage: InitiativeStage;
+  updated_at: Date;
+  latest_status: InitiativeStatus | null;
+  latest_confidence: ConfidenceLevel | null;
+  has_jira_link: boolean;
 }
 
 interface StatusRow {
@@ -123,6 +149,45 @@ export class ExecutionService {
     `;
     if (!row) throw executionErrors.invalidOperation();
     return initiativeView(row);
+  }
+
+  async list(input: {
+    status?: InitiativeStatus;
+    scope: "all" | "mine";
+    actorUserId: string;
+  }): Promise<InitiativeListItemView[]> {
+    const rows = await this.prisma.$queryRaw<InitiativeListRow[]>`
+      SELECT
+        i.id, i.name_en, i.name_ar, i.strategic_play_node_id, i.owner_user_id, i.stage, i.updated_at,
+        s.status AS latest_status, s.confidence AS latest_confidence,
+        (j.id IS NOT NULL) AS has_jira_link
+      FROM "execution"."initiatives" i
+      LEFT JOIN LATERAL (
+        SELECT status, confidence
+        FROM "execution"."status_updates" su
+        WHERE su.initiative_id = i.id
+        ORDER BY su.period DESC, su.created_at DESC, su.id DESC
+        LIMIT 1
+      ) s ON true
+      LEFT JOIN "execution"."jira_links" j ON j.initiative_id = i.id
+      ORDER BY i.updated_at DESC, i.id DESC
+    `;
+
+    return rows
+      .filter((row) => input.scope !== "mine" || row.owner_user_id === input.actorUserId)
+      .filter((row) => !input.status || row.latest_status === input.status)
+      .map((row) => ({
+        id: row.id,
+        nameEn: row.name_en,
+        nameAr: row.name_ar,
+        strategicPlayNodeId: row.strategic_play_node_id,
+        ownerUserId: row.owner_user_id,
+        stage: row.stage,
+        latestStatus: row.latest_status,
+        latestConfidence: row.latest_confidence,
+        hasJiraLink: row.has_jira_link,
+        updatedAt: row.updated_at,
+      }));
   }
 
   async linkJira(input: {
