@@ -7,7 +7,7 @@
     "dev": "tsx watch src/main.ts",
     "build": "prisma generate && tsc",
     "start": "tsx src/main.ts",
-    "start:prod": "node dist/main.js",
+    "start:prod": "prisma migrate deploy && node dist/main.js",
     "pretest": "prisma generate",
     "test": "vitest run",
     "lint": "eslint src test --max-warnings=0",
