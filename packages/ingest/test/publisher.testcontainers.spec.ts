@@ -27,6 +27,10 @@ describe("generic CSV publisher (Testcontainers)", () => {
         extraction_ts timestamptz NOT NULL, transformation_id text NOT NULL, run_id uuid NOT NULL,
         checksum text NOT NULL CHECK (checksum ~ '^[0-9a-f]{64}$')
       );
+      CREATE TABLE integration.reconciliation_results (run_id uuid, control_type text, source_value text, platform_value text, delta numeric, passed boolean, checked_at timestamptz, detail text);
+      CREATE TABLE integration.quality_flags (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), subject_type text, subject_ref text, rule text, severity text, detail text, state text, raised_by_run_id uuid);
+      CREATE TABLE integration.remediation_items (quality_flag_id uuid, description text, assigned_to text, due_date timestamptz, state text);
+      CREATE TABLE public.domain_events (event_type text, event_version int, aggregate_type text, aggregate_id text, dedupe_key text, occurred_at timestamptz, payload jsonb);
     `);
     const directory = await mkdtemp(join(tmpdir(), "spm-ingest-e2e-"));
     const csv = join(directory, "actuals.csv");
@@ -53,6 +57,10 @@ describe("generic CSV publisher (Testcontainers)", () => {
   function transaction(client: PoolClient) {
     return {
       client,
+      reconciliationResult: { createMany: async ({ data }: { data: any[] }) => { for (const row of data) await client.query(`INSERT INTO integration.reconciliation_results VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [row.runId,row.controlType,row.sourceValue,row.platformValue,row.delta,row.passed,row.checkedAt,row.detail ?? null]); } },
+      qualityFlag: { create: async ({ data }: { data: any }) => (await client.query(`INSERT INTO integration.quality_flags (subject_type,subject_ref,rule,severity,detail,state,raised_by_run_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, [data.subjectType,data.subjectRef,data.rule,data.severity,data.detail,data.state,data.raisedByRunId])).rows[0] },
+      remediationItem: { create: async ({ data }: { data: any }) => client.query(`INSERT INTO integration.remediation_items VALUES ($1,$2,$3,$4,$5)`, [data.qualityFlagId,data.description,data.assignedTo,data.dueDate,data.state]) },
+      domainEvent: { create: async ({ data }: { data: any }) => client.query(`INSERT INTO public.domain_events VALUES ($1,$2,$3,$4,$5,$6,$7)`, [data.eventType,data.eventVersion,data.aggregateType,data.aggregateId,data.dedupeKey,data.occurredAt,JSON.stringify(data.payload)]) },
       lineageRecord: { createMany: async ({ data }: { data: any[] }) => {
         for (const row of data) await client.query(
           `INSERT INTO integration.lineage_records (figure_ref,source_system,source_object,source_field,extraction_ts,transformation_id,run_id,checksum) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
@@ -73,14 +81,25 @@ describe("generic CSV publisher (Testcontainers)", () => {
   const lineage = (checksum: string) => [{ sourceSystem: "generic", sourceObject: "actuals.csv", sourceField: "value", extractionTs: new Date(), transformationId: "transform-v1", runId: "00000000-0000-0000-0000-000000000301", checksum }];
 
   it("rolls back both facts and lineage when lineage fails", async () => {
-    await expect(publishConformed({ datasetPath: parquet, targetTable: "Measurement", lineageBatch: lineage("invalid"), database, ingest })).rejects.toThrow();
+    await expect(publishConformed({ datasetPath: parquet, targetTable: "Measurement", lineageBatch: lineage("invalid"), database, ingest, reconciliationResults: [{ runId: "00000000-0000-0000-0000-000000000301", controlType: "row_count", sourceValue: "1", platformValue: "1", delta: 0, passed: true, checkedAt: new Date() }], salamAssigneeId: "salam-bi-lead" })).rejects.toThrow();
     expect((await pool.query("SELECT count(*)::int AS count FROM performance.measurements")).rows[0].count).toBe(0);
     expect((await pool.query("SELECT count(*)::int AS count FROM integration.lineage_records")).rows[0].count).toBe(0);
   });
 
   it("publishes CSV-derived Measurement and lineage as TEMPLATE", async () => {
-    await publishConformed({ datasetPath: parquet, targetTable: "Measurement", lineageBatch: lineage("a".repeat(64)), database, ingest });
+    await publishConformed({ datasetPath: parquet, targetTable: "Measurement", lineageBatch: lineage("a".repeat(64)), database, ingest, reconciliationResults: [{ runId: "00000000-0000-0000-0000-000000000301", controlType: "row_count", sourceValue: "1", platformValue: "1", delta: 0, passed: true, checkedAt: new Date() }], salamAssigneeId: "salam-bi-lead" });
     expect((await pool.query("SELECT value::float8 AS value, source FROM performance.measurements")).rows).toEqual([{ value: 42.5, source: "template" }]);
     expect((await pool.query("SELECT source_system FROM integration.lineage_records")).rows).toEqual([{ source_system: "generic" }]);
+  });
+
+  it("blocks failed reconciliation, creates remediation, and routes BI/Data Lead notification", async () => {
+    await pool.query("TRUNCATE performance.measurements, integration.lineage_records, integration.quality_flags, integration.remediation_items, public.domain_events");
+    const ids = await publishConformed({ datasetPath: parquet, targetTable: "Measurement", lineageBatch: lineage("a".repeat(64)), database, ingest, reconciliationResults: [{ runId: "00000000-0000-0000-0000-000000000302", controlType: "sum_by_dimension", sourceValue: "99", platformValue: "42.5", delta: -56.5, passed: false, checkedAt: new Date(), detail: "sector=retail" }], salamAssigneeId: "salam-bi-lead" });
+    expect(ids).toEqual([]);
+    expect((await pool.query("SELECT count(*)::int count FROM performance.measurements")).rows[0].count).toBe(0);
+    expect((await pool.query("SELECT count(*)::int count FROM integration.lineage_records")).rows[0].count).toBe(0);
+    expect((await pool.query("SELECT rule,state FROM integration.quality_flags")).rows).toEqual([{ rule: "reconciliation", state: "open" }]);
+    expect((await pool.query("SELECT assigned_to FROM integration.remediation_items")).rows).toEqual([{ assigned_to: "salam-bi-lead" }]);
+    expect((await pool.query("SELECT payload->>'recipientRole' role FROM public.domain_events")).rows).toEqual([{ role: "bi_data_lead" }]);
   });
 });

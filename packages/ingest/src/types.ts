@@ -29,3 +29,21 @@ export interface LineageInput {
   runId: string;
   checksum: string;
 }
+
+export type ReconciliationControlType = "row_count" | "sum_by_dimension" | "checksum";
+export interface ReconciliationResult {
+  runId: string;
+  controlType: ReconciliationControlType;
+  sourceValue: string;
+  platformValue: string;
+  delta: number;
+  passed: boolean;
+  checkedAt: Date;
+  detail?: string;
+}
+
+export interface ReconciliationManifest {
+  rowCount: number;
+  files: Array<{ path: string; checksum: string }>;
+  expectedTotals?: Record<string, number>;
+}

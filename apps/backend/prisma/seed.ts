@@ -55,6 +55,7 @@ const roleDescriptions: Record<(typeof PLATFORM_ROLES)[number], string> = {
   initiative_owner: "Ownership of strategic initiatives",
   kpi_owner: "Ownership of key performance indicators",
   data_steward: "Stewardship of governed performance data",
+  bi_data_lead: "BI and data lead for ingestion quality and reconciliation alerts",
   vmo_lead: "Value management office leadership",
   benefit_owner: "Ownership of expected and realized benefits",
   strategy_analyst: "Strategy analysis and reporting",
