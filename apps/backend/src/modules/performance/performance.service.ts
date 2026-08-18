@@ -25,7 +25,7 @@ export class PerformanceService {
   saveCaptureDraft = (sessionId: string, ownerId: string, value: number, evidenceRef?: string | null) => this.workspace.saveDraft(sessionId, ownerId, value, evidenceRef);
   captureHistory = (kpiVersionId: string, scopeNodeId: string) => this.workspace.history(kpiVersionId, scopeNodeId);
   captureTemplate = (format: "csv" | "xlsx", period: string, priorValue: number | null) => this.workspace.template(format, period, priorValue);
-  validateCaptureTemplate = (bytes: Buffer, format: "csv" | "xlsx", expectedPeriod: string, history: number[]) => this.workspace.validateTemplate(bytes, format, expectedPeriod, history);
+  validateCaptureTemplate = (bytes: Buffer, format: "csv" | "xlsx", expectedPeriod: string, history: number[], sessionId?: string, ownerId?: string) => this.workspace.validateTemplate(bytes, format, expectedPeriod, history, sessionId, ownerId);
   uploadCaptureEvidence = (sessionId: string, fileName: string, contentType: string, bytes: Buffer) => this.workspace.uploadEvidence(sessionId, fileName, contentType, bytes);
 
   startCaptureSession: CaptureSessionService["startSession"] = (input) =>

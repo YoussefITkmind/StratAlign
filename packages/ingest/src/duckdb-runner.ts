@@ -14,11 +14,12 @@ function interpolate(sql: string, params: SqlParams): string {
 }
 
 async function execute(sqlFilePath: string, params: SqlParams) {
+  const sql = interpolate(await readFile(sqlFilePath, "utf8"), params);
   const instance = await DuckDBInstance.create(":memory:");
   const connection = await instance.connect();
   try {
-    await connection.run("INSTALL httpfs; LOAD httpfs;");
-    return await connection.runAndReadAll(interpolate(await readFile(sqlFilePath, "utf8"), params));
+    if (/\b(?:s3|https?):\/\//i.test(sql)) await connection.run("INSTALL httpfs; LOAD httpfs;");
+    return await connection.runAndReadAll(sql);
   } finally { connection.closeSync(); }
 }
 

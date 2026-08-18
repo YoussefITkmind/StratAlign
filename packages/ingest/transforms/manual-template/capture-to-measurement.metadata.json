@@ -1,0 +1,1 @@
+{"version":"1.0.0","description":"Conform a validated Prompt 2.8 capture template for Measurement publication","expectedOutputColumns":["kpi_version_id","scope_node_id","period","value","source","submitted_by"]}
