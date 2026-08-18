@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance", "scorecard", "execution", "value"]
+  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance", "scorecard", "execution", "value", "integration"]
 }
 
 model SystemSetting {
@@ -1120,6 +1120,25 @@ model Measurement {
   @@index([submittedById])
   @@map("measurements")
   @@schema("performance")
+}
+
+model LineageRecord {
+  id               String   @id @default(uuid()) @db.Uuid
+  figureRef        String   @map("figure_ref")
+  sourceSystem     String   @map("source_system")
+  sourceObject     String   @map("source_object")
+  sourceField      String   @map("source_field")
+  extractionTs     DateTime @map("extraction_ts")
+  transformationId String   @map("transformation_id")
+  runId            String   @map("run_id") @db.Uuid
+  checksum         String
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([figureRef])
+  @@index([runId])
+  @@index([transformationId])
+  @@map("lineage_records")
+  @@schema("integration")
 }
 
 model TargetSeries {

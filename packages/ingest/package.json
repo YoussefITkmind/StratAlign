@@ -1,0 +1,10 @@
+{
+  "name": "@spm/ingest",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": { "build": "tsc", "test": "vitest run" },
+  "dependencies": { "@duckdb/node-api": "^1.3.2-alpha.26", "zod": "^4.4.3" },
+  "devDependencies": { "@testcontainers/postgresql": "^12.1.0", "@types/node": "^24.13.3", "@types/pg": "^8.20.3", "pg": "^8.22.0", "typescript": "^5.9.3", "vitest": "3.2.7" }
+}
