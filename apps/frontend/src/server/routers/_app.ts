@@ -9,6 +9,7 @@ import { captureRouter } from "@/server/routers/capture";
 import { scorecardRouter } from "@/server/routers/scorecard";
 import { homeRouter } from "@/server/routers/home";
 import { executionRouter } from "@/server/routers/execution";
+import { valueGateRouter } from "@/server/routers/value-gate";
 
 export const appRouter = router({
   iam: iamRouter,
@@ -21,6 +22,7 @@ export const appRouter = router({
   scorecard: scorecardRouter,
   home: homeRouter,
   execution: executionRouter,
+  valueGate: valueGateRouter,
 });
 
 export type AppRouter = typeof appRouter;

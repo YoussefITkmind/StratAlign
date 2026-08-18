@@ -5,6 +5,7 @@ import { protectedProcedure, requireRole, router } from "./index";
 const currencySchema = z.string().trim().regex(/^[A-Za-z]{3}$/);
 const amountSchema = z.number().finite();
 const stageSchema = z.enum(["design", "pilot", "execute", "scale", "done"]);
+const gateEvidenceKindSchema = z.enum(["document", "kpi", "benefit", "commentary"]);
 
 export interface ValueServiceContract {
   listTaxonomy(): Promise<unknown[]>;
@@ -49,12 +50,22 @@ export interface ValueServiceContract {
     criteriaInput: unknown;
     createdBy: string;
   }): Promise<unknown>;
+  evaluateGateCriteria(input: { gateReviewId: string; actorUserId: string }): Promise<unknown>;
+  attachGateEvidence(input: {
+    gateReviewId: string;
+    kind: "document" | "kpi" | "benefit" | "commentary";
+    reference: string;
+    label?: string | null;
+    attachedBy: string;
+  }): Promise<unknown>;
+  listGateEvidence(gateReviewId: string): Promise<unknown[]>;
   decideGateReview(input: {
     gateReviewId: string;
     decision: "continue" | "intervene" | "stop";
     decidedBy: string;
     decidedAt?: Date;
   }): Promise<unknown>;
+  getGateCorrectiveActionRequirement(gateReviewId: string): Promise<unknown>;
 }
 
 declare module "./index" {
@@ -74,10 +85,10 @@ function mapValueError(error: unknown): never {
   const code = typeof error === "object" && error !== null && "code" in error
     ? String((error as { code: unknown }).code)
     : "";
-  if (code === "VALUE_BENEFIT_NOT_FOUND") {
-    throw new TRPCError({ code: "NOT_FOUND", message: "Benefit was not found" });
+  if (code === "VALUE_BENEFIT_NOT_FOUND" || code === "VALUE_GATE_NOT_FOUND") {
+    throw new TRPCError({ code: "NOT_FOUND", message: error instanceof Error ? error.message : "Value record was not found" });
   }
-  if (code === "VALUE_GATE_DECISION_FORBIDDEN") {
+  if (code === "VALUE_GATE_DECISION_FORBIDDEN" || code === "VALUE_GATE_SEPARATION_OF_DUTIES") {
     throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Gate decision is not allowed" });
   }
   if (code.startsWith("VALUE_")) {
@@ -178,7 +189,56 @@ export const valueRouter = router({
         try { return await service(ctx).createGateReview({ ...input, createdBy: ctx.session.user.id }); }
         catch (error) { return mapValueError(error); }
       }),
-    decide: requireRole("seo_administrator", "platform_administrator")
+    evaluateCriteria: requireRole(
+      "governance_committee",
+      "vmo_lead",
+      "benefit_owner",
+      "initiative_owner",
+      "seo_administrator",
+    )
+      .input(z.object({ gateReviewId: z.string().uuid() }).strict())
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await service(ctx).evaluateGateCriteria({
+            gateReviewId: input.gateReviewId,
+            actorUserId: ctx.session.user.id,
+          });
+        } catch (error) { return mapValueError(error); }
+      }),
+    attachEvidence: requireRole(
+      "governance_committee",
+      "vmo_lead",
+      "benefit_owner",
+      "initiative_owner",
+      "seo_administrator",
+    )
+      .input(z.object({
+        gateReviewId: z.string().uuid(),
+        kind: gateEvidenceKindSchema,
+        reference: z.string().trim().min(1).max(2048),
+        label: z.string().trim().max(300).nullable().optional(),
+      }).strict())
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await service(ctx).attachGateEvidence({
+            ...input,
+            attachedBy: ctx.session.user.id,
+          });
+        } catch (error) { return mapValueError(error); }
+      }),
+    evidence: protectedProcedure
+      .input(z.object({ gateReviewId: z.string().uuid() }).strict())
+      .query(async ({ ctx, input }) => {
+        try { return await service(ctx).listGateEvidence(input.gateReviewId); }
+        catch (error) { return mapValueError(error); }
+      }),
+    correctiveAction: protectedProcedure
+      .input(z.object({ gateReviewId: z.string().uuid() }).strict())
+      .query(async ({ ctx, input }) => {
+        try { return await service(ctx).getGateCorrectiveActionRequirement(input.gateReviewId); }
+        catch (error) { return mapValueError(error); }
+      }),
+    decide: requireRole("governance_committee")
       .input(z.object({
         gateReviewId: z.string().uuid(),
         decision: z.enum(["continue", "intervene", "stop"]),

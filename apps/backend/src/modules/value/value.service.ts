@@ -1,7 +1,7 @@
 import {
   createActor,
-  VALUE_REALIZATION_WORKFLOW_DEFINITION,
   valueLifecycleMachine,
+  VALUE_REALIZATION_WORKFLOW_DEFINITION,
   type ValueLifecycleEvent,
   type ValueLifecycleState,
   type ValueLifecycleSnapshot,
@@ -110,8 +110,6 @@ export class ValueService {
     driver: string;
     ownerUserId: string;
   }): Promise<BenefitRow> {
-    await this.ensureValueWorkflowDefinition();
-
     const rows = await this.prisma.$queryRawUnsafe<BenefitRow[]>(
       `INSERT INTO "value"."benefits"
         (initiative_id, category_id, driver, owner_user_id, workflow_snapshot)
@@ -140,6 +138,7 @@ export class ValueService {
       benefit.id,
       json(actor.getPersistedSnapshot()),
     );
+    await this.ensureWorkflowDefinition();
     return this.getBenefit(benefit.id);
   }
 
@@ -215,7 +214,7 @@ export class ValueService {
     approvalParticipantId?: string;
     stopReason?: string | null;
     now?: Date;
-  }): Promise<BenefitRow> {
+  }) {
     let benefit = await this.getBenefit(input.benefitId);
     const facts = await this.getFacts(benefit.id);
     const actor = createActor(valueLifecycleMachine, {
@@ -370,25 +369,35 @@ export class ValueService {
     return rows[0];
   }
 
+  /**
+   * Compatibility path for Phase 5.1 callers. Phase 5.2's public API overrides
+   * this in ValueManagementService and applies committee role + creator/requester
+   * separation-of-duties before reaching the database. This method still opens
+   * the same transaction-local DB capability so the structural trigger is never
+   * bypassed by an ordinary UPDATE.
+   */
   async decideGateReview(input: {
     gateReviewId: string;
     decision: "continue" | "intervene" | "stop";
     decidedBy: string;
     decidedAt?: Date;
   }) {
-    const rows = await this.prisma.$queryRawUnsafe<Array<{
-      id: string; initiative_id: string; stage: string; criteria_eval_snapshot: unknown;
-      decision: string | null; decided_by: string | null; decided_at: Date | null; created_by: string; created_at: Date;
-    }>>(
-      `UPDATE "value"."gate_reviews"
-       SET decision = $2::"value"."GateDecision", decided_by = $3, decided_at = $4
-       WHERE id = $1::uuid AND decision IS NULL AND created_by <> $3
-       RETURNING *`,
-      input.gateReviewId,
-      input.decision,
-      input.decidedBy,
-      input.decidedAt ?? new Date(),
-    );
+    const rows = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SELECT set_config('spm.gate_decision_authorized', 'on', true)`);
+      return tx.$queryRawUnsafe<Array<{
+        id: string; initiative_id: string; stage: string; criteria_eval_snapshot: unknown;
+        decision: string | null; decided_by: string | null; decided_at: Date | null; created_by: string; created_at: Date;
+      }>>(
+        `UPDATE "value"."gate_reviews"
+         SET decision = $2::"value"."GateDecision", decided_by = $3, decided_at = $4
+         WHERE id = $1::uuid AND decision IS NULL AND created_by <> $3
+         RETURNING *`,
+        input.gateReviewId,
+        input.decision,
+        input.decidedBy,
+        input.decidedAt ?? new Date(),
+      );
+    });
     if (!rows[0]) {
       throw new ValueOperationError("VALUE_GATE_DECISION_FORBIDDEN", "Gate review is decided already or requires a different decision maker");
     }
@@ -449,7 +458,7 @@ export class ValueService {
     return raised;
   }
 
-  private async scheduleCheckins(benefitId: string, deliveredAt: Date) {
+  protected async scheduleCheckins(benefitId: string, deliveredAt: Date) {
     for (const months of [3, 6, 12] as const) {
       await this.prisma.$executeRawUnsafe(
         `INSERT INTO "value"."checkins" (benefit_id, due_at, months_post_delivery)
@@ -462,7 +471,7 @@ export class ValueService {
     }
   }
 
-  private async ensureValueWorkflowDefinition(): Promise<void> {
+  private async ensureWorkflowDefinition(): Promise<void> {
     const definition = VALUE_REALIZATION_WORKFLOW_DEFINITION;
     await this.prisma.workflowDefinition.upsert({
       where: {
@@ -490,11 +499,10 @@ export class ValueService {
     return rows[0];
   }
 
-  private async getFacts(benefitId: string) {
+  private async getFacts(benefitId: string): Promise<{ baselineExists: boolean; realizedEntryCount: number }> {
     const rows = await this.prisma.$queryRawUnsafe<Array<{ baseline_exists: boolean; realized_count: bigint }>>(
-      `SELECT
-         EXISTS (SELECT 1 FROM "value"."benefit_baselines" WHERE benefit_id = $1::uuid) AS baseline_exists,
-         (SELECT count(*) FROM "value"."value_state_entries" WHERE benefit_id = $1::uuid AND state = 'realized') AS realized_count`,
+      `SELECT EXISTS(SELECT 1 FROM "value"."benefit_baselines" WHERE benefit_id = $1::uuid) AS baseline_exists,
+              (SELECT COUNT(*) FROM "value"."value_state_entries" WHERE benefit_id = $1::uuid AND state = 'realized') AS realized_count`,
       benefitId,
     );
     return {

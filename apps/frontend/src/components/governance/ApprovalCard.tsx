@@ -1,8 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ChevronDown, MessageSquareWarning, X } from "lucide-react";
+import { Check, ChevronDown, CirclePause, MessageSquareWarning, OctagonX, X } from "lucide-react";
 import { renderDiffFor } from "./diff/registry";
+
+export type ApprovalDecision =
+  | "approved"
+  | "rejected"
+  | "changes_requested"
+  | "continue"
+  | "intervene"
+  | "stop";
 
 export interface RealApprovalCase {
   id: string;
@@ -35,7 +43,7 @@ export default function ApprovalCard({
   error,
 }: {
   approval: RealApprovalCase;
-  onDecide: (id: string, decision: "approved" | "rejected" | "changes_requested", reason: string) => void;
+  onDecide: (id: string, decision: ApprovalDecision, reason: string) => void;
   deciding: boolean;
   error?: string | null;
 }) {
@@ -44,6 +52,7 @@ export default function ApprovalCard({
 
   const status = STATUS_TOKENS[approval.status];
   const actionable = approval.status === "pending";
+  const isValueGate = approval.entityType === "value_gate_review";
 
   return (
     <div
@@ -100,26 +109,43 @@ export default function ApprovalCard({
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Rationale (required to reject or request changes)"
+            placeholder={isValueGate ? "Committee rationale (optional)" : "Rationale (required to reject or request changes)"}
             data-testid="decision-rationale"
             className="rounded-lg border border-gray-300 p-2 text-sm outline-none focus:border-indigo-500"
             rows={2}
           />
           {error && <p role="alert" className="text-xs text-red-600">{error}</p>}
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" disabled={deciding} onClick={() => onDecide(approval.id, "approved", reason.trim())} data-testid="approve-case"
-              className="flex items-center gap-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-sm font-medium text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40">
-              <Check className="h-3.5 w-3.5" /> Approve
-            </button>
-            <button type="button" disabled={deciding || !reason.trim()} onClick={() => onDecide(approval.id, "rejected", reason.trim())} data-testid="reject-case"
-              className="flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40">
-              <X className="h-3.5 w-3.5" /> Reject
-            </button>
-            <button type="button" disabled={deciding || !reason.trim()} onClick={() => onDecide(approval.id, "changes_requested", reason.trim())} data-testid="request-changes-case"
-              className="flex items-center gap-1 rounded-lg border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">
-              <MessageSquareWarning className="h-3.5 w-3.5" /> Request Changes
-            </button>
-          </div>
+          {isValueGate ? (
+            <div className="flex flex-wrap items-center gap-2" data-testid="value-gate-actions">
+              <button type="button" disabled={deciding} onClick={() => onDecide(approval.id, "continue", reason.trim())} data-testid="continue-gate"
+                className="flex items-center gap-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-sm font-medium text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40">
+                <Check className="h-3.5 w-3.5" /> Continue
+              </button>
+              <button type="button" disabled={deciding} onClick={() => onDecide(approval.id, "intervene", reason.trim())} data-testid="intervene-gate"
+                className="flex items-center gap-1 rounded-lg border border-amber-200 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40">
+                <CirclePause className="h-3.5 w-3.5" /> Intervene
+              </button>
+              <button type="button" disabled={deciding} onClick={() => onDecide(approval.id, "stop", reason.trim())} data-testid="stop-gate"
+                className="flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40">
+                <OctagonX className="h-3.5 w-3.5" /> Stop
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" disabled={deciding} onClick={() => onDecide(approval.id, "approved", reason.trim())} data-testid="approve-case"
+                className="flex items-center gap-1 rounded-lg border border-emerald-200 px-3 py-1.5 text-sm font-medium text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40">
+                <Check className="h-3.5 w-3.5" /> Approve
+              </button>
+              <button type="button" disabled={deciding || !reason.trim()} onClick={() => onDecide(approval.id, "rejected", reason.trim())} data-testid="reject-case"
+                className="flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40">
+                <X className="h-3.5 w-3.5" /> Reject
+              </button>
+              <button type="button" disabled={deciding || !reason.trim()} onClick={() => onDecide(approval.id, "changes_requested", reason.trim())} data-testid="request-changes-case"
+                className="flex items-center gap-1 rounded-lg border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">
+                <MessageSquareWarning className="h-3.5 w-3.5" /> Request Changes
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

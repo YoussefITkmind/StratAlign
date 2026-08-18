@@ -248,9 +248,12 @@ describe("canonical Auth.js OIDC reconciliation", () => {
       }
     ).authorize;
 
-    login.mockRejectedValue(
-      new Error("Invalid credentials"),
-    );
+    // Shaped like a real TRPCClientError from a reachable backend that
+    // rejected the credentials (mirrors auth.login's UNAUTHORIZED response).
+    login.mockRejectedValue({
+      data: { code: "UNAUTHORIZED", httpStatus: 401 },
+      message: "Invalid email or password",
+    });
 
     await expect(
       authorize!({
@@ -262,6 +265,36 @@ describe("canonical Auth.js OIDC reconciliation", () => {
     expect(login).toHaveBeenCalledWith({
       email: "credential-user@example.test",
       password: "wrong-password",
+    });
+  });
+
+  it("falls back to a demo session when the backend cannot be reached at all", async () => {
+    const provider = authConfig.providers.find(
+      (candidate) =>
+        typeof candidate !== "function" && candidate.id === "credentials",
+    );
+
+    const authorize = (
+      provider as {
+        authorize?: (
+          credentials: Record<string, unknown>,
+        ) => unknown | Promise<unknown>;
+      }
+    ).authorize;
+
+    // A raw network failure has no `data` — no response ever came back —
+    // unlike a real backend's TRPCClientError rejection.
+    login.mockRejectedValue(new TypeError("fetch failed"));
+
+    await expect(
+      authorize!({
+        email: "demo-user@example.test",
+        password: "anything",
+      }),
+    ).resolves.toEqual({
+      id: "demo-user@example.test",
+      email: "demo-user@example.test",
+      name: "demo-user@example.test",
     });
   });
 

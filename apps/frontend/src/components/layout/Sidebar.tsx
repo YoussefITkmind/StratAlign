@@ -18,6 +18,7 @@ import {
   Database,
   Settings,
   LogOut,
+  CalendarDays,
 } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -73,7 +74,10 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: 'GOVERNANCE',
     collapsible: true,
-    items: [{ label: 'Governance', href: '/governance', icon: ShieldCheck, badge: 3 }],
+    items: [
+      { label: 'Governance Hub', href: '/governance/hub', icon: CalendarDays, badge: 4 },
+      { label: 'Governance', href: '/governance', icon: ShieldCheck, badge: 3 },
+    ],
   },
   {
     label: 'SYSTEM',

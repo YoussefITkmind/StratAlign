@@ -19,27 +19,32 @@ export const VALUE_REALIZATION_WORKFLOW_DEFINITION = {
     identification: {
       on: {
         SUBMIT_FOR_APPROVAL: { target: "pending_approval" },
+        STOP: { target: "closure" },
       },
     },
     pending_approval: {
       subcase: "generic_approval",
       on: {
         APPROVAL_GRANTED: { target: "approved" },
+        STOP: { target: "closure" },
       },
     },
     approved: {
       on: {
         BEGIN_VALIDATION: { target: "validation", guard: "baselineExists" },
+        STOP: { target: "closure" },
       },
     },
     validation: {
       on: {
         START_TRACKING: { target: "tracking" },
+        STOP: { target: "closure" },
       },
     },
     tracking: {
       on: {
         CLOSE: { target: "closure", guard: "realizedValueExists" },
+        STOP: { target: "closure" },
       },
     },
     closure: { type: "final" },
@@ -60,7 +65,8 @@ export type ValueLifecycleEvent =
   | { type: "BEGIN_VALIDATION" }
   | { type: "START_TRACKING" }
   | { type: "REFRESH_FACTS"; baselineExists: boolean; realizedEntryCount: number }
-  | { type: "CLOSE"; stopReason?: string | null };
+  | { type: "CLOSE"; stopReason?: string | null }
+  | { type: "STOP"; stopReason: string };
 
 /**
  * Long-lived value-realization lifecycle for a Benefit.
@@ -71,9 +77,9 @@ export type ValueLifecycleEvent =
  * approved that sub-case, preserving the existing separation-of-duties,
  * decision log, SLA and escalation semantics.
  *
- * VALUE_REALIZATION_WORKFLOW_DEFINITION is persisted in the existing governance
- * WorkflowDefinition table by ValueService. The XState machine below is the
- * executable implementation of that definition.
+ * STOP is intentionally different from normal CLOSE: it is a committee-driven
+ * terminal consequence of a Value Gate decision and therefore does not require
+ * a realized entry. No public benefit workflow procedure emits STOP.
  */
 export const valueLifecycleMachine = setup({
   types: {
@@ -98,7 +104,9 @@ export const valueLifecycleMachine = setup({
     }),
     recordStopReason: assign({
       stopReason: ({ context, event }) =>
-        event.type === "CLOSE" ? event.stopReason ?? null : context.stopReason,
+        event.type === "CLOSE" || event.type === "STOP"
+          ? event.stopReason ?? null
+          : context.stopReason,
     }),
   },
 }).createMachine({
@@ -115,11 +123,13 @@ export const valueLifecycleMachine = setup({
           target: "pending_approval",
           actions: "attachApprovalCase",
         },
+        STOP: { target: "closure", actions: "recordStopReason" },
       },
     },
     pending_approval: {
       on: {
         APPROVAL_GRANTED: { target: "approved" },
+        STOP: { target: "closure", actions: "recordStopReason" },
       },
     },
     approved: {
@@ -128,11 +138,13 @@ export const valueLifecycleMachine = setup({
           target: "validation",
           guard: "baselineExists",
         },
+        STOP: { target: "closure", actions: "recordStopReason" },
       },
     },
     validation: {
       on: {
         START_TRACKING: { target: "tracking" },
+        STOP: { target: "closure", actions: "recordStopReason" },
       },
     },
     tracking: {
@@ -142,6 +154,7 @@ export const valueLifecycleMachine = setup({
           guard: "realizedValueExists",
           actions: "recordStopReason",
         },
+        STOP: { target: "closure", actions: "recordStopReason" },
       },
     },
     closure: { type: "final" },

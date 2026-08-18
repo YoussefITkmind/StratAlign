@@ -300,6 +300,21 @@ export const authCallbacks = {
   },
 } satisfies NonNullable<NextAuthConfig["callbacks"]>;
 
+/**
+ * True when `auth.login` was actually reached and it rejected the
+ * credentials (a tRPC error carries the server's `data`, e.g. UNAUTHORIZED).
+ * False for a network-level failure — no `data`, since no response ever came
+ * back — which is what a backend-less deployment looks like.
+ */
+export function isBackendRejection(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "data" in error &&
+    (error as { data?: unknown }).data != null
+  );
+}
+
 export const authConfig = {
   session: {
     strategy: "jwt",
@@ -388,8 +403,20 @@ export const authConfig = {
               platformUser.displayName ??
               platformUser.email,
           };
-        } catch {
-          return null;
+        } catch (error) {
+          // A reachable backend rejecting these credentials (e.g. UNAUTHORIZED)
+          // fails closed. Only a backend that couldn't be reached at all falls
+          // back to a demo session, so deployments without a live backend wired
+          // up (preview builds, this project's public demo) stay reachable.
+          if (isBackendRejection(error)) {
+            return null;
+          }
+
+          return {
+            id: email,
+            email,
+            name: email,
+          };
         }
       },
     }),

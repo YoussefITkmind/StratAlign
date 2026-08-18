@@ -51,4 +51,11 @@ describe("value lifecycle machine", () => {
     expect(service.getSnapshot().value).toBe("closure");
     expect(service.getSnapshot().context.stopReason).toBe("realization complete");
   });
+
+  it("allows an explicit committee STOP consequence without bypassing normal CLOSE guards", () => {
+    const service = actor();
+    service.send({ type: "STOP", stopReason: "Value Gate committee stopped the initiative" });
+    expect(service.getSnapshot().value).toBe("closure");
+    expect(service.getSnapshot().context.stopReason).toBe("Value Gate committee stopped the initiative");
+  });
 });
