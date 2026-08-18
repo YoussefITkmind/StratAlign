@@ -2,7 +2,7 @@
 
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import type { HierarchyTreeNode } from "@/lib/strategyTreeUtils";
-import { TYPE_CONFIG, STATE_CONFIG } from "@/lib/strategyHierarchyConfig";
+import { TYPE_CONFIG, progressRagTokens } from "@/lib/strategyHierarchyConfig";
 
 interface Props {
   node: HierarchyTreeNode;
@@ -21,7 +21,7 @@ export default function TreeRow({ node, depth, lines, hasNextSibling, expandedId
   const hasChildren = node.children.length > 0;
   const isOpen = forceExpanded || expandedIds.has(node.id);
   const typeCfg = TYPE_CONFIG[node.type];
-  const stateCfg = STATE_CONFIG[node.state];
+  const ragCfg = progressRagTokens(node.progress);
   const Icon = typeCfg.icon;
 
   return (
@@ -77,12 +77,12 @@ export default function TreeRow({ node, depth, lines, hasNextSibling, expandedId
 
           <div className="flex items-center gap-3 pl-9 sm:gap-4 md:shrink-0 md:gap-6 md:pl-0">
             <div className="flex items-center gap-2 md:w-16">
-              <span className={`h-2 w-2 shrink-0 rounded-full ${stateCfg.dot}`} title={stateCfg.label} />
+              <span className={`h-2 w-2 shrink-0 rounded-full ${ragCfg.dot}`} title={ragCfg.label} />
               <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${node.owner.color}`}>{node.owner.initials}</span>
             </div>
             <div className="flex min-w-0 flex-1 items-center gap-2 md:w-36 md:flex-none">
               <div className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-gray-100 sm:w-16 md:w-24">
-                <div className={`h-full rounded-full ${stateCfg.barColor}`} style={{ width: `${node.progress}%` }} />
+                <div className={`h-full rounded-full ${ragCfg.bar}`} style={{ width: `${node.progress}%` }} />
               </div>
               <span className="w-9 shrink-0 text-right text-sm text-gray-600">{node.progress}%</span>
             </div>
