@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CaptureWorkspaceService } from "../../src/modules/performance/capture-workspace.service";
 
 const service = new CaptureWorkspaceService({} as never, {
@@ -10,7 +10,13 @@ const service = new CaptureWorkspaceService({} as never, {
 
 describe("isolated Prompt 2.8 template validation", () => {
   const putObject = vi.fn().mockResolvedValue(undefined);
-  vi.spyOn(service as unknown as { storageClient: () => { putObject: typeof putObject } }, "storageClient").mockReturnValue({ putObject });
+  beforeEach(() => {
+    putObject.mockClear();
+    vi.spyOn(
+      service as unknown as { storageClient: () => { putObject: typeof putObject } },
+      "storageClient",
+    ).mockReturnValue({ putObject });
+  });
 
   it("generates and validates CSV rows with accepted, rejected, and warning outcomes", async () => {
     const csv = Buffer.from("period,value\n2026-Q1,12\n2026-Q1,nope\n2026-Q1,100\n");
