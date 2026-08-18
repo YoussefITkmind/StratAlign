@@ -77,7 +77,7 @@ jobs:
 
       - name: Prepare Playwright infrastructure
         run: |
-          docker compose up -d postgres redis mock-oidc
+          docker compose up -d --wait postgres redis mock-oidc
           pnpm --filter @spm/backend exec prisma generate
           pnpm --filter @spm/backend exec prisma migrate deploy
 
