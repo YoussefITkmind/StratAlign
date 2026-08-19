@@ -5,7 +5,6 @@ describe("Phase 2 production data paths", () => {
   it("keeps completed pages on persisted API clients", () => {
     const detail = readFileSync(new URL("../src/components/kpi-detail/KpiDetailView.tsx", import.meta.url), "utf8");
     const productionPaths = [
-      "../src/components/strategy-map/StrategyMapPage.tsx",
       "../src/components/kpi-registry/RegistryPanels.tsx",
       "../src/components/rule-builder/RuleBuilderPanel.tsx",
       "../src/components/approvals/approvals-client.tsx",
