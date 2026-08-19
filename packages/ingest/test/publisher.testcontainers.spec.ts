@@ -73,7 +73,7 @@ describe("generic CSV publisher (Testcontainers)", () => {
   const ingest = async (tx: any, rows: Record<string, unknown>[]) => Promise.all(rows.map(async (row) => {
     const result = await tx.client.query(
       `INSERT INTO performance.measurements (kpi_version_id,scope_node_id,period,value,source,submitted_by) VALUES ($1,$2,$3,$4,'template',$5) RETURNING id`,
-      [row.kpi_version_id,row.scope_node_id,row.period,row.value,row.submitted_by],
+      [row.kpi_version_id, row.scope_node_id, row.period, String(row.value), row.submitted_by],
     );
     return { id: result.rows[0].id as string };
   }));
