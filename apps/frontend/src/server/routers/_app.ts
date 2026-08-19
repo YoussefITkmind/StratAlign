@@ -1,4 +1,5 @@
 import { router } from "@/server/trpc";
+import { authRouter } from "@/server/routers/auth";
 import { iamRouter } from "@/server/routers/iam";
 import { auditRouter } from "@/server/routers/audit";
 import { governanceRouter } from "@/server/routers/governance";
@@ -12,6 +13,7 @@ import { executionRouter } from "@/server/routers/execution";
 import { valueGateRouter } from "@/server/routers/value-gate";
 
 export const appRouter = router({
+  auth: authRouter,
   iam: iamRouter,
   audit: auditRouter,
   governance: governanceRouter,

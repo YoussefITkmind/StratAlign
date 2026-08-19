@@ -3,8 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ROUTES } from "@/lib/auth/constants";
+import { signIn } from "next-auth/react";
+import { TRPCClientError } from "@trpc/client";
+import { CREDENTIALS_PROVIDER_ID, ROUTES } from "@/lib/auth/constants";
 import { useI18n } from "@/lib/i18n/locale-context";
+import { trpc } from "@/lib/trpc/client";
 
 function EyeIcon({ open }: { open: boolean }) {
   return open ? (
@@ -92,6 +95,8 @@ export function RegisterForm() {
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  const signup = trpc.auth.signup.useMutation();
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const errors = validate(t, name, email, password, confirmPassword, agreedToTerms);
@@ -101,11 +106,35 @@ export function RegisterForm() {
     setFormError(null);
     setPending(true);
     try {
-      // TODO(Person A): wire up to the real registration endpoint once the
-      // iam.local_credential-backed signup flow lands (see Prompt 1.1).
-      router.push(ROUTES.login);
-    } catch {
-      setFormError(t("register.errorGeneric"));
+      await signup.mutateAsync({
+        displayName: name.trim(),
+        email: email.trim(),
+        password,
+      });
+
+      const result = await signIn(CREDENTIALS_PROVIDER_ID, {
+        email,
+        password,
+        redirect: false,
+        callbackUrl: ROUTES.defaultAfterLogin,
+      });
+
+      if (result?.error) {
+        // Account was created, but the follow-up sign-in didn't go through
+        // (e.g. rate limited). Send them to sign in manually rather than
+        // stranding them on a form that would try to register them again.
+        router.push(ROUTES.login);
+        return;
+      }
+
+      router.push(result?.url ?? ROUTES.defaultAfterLogin);
+      router.refresh();
+    } catch (error) {
+      if (error instanceof TRPCClientError && error.data?.code === "CONFLICT") {
+        setFieldErrors((current) => ({ ...current, email: t("register.emailTaken") }));
+      } else {
+        setFormError(t("register.errorGeneric"));
+      }
     } finally {
       setPending(false);
     }
