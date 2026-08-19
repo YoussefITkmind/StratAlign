@@ -176,7 +176,11 @@ export default function StrategyMapPage() {
   const toggleDepType = (type: DependencyType) => {
     setVisibleDepTypes((prev) => {
       const next = new Set(prev);
-      next.has(type) ? next.delete(type) : next.add(type);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
       return next;
     });
   };
