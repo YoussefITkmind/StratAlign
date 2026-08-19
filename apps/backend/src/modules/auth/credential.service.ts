@@ -1,4 +1,5 @@
 import { PrismaService } from "../../database/prisma.service";
+import { isUniqueConstraintViolation } from "../../errors/app.errors";
 import {
   hashPassword,
   verifyPassword,
@@ -8,6 +9,15 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   displayName: string | null;
+}
+
+export class EmailAlreadyRegisteredError extends Error {
+  readonly code = "EMAIL_ALREADY_REGISTERED";
+
+  constructor() {
+    super("An account with this email already exists.");
+    this.name = "EmailAlreadyRegisteredError";
+  }
 }
 
 export class CredentialService {
@@ -62,5 +72,51 @@ export class CredentialService {
       email: credential.user.email,
       displayName: credential.user.displayName,
     };
+  }
+
+  async register(
+    email: string,
+    password: string,
+    displayName: string,
+  ): Promise<AuthenticatedUser> {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const existing = await this.prisma.localCredential.findUnique({
+      where: {
+        email: normalizedEmail,
+      },
+    });
+
+    if (existing) {
+      throw new EmailAlreadyRegisteredError();
+    }
+
+    const passwordHash = await hashPassword(password);
+
+    try {
+      const user = await this.prisma.user.create({
+        data: {
+          email: normalizedEmail,
+          displayName: displayName.trim(),
+          localCredential: {
+            create: {
+              email: normalizedEmail,
+              passwordHash,
+            },
+          },
+        },
+      });
+
+      return {
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+      };
+    } catch (error) {
+      if (isUniqueConstraintViolation(error)) {
+        throw new EmailAlreadyRegisteredError();
+      }
+      throw error;
+    }
   }
 }
