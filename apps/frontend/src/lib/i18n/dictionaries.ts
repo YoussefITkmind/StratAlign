@@ -114,6 +114,7 @@ export const dictionaries = {
       passwordMismatch: "Passwords don't match.",
       termsRequired: "You must accept the terms to continue.",
       errorGeneric: "Something went wrong. Please try again.",
+      emailTaken: "An account with this email already exists.",
     },
     admin: {
       title: "Administration",
@@ -372,6 +373,7 @@ export const dictionaries = {
       passwordMismatch: "كلمتا المرور غير متطابقتين.",
       termsRequired: "يجب الموافقة على الشروط للمتابعة.",
       errorGeneric: "حدث خطأ ما. حاول مرة أخرى.",
+      emailTaken: "يوجد حساب بهذا البريد الإلكتروني بالفعل.",
     },
     admin: {
       title: "الإدارة",
