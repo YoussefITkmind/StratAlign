@@ -2104,6 +2104,7 @@ export const appRouter = router({
         if (isEmailAlreadyRegisteredError(error)) {
           throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists." });
         }
+        console.error("auth.signup failed", error);
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Unable to create account" });
       }
     }),
