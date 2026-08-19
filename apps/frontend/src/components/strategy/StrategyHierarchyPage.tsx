@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, Search, Download, Share2, Sparkles, Maximize2, Minimize2, LayoutList, Network, Plus, RefreshCw } from "lucide-react";
+import { ChevronRight, Search, Download, Share2, Sparkles, Maximize2, Minimize2, LayoutList, Network, Plus } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
-import { NODE_TYPES, TYPE_CONFIG, STATE_CONFIG, placeholderOwner, placeholderProgress, type NodeType, type NodeState, type EdgeType } from "@/lib/strategyHierarchyConfig";
+import { NODE_TYPES, TYPE_CONFIG, STATE_CONFIG, placeholderOwner, placeholderProgress, progressRagTokens, type NodeType, type NodeState, type EdgeType } from "@/lib/strategyHierarchyConfig";
 import { buildForest, filterForest, flatten, collectIds, isFiltering, type Filters } from "@/lib/strategyTreeUtils";
+import { demoStrategyForest } from "@/data/demoStrategyHierarchy";
 import TreeRow from "./TreeRow";
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : "Strategy operation failed.";
@@ -41,21 +42,35 @@ export default function StrategyHierarchyPage() {
 
   const [view, setView] = useState<"tree" | "list">("tree");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [autoExpandedForest, setAutoExpandedForest] = useState<ReturnType<typeof buildForest> | null>(null);
   const [filters, setFilters] = useState<Filters>({ search: "", type: "all", state: "all" });
   const [form, setForm] = useState({ type: "objective" as NodeType, nameEn: "", nameAr: "", parentId: "", edgeType: "contains" as EdgeType, approverId: "" });
+  const [drawer, setDrawer] = useState<"none" | "detail" | "create">("none");
 
-  const forest = useMemo(
+  const realForest = useMemo(
     () => buildForest(planNodes.map((node) => ({
       id: node.id, type: node.type as NodeType, nameEn: node.nameEn, nameAr: node.nameAr, state: (node.state ?? "draft") as NodeState,
-      owner: placeholderOwner(node.nameEn, node.id), progress: placeholderProgress(node.id),
+      owner: placeholderOwner(node.nameEn), progress: placeholderProgress(node.id),
     })), planEdges),
     [planNodes, planEdges],
   );
+  const showDemo = !plans.isLoading && (Boolean(plans.error) || (plans.data?.length ?? 0) === 0);
+  const forest = showDemo ? demoStrategyForest : realForest;
   const filteredForest = useMemo(() => filterForest(forest, filters), [forest, filters]);
   const filtering = isFiltering(filters);
   const allIds = useMemo(() => forest.flatMap(collectIds), [forest]);
   const listRows = useMemo(() => filteredForest.flatMap((root) => flatten(root)), [filteredForest]);
   const parentOptions = useMemo(() => forest.flatMap((root) => flatten(root)).map(({ node, depth }) => ({ id: node.id, nameEn: node.nameEn, depth })), [forest]);
+  const nodeCount = showDemo ? allIds.length : planNodes.length;
+
+  if (forest !== autoExpandedForest && forest.length > 0) {
+    setAutoExpandedForest(forest);
+    setExpandedIds((prev) => {
+      if (prev.size > 0) return prev;
+      const topLevelIds = forest.flatMap(({ id, children }) => [id, ...children.map((child) => child.id)]);
+      return new Set(topLevelIds);
+    });
+  }
 
   const toggle = (id: string) =>
     setExpandedIds((prev) => {
@@ -120,30 +135,27 @@ export default function StrategyHierarchyPage() {
       <div className="flex items-center gap-1.5 text-sm text-gray-500">
         <Link href="/" className="hover:text-gray-700">Home</Link>
         <ChevronRight className="h-3.5 w-3.5" />
-        <span className="font-medium text-gray-900">Strategy Hierarchy</span>
+        <span className="font-medium text-indigo-600">Strategy Hierarchy</span>
       </div>
 
       {/* header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-[26px] font-bold text-gray-900">Strategy Hierarchy</h1>
-          <p className="mt-1 text-sm text-gray-500">Persisted hierarchy, traversal, and governed structural changes · {planNodes.length} nodes</p>
+          <p className="mt-1 text-sm text-gray-500">Manage your complete organizational strategy · {nodeCount} nodes</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => void refresh()} className="rounded-full border border-gray-300 p-2 text-gray-500 hover:bg-gray-50" title="Refresh">
-            <RefreshCw className="h-4 w-4" />
-          </button>
           <button onClick={exportJson} className="flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
             <Download className="h-4 w-4" /> Export
           </button>
-          <button disabled title="Coming soon" className="flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-400">
+          <button disabled title="Coming soon" className="flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
             <Share2 className="h-4 w-4" /> Share
           </button>
-          <button disabled title="Coming soon" className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-blue-500 px-4 py-2 text-sm font-medium text-white opacity-60">
+          <button disabled title="Coming soon" className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-blue-500 px-4 py-2 text-sm font-medium text-white">
             <Sparkles className="h-4 w-4" /> Generate Strategy Brief
           </button>
           <button
-            onClick={() => setForm((current) => ({ ...current, parentId: "", nameEn: "", nameAr: "" }))}
+            onClick={() => { setForm((current) => ({ ...current, parentId: "", nameEn: "", nameAr: "" })); setDrawer("create"); }}
             className="flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
           >
             <Plus className="h-4 w-4" /> Add Node
@@ -151,12 +163,14 @@ export default function StrategyHierarchyPage() {
         </div>
       </div>
 
-      <label className="block text-sm text-gray-600">
-        Plan version
-        <select value={selectedPlanId} onChange={(event) => { setPlanId(event.target.value); setSelectedNodeId(""); }} className="ml-2 rounded-full border border-gray-300 px-3 py-1.5 text-sm">
-          {plans.data?.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} · {plan.status}</option>)}
-        </select>
-      </label>
+      {(plans.data?.length ?? 0) > 1 && (
+        <label className="block text-sm text-gray-600">
+          Plan version
+          <select value={selectedPlanId} onChange={(event) => { setPlanId(event.target.value); setSelectedNodeId(""); }} className="ml-2 rounded-full border border-gray-300 px-3 py-1.5 text-sm">
+            {plans.data?.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} · {plan.status}</option>)}
+          </select>
+        </label>
+      )}
 
       {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {notice && <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
@@ -186,7 +200,7 @@ export default function StrategyHierarchyPage() {
             onChange={(e) => setFilters((f) => ({ ...f, state: e.target.value as NodeState | "all" }))}
             className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500"
           >
-            <option value="all">All States</option>
+            <option value="all">All Statuses</option>
             {(Object.keys(STATE_CONFIG) as NodeState[]).map((key) => <option key={key} value={key}>{STATE_CONFIG[key].label}</option>)}
           </select>
         </div>
@@ -209,133 +223,148 @@ export default function StrategyHierarchyPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-        {/* tree / list */}
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-          <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            <span>Name</span>
-            <div className="hidden items-center gap-6 md:flex">
-              <span className="w-16">Own</span>
-              <span className="w-36">Progress</span>
-            </div>
+      {/* tree / list */}
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <span>Name</span>
+          <div className="hidden items-center gap-6 md:flex">
+            <span className="w-16">Own</span>
+            <span className="w-36">Progress</span>
           </div>
-
-          {filteredForest.length === 0 && (
-            <div className="px-4 py-16 text-center text-sm text-gray-400">No nodes match your filters.</div>
-          )}
-
-          {view === "tree" && filteredForest.map((root, idx) => (
-            <TreeRow
-              key={root.id}
-              node={root}
-              depth={0}
-              lines={[]}
-              hasNextSibling={idx < filteredForest.length - 1}
-              expandedIds={expandedIds}
-              forceExpanded={filtering}
-              selectedId={selectedNodeId || null}
-              onToggle={toggle}
-              onSelect={setSelectedNodeId}
-              onAddChild={(id) => setForm((current) => ({ ...current, parentId: id }))}
-            />
-          ))}
-
-          {view === "list" && listRows.map(({ node }) => {
-            const typeCfg = TYPE_CONFIG[node.type];
-            const stateCfg = STATE_CONFIG[node.state];
-            const Icon = typeCfg.icon;
-            return (
-              <div
-                key={node.id}
-                data-testid="persisted-strategy-node"
-                onClick={() => setSelectedNodeId(node.id)}
-                title={stateCfg.label}
-                className={`flex cursor-pointer flex-col gap-1.5 border-b border-gray-100 px-4 py-2.5 hover:bg-gray-50 md:h-[52px] md:flex-row md:items-center md:justify-between md:gap-4 md:py-0 ${selectedNodeId === node.id ? "bg-blue-50/60" : ""}`}
-              >
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${typeCfg.bg}`}>
-                    <Icon className={`h-3.5 w-3.5 ${typeCfg.text}`} />
-                  </span>
-                  <span className="truncate text-[15px] text-gray-900">{node.nameEn}</span>
-                  <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">{typeCfg.label}</span>
-                </div>
-                <div className="flex items-center gap-3 pl-9 sm:gap-4 md:shrink-0 md:gap-6 md:pl-0">
-                  <div className="flex items-center gap-2 md:w-16">
-                    <span className={`h-2 w-2 shrink-0 rounded-full ${stateCfg.dot}`} />
-                    <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${node.owner.color}`}>{node.owner.initials}</span>
-                  </div>
-                  <div className="flex min-w-0 flex-1 items-center gap-2 md:w-36 md:flex-none">
-                    <div className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-gray-100 sm:w-16 md:w-24">
-                      <div className={`h-full rounded-full ${stateCfg.barColor}`} style={{ width: `${node.progress}%` }} />
-                    </div>
-                    <span className="w-9 shrink-0 text-right text-sm text-gray-600">{node.progress}%</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
         </div>
 
-        {/* side panel */}
-        <aside className="space-y-4">
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="font-semibold text-gray-900">Node detail &amp; traversal</h2>
-            {detail.data ? (
-              <div className="mt-2 text-sm">
-                <p className="font-medium text-gray-900">{detail.data.nameEn}</p>
-                <p dir="rtl" className="text-gray-500">{detail.data.nameAr}</p>
-                <p className="mt-2 text-gray-500">Ancestry: {trace.data?.ancestry.map((item) => item.nameEn).join(" → ") || "root"}</p>
-                <p className="text-gray-500">Cascade: {trace.data?.cascade.length ?? 0} node(s)</p>
-              </div>
-            ) : (
-              <p className="mt-2 text-sm text-gray-400">Select a node to view its detail.</p>
-            )}
-          </div>
+        {filteredForest.length === 0 && (
+          <div className="px-4 py-16 text-center text-sm text-gray-400">No nodes match your filters.</div>
+        )}
 
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="mb-2 font-semibold text-gray-900">Staged changes</h2>
-            {staged.data?.map((change) => (
-              <div key={change.id} data-testid="persisted-staged-change" className="border-t border-gray-100 py-2 text-sm first:border-t-0">
-                {change.kind} · {change.status} · case {change.approvalCaseId}
-              </div>
-            ))}
-            {staged.data?.length === 0 && <p className="text-sm text-gray-400">No staged changes.</p>}
-          </div>
+        {view === "tree" && filteredForest.map((root, idx) => (
+          <TreeRow
+            key={root.id}
+            node={root}
+            depth={0}
+            lines={[]}
+            hasNextSibling={idx < filteredForest.length - 1}
+            expandedIds={expandedIds}
+            forceExpanded={filtering}
+            selectedId={selectedNodeId || null}
+            onToggle={toggle}
+            onSelect={(id) => { setSelectedNodeId(id); setDrawer("detail"); }}
+            onAddChild={(id) => { setForm((current) => ({ ...current, parentId: id })); setDrawer("create"); }}
+          />
+        ))}
 
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <h2 className="mb-2 flex items-center gap-1.5 font-semibold text-gray-900"><Plus className="h-4 w-4" /> Persist structural change</h2>
-            <div className="space-y-2">
-              <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as NodeType })} className="w-full rounded-lg border border-gray-300 p-2 text-sm">
-                {NODE_TYPES.map((key) => <option key={key} value={key}>{TYPE_CONFIG[key].label}</option>)}
-              </select>
-              <select value={form.parentId} onChange={(e) => setForm({ ...form, parentId: e.target.value })} className="w-full rounded-lg border border-gray-300 p-2 text-sm">
-                <option value="">No parent (root)</option>
-                {parentOptions.map(({ id, nameEn, depth }) => <option key={id} value={id}>{"— ".repeat(depth)}{nameEn}</option>)}
-              </select>
-              {form.parentId && (
-                <select value={form.edgeType} onChange={(e) => setForm({ ...form, edgeType: e.target.value as EdgeType })} className="w-full rounded-lg border border-gray-300 p-2 text-sm">
-                  <option value="contains">Contains</option>
-                  <option value="executed_by">Executed by</option>
-                  <option value="belongs_to_portfolio">Belongs to portfolio</option>
-                  <option value="aligns_to">Aligns to</option>
-                </select>
-              )}
-              <input value={form.nameEn} onChange={(e) => setForm({ ...form, nameEn: e.target.value })} placeholder="English name" className="w-full rounded-lg border border-gray-300 p-2 text-sm" />
-              <input value={form.nameAr} onChange={(e) => setForm({ ...form, nameAr: e.target.value })} placeholder="Arabic name" className="w-full rounded-lg border border-gray-300 p-2 text-sm" />
-              {selectedPlan?.status === "active" && (
-                <input value={form.approverId} onChange={(e) => setForm({ ...form, approverId: e.target.value })} placeholder="Different approver UUID" className="w-full rounded-lg border border-gray-300 p-2 text-sm" />
-              )}
-              <button
-                disabled={busy || !form.nameEn || !form.nameAr || (selectedPlan?.status === "active" && !form.approverId)}
-                onClick={() => void saveNode()}
-                className="w-full rounded-lg bg-slate-900 p-2 text-sm font-medium text-white disabled:opacity-40"
-              >
-                {selectedPlan?.status === "active" ? "Stage & submit" : "Save draft"}
-              </button>
+        {view === "list" && listRows.map(({ node }) => {
+          const typeCfg = TYPE_CONFIG[node.type];
+          const ragCfg = progressRagTokens(node.progress);
+          const Icon = typeCfg.icon;
+          return (
+            <div
+              key={node.id}
+              data-testid="persisted-strategy-node"
+              onClick={() => { setSelectedNodeId(node.id); setDrawer("detail"); }}
+              title={ragCfg.label}
+              className={`flex cursor-pointer flex-col gap-1.5 border-b border-gray-100 px-4 py-2.5 hover:bg-gray-50 md:h-[52px] md:flex-row md:items-center md:justify-between md:gap-4 md:py-0 ${selectedNodeId === node.id ? "bg-blue-50/60" : ""}`}
+            >
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${typeCfg.bg}`}>
+                  <Icon className={`h-3.5 w-3.5 ${typeCfg.text}`} />
+                </span>
+                <span className="truncate text-[15px] text-gray-900">{node.nameEn}</span>
+                <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">{typeCfg.label}</span>
+              </div>
+              <div className="flex items-center gap-3 pl-9 sm:gap-4 md:shrink-0 md:gap-6 md:pl-0">
+                <div className="flex items-center gap-2 md:w-16">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${ragCfg.dot}`} />
+                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${node.owner.color}`}>{node.owner.initials}</span>
+                </div>
+                <div className="flex min-w-0 flex-1 items-center gap-2 md:w-36 md:flex-none">
+                  <div className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-gray-100 sm:w-16 md:w-24">
+                    <div className={`h-full rounded-full ${ragCfg.bar}`} style={{ width: `${node.progress}%` }} />
+                  </div>
+                  <span className="w-9 shrink-0 text-right text-sm text-gray-600">{node.progress}%</span>
+                </div>
+              </div>
             </div>
-          </div>
-        </aside>
+          );
+        })}
       </div>
+
+      {drawer !== "none" && (
+        <div className="fixed inset-0 z-40 flex justify-end">
+          <button
+            type="button"
+            aria-label="Close panel"
+            onClick={() => setDrawer("none")}
+            className="absolute inset-0 bg-gray-900/20"
+          />
+          <aside className="relative flex h-full w-full max-w-sm flex-col overflow-y-auto border-l border-gray-200 bg-white p-4 shadow-xl">
+            {drawer === "detail" && (
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="font-semibold text-gray-900">Node detail &amp; traversal</h2>
+                  <button onClick={() => setDrawer("none")} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">✕</button>
+                </div>
+                {detail.data ? (
+                  <div className="mt-2 text-sm">
+                    <p className="font-medium text-gray-900">{detail.data.nameEn}</p>
+                    <p dir="rtl" className="text-gray-500">{detail.data.nameAr}</p>
+                    <p className="mt-2 text-gray-500">Ancestry: {trace.data?.ancestry.map((item) => item.nameEn).join(" → ") || "root"}</p>
+                    <p className="text-gray-500">Cascade: {trace.data?.cascade.length ?? 0} node(s)</p>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-400">Select a node to view its detail.</p>
+                )}
+
+                <h2 className="mb-2 mt-6 font-semibold text-gray-900">Staged changes</h2>
+                {staged.data?.map((change) => (
+                  <div key={change.id} data-testid="persisted-staged-change" className="border-t border-gray-100 py-2 text-sm first:border-t-0">
+                    {change.kind} · {change.status} · case {change.approvalCaseId}
+                  </div>
+                ))}
+                {staged.data?.length === 0 && <p className="text-sm text-gray-400">No staged changes.</p>}
+              </>
+            )}
+
+            {drawer === "create" && (
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="flex items-center gap-1.5 font-semibold text-gray-900"><Plus className="h-4 w-4" /> Persist structural change</h2>
+                  <button onClick={() => setDrawer("none")} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">✕</button>
+                </div>
+                <div className="mt-3 space-y-2">
+                  <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as NodeType })} className="w-full rounded-lg border border-gray-300 p-2 text-sm">
+                    {NODE_TYPES.map((key) => <option key={key} value={key}>{TYPE_CONFIG[key].label}</option>)}
+                  </select>
+                  <select value={form.parentId} onChange={(e) => setForm({ ...form, parentId: e.target.value })} className="w-full rounded-lg border border-gray-300 p-2 text-sm">
+                    <option value="">No parent (root)</option>
+                    {parentOptions.map(({ id, nameEn, depth }) => <option key={id} value={id}>{"— ".repeat(depth)}{nameEn}</option>)}
+                  </select>
+                  {form.parentId && (
+                    <select value={form.edgeType} onChange={(e) => setForm({ ...form, edgeType: e.target.value as EdgeType })} className="w-full rounded-lg border border-gray-300 p-2 text-sm">
+                      <option value="contains">Contains</option>
+                      <option value="executed_by">Executed by</option>
+                      <option value="belongs_to_portfolio">Belongs to portfolio</option>
+                      <option value="aligns_to">Aligns to</option>
+                    </select>
+                  )}
+                  <input value={form.nameEn} onChange={(e) => setForm({ ...form, nameEn: e.target.value })} placeholder="English name" className="w-full rounded-lg border border-gray-300 p-2 text-sm" />
+                  <input value={form.nameAr} onChange={(e) => setForm({ ...form, nameAr: e.target.value })} placeholder="Arabic name" className="w-full rounded-lg border border-gray-300 p-2 text-sm" />
+                  {selectedPlan?.status === "active" && (
+                    <input value={form.approverId} onChange={(e) => setForm({ ...form, approverId: e.target.value })} placeholder="Different approver UUID" className="w-full rounded-lg border border-gray-300 p-2 text-sm" />
+                  )}
+                  <button
+                    disabled={busy || !form.nameEn || !form.nameAr || (selectedPlan?.status === "active" && !form.approverId)}
+                    onClick={() => void saveNode()}
+                    className="w-full rounded-lg bg-slate-900 p-2 text-sm font-medium text-white disabled:opacity-40"
+                  >
+                    {selectedPlan?.status === "active" ? "Stage & submit" : "Save draft"}
+                  </button>
+                </div>
+              </>
+            )}
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
