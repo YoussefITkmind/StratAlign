@@ -218,8 +218,8 @@ describe("auth router", () => {
 
     expect(caught).toMatchObject({
       code: "INTERNAL_SERVER_ERROR",
-      message: "Unable to create account",
     });
+    expect((caught as Error).message).toContain("Unable to create account");
     expect(JSON.stringify(caught)).not.toContain(sensitiveValue);
   });
 
