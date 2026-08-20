@@ -2105,7 +2105,11 @@ export const appRouter = router({
           throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists." });
         }
         console.error("auth.signup failed", error);
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Unable to create account" });
+        // TEMPORARY DIAGNOSTIC: surfacing the real error message to find a
+        // production-only bug that isn't showing up in reachable logs.
+        // Revert this to a generic message once the cause is found.
+        const detail = error instanceof Error ? error.message : JSON.stringify(error);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Unable to create account: ${detail}` });
       }
     }),
   }),
