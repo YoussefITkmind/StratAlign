@@ -5,7 +5,9 @@ import {
   Search, ChevronDown, Plus, Download, Sparkles, ArrowUpDown,
   TrendingUp, Users, Activity, Zap, Pencil, Check, Clock, AlertTriangle,
 } from "lucide-react";
-import { kpiLibraryRows, type KpiPerspective, type KpiApproval, type KpiStatus } from "@/data/mockKpiLibrary";
+import { kpiLibraryRows, type KpiLibraryRow, type KpiPerspective, type KpiApproval, type KpiStatus } from "@/data/mockKpiLibrary";
+import KpiDetailDrawer from "./KpiDetailDrawer";
+import AiSuggestModal from "./AiSuggestModal";
 
 const PERSPECTIVE_META: Record<KpiPerspective, { label: string; icon: typeof TrendingUp; text: string }> = {
   financial: { label: "Financial", icon: TrendingUp, text: "text-blue-600" },
@@ -34,7 +36,7 @@ const PERSPECTIVE_FILTERS: { key: "all" | KpiPerspective; label: string; icon?: 
   { key: "learning", label: "Learning", icon: Zap },
 ];
 
-const GRID_COLS = "grid-cols-[4px_minmax(220px,2fr)_130px_140px_60px_90px_90px_90px_100px_90px_120px_120px]";
+const GRID_COLS = "grid-cols-[4px_minmax(140px,2.2fr)_minmax(80px,1fr)_minmax(80px,1fr)_28px_minmax(48px,0.7fr)_minmax(48px,0.7fr)_minmax(48px,0.7fr)_64px_minmax(56px,0.6fr)_minmax(76px,1fr)_minmax(76px,1fr)]";
 
 function Sparkline({ values, color }: { values: number[]; color: string }) {
   const min = Math.min(...values);
@@ -62,12 +64,13 @@ function HeaderCell({ label, className = "" }: { label: string; className?: stri
   );
 }
 
-export default function KpiLibraryTable({ onSelectKpi }: { onSelectKpi?: (kpiId: string) => void }) {
+export default function KpiLibraryTable() {
   const [search, setSearch] = useState("");
   const [perspective, setPerspective] = useState<"all" | KpiPerspective>("all");
   const [department, setDepartment] = useState("all");
   const [status, setStatus] = useState("all");
   const [approval, setApproval] = useState("all");
+  const [selectedKpi, setSelectedKpi] = useState<KpiLibraryRow | null>(null);
 
   const departments = useMemo(() => Array.from(new Set(kpiLibraryRows.map((r) => r.department))).sort(), []);
 
@@ -134,9 +137,8 @@ export default function KpiLibraryTable({ onSelectKpi }: { onSelectKpi?: (kpiId:
         </span>
       </div>
 
-      <div className="overflow-x-auto">
-        <div className="min-w-[1100px]">
-          <div className={`grid ${GRID_COLS} items-center gap-3 border-b border-gray-100 px-4 py-2.5`}>
+      <div>
+        <div className={`grid ${GRID_COLS} items-center gap-3 border-b border-gray-100 px-4 py-2.5`}>
             <div />
             <HeaderCell label="KPI Name" />
             <HeaderCell label="Perspective" />
@@ -160,8 +162,8 @@ export default function KpiLibraryTable({ onSelectKpi }: { onSelectKpi?: (kpiId:
             return (
               <div
                 key={row.id}
-                onClick={() => onSelectKpi?.(row.id)}
-                className={`grid ${GRID_COLS} items-center gap-3 border-b border-gray-50 px-4 py-3 last:border-b-0 hover:bg-gray-50 ${onSelectKpi ? "cursor-pointer" : ""}`}
+                onClick={() => setSelectedKpi(row)}
+                className={`grid ${GRID_COLS} items-center gap-3 border-b border-gray-50 px-4 py-3 last:border-b-0 hover:bg-gray-50 cursor-pointer`}
               >
                 <span className={`h-8 w-1 justify-self-center rounded-full ${statusMeta.dot}`} />
 
@@ -203,8 +205,9 @@ export default function KpiLibraryTable({ onSelectKpi }: { onSelectKpi?: (kpiId:
           })}
 
           {rows.length === 0 && <p className="p-10 text-center text-sm text-gray-400">No KPIs match these filters.</p>}
-        </div>
       </div>
+
+      {selectedKpi && <KpiDetailDrawer row={selectedKpi} onClose={() => setSelectedKpi(null)} />}
     </div>
   );
 }
@@ -241,14 +244,20 @@ export function KpiStatusBadge({ label, count, tone }: { label: string; count: n
 }
 
 export function KpiLibraryActions() {
+  const [showAiSuggest, setShowAiSuggest] = useState(false);
   return (
     <div className="flex items-center gap-2">
       <button className="flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
         <Download className="h-4 w-4" /> Export
       </button>
-      <button className="flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+      <button
+        onClick={() => setShowAiSuggest(true)}
+        className="flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+      >
         <Sparkles className="h-4 w-4" /> AI Suggest
       </button>
+
+      {showAiSuggest && <AiSuggestModal onClose={() => setShowAiSuggest(false)} />}
     </div>
   );
 }
