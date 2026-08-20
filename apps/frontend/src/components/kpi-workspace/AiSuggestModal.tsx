@@ -7,9 +7,17 @@ import { kpiSuggestions, THEME_COLORS, type SuggestionType } from "@/data/mockKp
 type TypeFilter = "all" | SuggestionType;
 type Mode = "global" | "one-by-one";
 
-export default function AiSuggestModal({ onClose }: { onClose: () => void }) {
-  const [mode, setMode] = useState<Mode>("global");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("kpi");
+export default function AiSuggestModal({
+  onClose,
+  initialMode = "global",
+  initialTypeFilter = "kpi",
+}: {
+  onClose: () => void;
+  initialMode?: Mode;
+  initialTypeFilter?: TypeFilter;
+}) {
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(initialTypeFilter);
   const [theme, setTheme] = useState("all");
   const [resolved, setResolved] = useState<Record<string, "added" | "skipped">>({});
   const [cursor, setCursor] = useState(0);

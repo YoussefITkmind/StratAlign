@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Rocket, Target, ClipboardList, SlidersHorizontal } from "lucide-react";
 import CaptureTaskList from "@/components/capture/CaptureTaskList";
 import CaptureSessionView from "@/components/capture/CaptureSessionView";
-import { OkrRegistryPanel } from "@/components/kpi-registry/RegistryPanels";
+import OkrLibraryTable, { OkrLibraryStats, OkrLibraryActions } from "@/components/kpi-workspace/OkrLibraryTable";
 import { RuleBuilderPanel } from "@/components/rule-builder/RuleBuilderPanel";
 import KpiLibraryTable, { KpiStatusBadge, KpiLibraryActions } from "@/components/kpi-workspace/KpiLibraryTable";
 import { kpiStatusCounts } from "@/data/mockKpiLibrary";
@@ -45,12 +45,14 @@ export default function KpiWorkspacePage() {
                 <KpiStatusBadge label="Behind" count={kpiStatusCounts.behind} tone="behind" />
               </>
             )}
+            {activeTab === "okr" && <OkrLibraryStats />}
           </div>
           {activeTab === "library" && <KpiLibraryActions />}
+          {activeTab === "okr" && <OkrLibraryActions />}
         </div>
       )}
 
-      {view.type === "okr" && <OkrRegistryPanel />}
+      {view.type === "okr" && <OkrLibraryTable />}
 
       {view.type === "library" && <KpiLibraryTable />}
 

@@ -8,8 +8,9 @@ import {
 import { kpiLibraryRows, type KpiLibraryRow, type KpiPerspective, type KpiApproval, type KpiStatus } from "@/data/mockKpiLibrary";
 import KpiDetailDrawer from "./KpiDetailDrawer";
 import AiSuggestModal from "./AiSuggestModal";
+import CreateKpiModal from "./CreateKpiModal";
 
-const PERSPECTIVE_META: Record<KpiPerspective, { label: string; icon: typeof TrendingUp; text: string }> = {
+export const PERSPECTIVE_META: Record<KpiPerspective, { label: string; icon: typeof TrendingUp; text: string }> = {
   financial: { label: "Financial", icon: TrendingUp, text: "text-blue-600" },
   customer: { label: "Customer", icon: Users, text: "text-teal-600" },
   internal: { label: "Internal", icon: Activity, text: "text-orange-600" },
@@ -65,17 +66,19 @@ function HeaderCell({ label, className = "" }: { label: string; className?: stri
 }
 
 export default function KpiLibraryTable() {
+  const [allRows, setAllRows] = useState<KpiLibraryRow[]>(kpiLibraryRows);
   const [search, setSearch] = useState("");
   const [perspective, setPerspective] = useState<"all" | KpiPerspective>("all");
   const [department, setDepartment] = useState("all");
   const [status, setStatus] = useState("all");
   const [approval, setApproval] = useState("all");
   const [selectedKpi, setSelectedKpi] = useState<KpiLibraryRow | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
 
-  const departments = useMemo(() => Array.from(new Set(kpiLibraryRows.map((r) => r.department))).sort(), []);
+  const departments = useMemo(() => Array.from(new Set(allRows.map((r) => r.department))).sort(), [allRows]);
 
   const rows = useMemo(() => {
-    return kpiLibraryRows.filter((row) => {
+    return allRows.filter((row) => {
       if (perspective !== "all" && row.perspective !== perspective) return false;
       if (department !== "all" && row.department !== department) return false;
       if (status !== "all" && row.status !== status) return false;
@@ -83,7 +86,7 @@ export default function KpiLibraryTable() {
       if (search.trim() && !row.name.toLowerCase().includes(search.trim().toLowerCase())) return false;
       return true;
     });
-  }, [search, perspective, department, status, approval]);
+  }, [allRows, search, perspective, department, status, approval]);
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white">
@@ -128,8 +131,11 @@ export default function KpiLibraryTable() {
           rawValues={Object.keys(APPROVAL_META)}
         />
 
-        <button className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-          <Plus className="h-4 w-4" /> Add KPI <ChevronDown className="h-3.5 w-3.5" />
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          <Plus className="h-4 w-4" /> Add KPI
         </button>
 
         <span className="ml-auto whitespace-nowrap text-sm text-gray-500">
@@ -215,6 +221,16 @@ export default function KpiLibraryTable() {
       </div>
 
       {selectedKpi && <KpiDetailDrawer row={selectedKpi} onClose={() => setSelectedKpi(null)} />}
+
+      {showCreate && (
+        <CreateKpiModal
+          onClose={() => setShowCreate(false)}
+          onCreate={(row) => {
+            setAllRows((current) => [row, ...current]);
+            setShowCreate(false);
+          }}
+        />
+      )}
     </div>
   );
 }
