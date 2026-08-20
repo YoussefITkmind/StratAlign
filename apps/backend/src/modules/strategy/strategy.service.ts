@@ -8,19 +8,19 @@ export type PlanVersionStatus = "draft" | "active" | "closed";
 export type StagedChangeKind = "node_create" | "node_update" | "node_retire" | "edge_link" | "edge_unlink";
 
 export interface PlanVersionRecord { id: string; name: string; status: PlanVersionStatus; opensAt: Date | null; closesAt: Date | null; sourcePlanVersionId: string | null; }
-export interface StrategyNodeRecord { id: string; type: StrategyNodeType; nameEn: string; nameAr: string; planVersionId: string; state: StrategyNodeState; createdBy: string; createdAt: Date; }
+export interface StrategyNodeRecord { id: string; type: StrategyNodeType; nameEn: string; nameAr: string; descriptionEn?: string | null; descriptionAr?: string | null; planVersionId: string; state: StrategyNodeState; createdBy: string; createdAt: Date; }
 export interface StrategyEdgeRecord { id: string; fromNodeId: string; toNodeId: string; edgeType: StrategyEdgeType; planVersionId: string; }
 export interface OwnerAssignmentRecord { id: string; nodeId: string; ownerUserId: string; assignedBy: string; assignedAt: Date; }
 export interface StagedChangeRecord { id: string; approvalCaseId: string; planVersionId: string; kind: StagedChangeKind; targetId: string | null; payload: Record<string, unknown>; status: "pending" | "applied" | "cancelled"; requestedBy: string; requestedAt: Date; appliedAt: Date | null; }
 
 interface PlanRow { id: string; name: string; status: PlanVersionStatus; opens_at: Date | null; closes_at: Date | null; source_plan_version_id: string | null; }
-interface NodeRow { id: string; type: StrategyNodeType; name_en: string; name_ar: string; plan_version_id: string; state: StrategyNodeState; created_by: string; created_at: Date; }
+interface NodeRow { id: string; type: StrategyNodeType; name_en: string; name_ar: string; description_en?: string | null; description_ar?: string | null; plan_version_id: string; state: StrategyNodeState; created_by: string; created_at: Date; }
 interface EdgeRow { id: string; from_node_id: string; to_node_id: string; edge_type: StrategyEdgeType; plan_version_id: string; }
 interface OwnerRow { id: string; node_id: string; owner_user_id: string; assigned_by: string; assigned_at: Date; }
 interface StageRow { id: string; approval_case_id: string; plan_version_id: string; kind: StagedChangeKind; target_id: string | null; payload: Record<string, unknown>; status: "pending" | "applied" | "cancelled"; requested_by: string; requested_at: Date; applied_at: Date | null; }
 
 const mapPlan = (r: PlanRow): PlanVersionRecord => ({ id: r.id, name: r.name, status: r.status, opensAt: r.opens_at, closesAt: r.closes_at, sourcePlanVersionId: r.source_plan_version_id });
-const mapNode = (r: NodeRow): StrategyNodeRecord => ({ id: r.id, type: r.type, nameEn: r.name_en, nameAr: r.name_ar, planVersionId: r.plan_version_id, state: r.state, createdBy: r.created_by, createdAt: r.created_at });
+const mapNode = (r: NodeRow): StrategyNodeRecord => ({ id: r.id, type: r.type, nameEn: r.name_en, nameAr: r.name_ar, descriptionEn: r.description_en, descriptionAr: r.description_ar, planVersionId: r.plan_version_id, state: r.state, createdBy: r.created_by, createdAt: r.created_at });
 const mapEdge = (r: EdgeRow): StrategyEdgeRecord => ({ id: r.id, fromNodeId: r.from_node_id, toNodeId: r.to_node_id, edgeType: r.edge_type, planVersionId: r.plan_version_id });
 const mapOwner = (r: OwnerRow): OwnerAssignmentRecord => ({ id: r.id, nodeId: r.node_id, ownerUserId: r.owner_user_id, assignedBy: r.assigned_by, assignedAt: r.assigned_at });
 const mapStage = (r: StageRow): StagedChangeRecord => ({ id: r.id, approvalCaseId: r.approval_case_id, planVersionId: r.plan_version_id, kind: r.kind, targetId: r.target_id, payload: r.payload, status: r.status, requestedBy: r.requested_by, requestedAt: r.requested_at, appliedAt: r.applied_at });
@@ -38,11 +38,11 @@ export class StrategyService {
     return mapPlan(rows[0]!);
   }
 
-  async createNode(input: { type: StrategyNodeType; nameEn: string; nameAr: string; planVersionId: string; actorUserId: string; approvalCaseId?: string; stagedChangeId?: string }): Promise<StrategyNodeRecord | StagedChangeRecord> {
+  async createNode(input: { type: StrategyNodeType; nameEn: string; nameAr: string; descriptionEn?: string; descriptionAr?: string; planVersionId: string; actorUserId: string; approvalCaseId?: string; stagedChangeId?: string }): Promise<StrategyNodeRecord | StagedChangeRecord> {
     const plan = await this.requirePlan(input.planVersionId);
-    if (plan.status === "active") return this.stage("node_create", null, input.planVersionId, { type: input.type, nameEn: input.nameEn.trim(), nameAr: input.nameAr.trim() }, input.actorUserId, this.requireApproval(input.approvalCaseId), input.stagedChangeId);
+    if (plan.status === "active") return this.stage("node_create", null, input.planVersionId, { type: input.type, nameEn: input.nameEn.trim(), nameAr: input.nameAr.trim(), descriptionEn: input.descriptionEn?.trim(), descriptionAr: input.descriptionAr?.trim() }, input.actorUserId, this.requireApproval(input.approvalCaseId), input.stagedChangeId);
     this.assertDraft(plan);
-    const rows = await this.prisma.$queryRaw<NodeRow[]>`INSERT INTO strategy.strategy_nodes (id,type,name_en,name_ar,plan_version_id,state,created_by) VALUES (${randomUUID()}::uuid,${input.type}::strategy."StrategyNodeType",${input.nameEn.trim()},${input.nameAr.trim()},${input.planVersionId}::uuid,'draft',${input.actorUserId}) RETURNING *`;
+    const rows = await this.prisma.$queryRaw<NodeRow[]>`INSERT INTO strategy.strategy_nodes (id,type,name_en,name_ar,description_en,description_ar,plan_version_id,state,created_by) VALUES (${randomUUID()}::uuid,${input.type}::strategy."StrategyNodeType",${input.nameEn.trim()},${input.nameAr.trim()},${input.descriptionEn?.trim() ?? null},${input.descriptionAr?.trim() ?? null},${input.planVersionId}::uuid,'draft',${input.actorUserId}) RETURNING *`;
     return mapNode(rows[0]!);
   }
 

@@ -22,6 +22,8 @@ export const strategyRouter = router({
   createNode: authenticatedProcedure.input(z.object({
     type: z.enum(["corporate_strategy", "theme", "objective", "strategic_play", "portfolio", "area_of_focus"]),
     nameEn: z.string().trim().min(1).max(300), nameAr: z.string().trim().min(1).max(300),
+    descriptionEn: z.string().trim().max(4000).nullish(),
+    descriptionAr: z.string().trim().max(4000).nullish(),
     planVersionId: id, approvalCaseId: id.optional(), stagedChangeId: id.optional(),
   }).strict()).mutation(({ ctx, input }) => forward(() => backend(ctx).strategy.node.create.mutate(input))),
   linkEdge: authenticatedProcedure.input(z.object({
