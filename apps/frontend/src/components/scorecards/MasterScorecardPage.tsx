@@ -7,6 +7,9 @@ import { trpc } from "@/lib/trpc/client";
 import { useI18n } from "@/lib/i18n/locale-context";
 import { RAG_STATUS_ORDER, RAG_STATUS_TOKENS, ragStatusTokens, worstRagStatus, type RagStatus } from "@/lib/theme/ragStatus";
 import ReadOnlyMapView from "@/components/strategy-map/ReadOnlyMapView";
+import { initialScorecards } from "@/data/mockScorecardData";
+import { PERSPECTIVE_CONFIG } from "@/lib/scorecardConfig";
+import type { Scorecard as MockScorecard, ScorecardStatus as MockKpiStatus } from "@/types/scorecard";
 
 type ViewMode = "grid" | "map";
 
@@ -77,21 +80,85 @@ interface WeightingPreview {
   perspectiveStatuses: Array<{ perspectiveId: string; status: RagStatus }>;
 }
 
+function mockStatusToRag(status: MockKpiStatus): RagStatus | null {
+  if (status === "on-track") return "on_track";
+  if (status === "at-risk") return "watch";
+  return null;
+}
+
+/**
+ * The scorecard list at /balanced-scorecards is still demo data (not yet
+ * wired to the real backend), so its rows carry non-UUID ids. Rather than
+ * dead-ending those clicks in "not found", adapt the same demo scorecard
+ * into the shape this page already renders from the real backend — lets the
+ * built UI be previewed with no backend/DB required.
+ */
+function adaptMockScorecard(mock: MockScorecard): { scorecard: ScorecardDetail; placements: PlacementDetail[]; preview: WeightingPreview } {
+  const perspectives: ScorecardPerspective[] = mock.perspectives.map((p, index) => ({
+    id: p.id,
+    scorecardId: mock.id,
+    nameEn: PERSPECTIVE_CONFIG[p.key].label,
+    nameAr: PERSPECTIVE_CONFIG[p.key].label,
+    order: index,
+  }));
+
+  const placements: PlacementDetail[] = mock.perspectives.flatMap((p) =>
+    p.kpis.map((kpi) => ({
+      perspectiveId: p.id,
+      objectiveNodeId: kpi.id,
+      objectiveNameEn: kpi.name,
+      objectiveNameAr: kpi.name,
+      kpiDefinitionId: kpi.id,
+      kpiNameEn: kpi.name,
+      status: mockStatusToRag(kpi.status),
+    }))
+  );
+
+  const preview: WeightingPreview = {
+    currentScore: mock.score,
+    perspectiveStatuses: mock.perspectives.map((p) => ({
+      perspectiveId: p.id,
+      status: worstRagStatus(p.kpis.map((kpi) => mockStatusToRag(kpi.status))) ?? "on_track",
+    })),
+  };
+
+  const scorecard: ScorecardDetail = {
+    id: mock.id,
+    nameEn: mock.name,
+    nameAr: mock.name,
+    planVersionId: "",
+    perspectives,
+    weighting: {
+      id: `${mock.id}-weighting`,
+      scorecardId: mock.id,
+      perspectiveWeights: Object.fromEntries(mock.perspectives.map((p) => [p.id, p.weight])),
+      scoringFormulaId: "",
+      activeFrom: "",
+    },
+    publishedMap: null,
+  };
+
+  return { scorecard, placements, preview };
+}
+
 export default function MasterScorecardPage({ scorecardId }: { scorecardId: string }) {
   const { t, locale } = useI18n();
   const [view, setView] = useState<ViewMode>("grid");
   const isUuid = UUID_PATTERN.test(scorecardId);
 
+  const mockSource = useMemo(() => (isUuid ? undefined : initialScorecards.find((sc) => sc.id === scorecardId)), [isUuid, scorecardId]);
+  const mockAdapted = useMemo(() => (mockSource ? adaptMockScorecard(mockSource) : undefined), [mockSource]);
+
   const scorecardQuery = trpc.scorecard.get.useQuery({ scorecardId }, { enabled: isUuid });
   const placementsQuery = trpc.scorecard.placement.list.useQuery({ scorecardId }, { enabled: isUuid });
-  const scorecard = scorecardQuery.data as ScorecardDetail | undefined;
+  const scorecard = isUuid ? (scorecardQuery.data as ScorecardDetail | undefined) : mockAdapted?.scorecard;
   const activeWeights = scorecard?.weighting?.perspectiveWeights;
   const previewQuery = trpc.scorecard.weighting.preview.useQuery(
     { scorecardId, draftWeights: activeWeights ?? {} },
     { enabled: isUuid && Boolean(activeWeights) }
   );
-  const preview = previewQuery.data as WeightingPreview | undefined;
-  const placements = (placementsQuery.data as PlacementDetail[] | undefined) ?? EMPTY_PLACEMENTS;
+  const preview = isUuid ? (previewQuery.data as WeightingPreview | undefined) : mockAdapted?.preview;
+  const placements = isUuid ? ((placementsQuery.data as PlacementDetail[] | undefined) ?? EMPTY_PLACEMENTS) : (mockAdapted?.placements ?? EMPTY_PLACEMENTS);
 
   const placementsByPerspective = useMemo(() => {
     const map = new Map<string, PlacementDetail[]>();
@@ -118,7 +185,7 @@ export default function MasterScorecardPage({ scorecardId }: { scorecardId: stri
     return counts;
   }, [placements]);
 
-  if (!isUuid) {
+  if (!isUuid && !mockSource) {
     return (
       <div data-testid="master-scorecard-not-found" className="mx-auto max-w-[720px] p-6 text-center">
         <h1 className="text-lg font-semibold text-gray-900">{t("scorecard.notFoundTitle")}</h1>
@@ -130,11 +197,11 @@ export default function MasterScorecardPage({ scorecardId }: { scorecardId: stri
     );
   }
 
-  if (scorecardQuery.isLoading) {
+  if (isUuid && scorecardQuery.isLoading) {
     return <p className="p-8 text-sm text-gray-500">{t("common.loading")}</p>;
   }
 
-  if (scorecardQuery.error) {
+  if (isUuid && scorecardQuery.error) {
     return (
       <div className="p-8">
         <p role="alert" className="text-sm text-red-600">{scorecardQuery.error.message}</p>
@@ -174,6 +241,11 @@ export default function MasterScorecardPage({ scorecardId }: { scorecardId: stri
             {overallTokens && (
               <span data-testid="scorecard-status-badge" className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${overallTokens.badgeBg} ${overallTokens.badgeText}`}>
                 {overallTokens.label}
+              </span>
+            )}
+            {!isUuid && (
+              <span data-testid="demo-data-badge" title="This scorecard isn't wired to the backend yet — showing local demo data" className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
+                {locale === "ar" ? "بيانات تجريبية" : "Demo data"}
               </span>
             )}
           </div>
