@@ -30,6 +30,32 @@ export class GovernanceEscalationService {
     private readonly eventBus: EventBusService,
   ) {}
 
+  async listForParticipant(
+    participantUserId: string,
+    includeAcknowledged = true,
+  ) {
+    return this.prisma.escalationCase.findMany({
+      where: {
+        participant: participantUserId,
+        ...(!includeAcknowledged ? { acknowledgedAt: null } : {}),
+      },
+      include: {
+        approvalCase: {
+          select: {
+            id: true,
+            entityType: true,
+            entityId: true,
+            currentState: true,
+            approvalSlaMs: true,
+          },
+        },
+        participantUser: { select: { id: true, displayName: true, email: true } },
+        acknowledger: { select: { id: true, displayName: true, email: true } },
+      },
+      orderBy: [{ deadline: "asc" }, { id: "asc" }],
+    });
+  }
+
   async raise(
     input: RaiseEscalationInput,
   ) {
