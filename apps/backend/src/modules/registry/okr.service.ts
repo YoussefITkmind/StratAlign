@@ -25,6 +25,9 @@ export interface CreateKeyResultInput {
   type: KeyResultTypeView;
   targetValue: number;
   unit: string;
+  /** Optional: key results predating the title columns have none. */
+  titleEn?: string | null;
+  titleAr?: string | null;
 }
 
 export interface UpdateKeyResultProgressInput {
@@ -37,6 +40,8 @@ interface KeyResultRow {
   id: string;
   okrId: string;
   type: "QUANTITATIVE" | "MILESTONE";
+  titleEn: string | null;
+  titleAr: string | null;
   targetValue: Prisma.Decimal;
   unit: string;
   currentValue: Prisma.Decimal | null;
@@ -115,6 +120,8 @@ export class OkrService {
           data: input.keyResults.map((keyResult) => ({
             okrId: okr.id,
             type: fromKeyResultTypeView(keyResult.type),
+            titleEn: keyResult.titleEn?.trim() || null,
+            titleAr: keyResult.titleAr?.trim() || null,
             targetValue: keyResult.targetValue,
             unit: keyResult.unit.trim(),
           })),
@@ -214,6 +221,8 @@ export class OkrService {
       id: keyResult.id,
       okrId: keyResult.okrId,
       type: toKeyResultTypeView(keyResult.type),
+      titleEn: keyResult.titleEn,
+      titleAr: keyResult.titleAr,
       targetValue,
       unit: keyResult.unit,
       currentValue,

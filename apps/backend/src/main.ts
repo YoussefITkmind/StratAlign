@@ -44,6 +44,9 @@ import { SchedulerReadService } from "./modules/scheduler/scheduler-read.service
 import { SchedulerService } from "./modules/scheduler/scheduler.service";
 import { CadenceEngine } from "./modules/cadence/cadence.engine";
 import { ValueManagementService } from "./modules/value/value-management.service";
+import { createLlmProvider } from "./modules/ai/llm.factory";
+import { ThemeContextBuilder } from "./modules/ai/theme-context.builder";
+import { AiSuggestionService } from "./modules/ai/ai-suggestion.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -100,6 +103,31 @@ async function bootstrap(): Promise<void> {
   );
   const value = new ValueManagementService(prisma, governance, governanceEscalation, rules, scheduler);
 
+  // AI stays behind one provider abstraction, constructed once. Nothing else in
+  // the platform is allowed to know which vendor is configured, or whether one
+  // is configured at all.
+  const llm = createLlmProvider(
+    {
+      provider: environment.AI_PROVIDER,
+      apiKey: environment.AI_API_KEY,
+      model: environment.AI_MODEL,
+      baseUrl: environment.AI_BASE_URL,
+      timeoutMs: environment.AI_TIMEOUT_MS,
+      maxRetries: environment.AI_MAX_RETRIES,
+    },
+    logger.child("ai"),
+  );
+  const aiSuggestion = new AiSuggestionService(
+    prisma,
+    new ThemeContextBuilder(prisma, strategyTraversal),
+    llm,
+    registry.kpi,
+    registry.okr,
+    registry.alignment,
+    eventBus,
+    logger.child("ai-suggestion"),
+  );
+
   const server = createHTTPServer({
     router: rootRouter,
     basePath: "/trpc/",
@@ -112,6 +140,7 @@ async function bootstrap(): Promise<void> {
         session: await sessions.getSession({ headers }), oidcIdentities, authenticationFreshness,
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
+        aiSuggestion,
       };
     },
     middleware(request, response, next) {
