@@ -7,6 +7,7 @@ import { EventBusService } from "../../src/events/event-bus.service";
 import type { QueueService } from "../../src/queue/queue.service";
 import { createLogger } from "../../src/logging/logger";
 import { GovernanceService } from "../../src/modules/governance/governance.service";
+import { MeasurementService } from "../../src/modules/performance/measurement.service";
 import { RulesService } from "../../src/modules/rules/rules.service";
 import { ScorecardService } from "../../src/modules/scorecard/scorecard.service";
 
@@ -54,7 +55,12 @@ describe.sequential("Scorecard module with PostgreSQL Testcontainers", () => {
     const eventBus = new EventBusService(noopQueueService, logger.child("event-bus"));
     rules = new RulesService(prisma);
     governance = new GovernanceService(prisma, eventBus, rules);
-    scorecard = new ScorecardService(prisma, governance, rules);
+    scorecard = new ScorecardService(
+      prisma,
+      governance,
+      rules,
+      new MeasurementService(prisma, eventBus, logger.child("scorecard-measurement")),
+    );
   }, 180_000);
 
   afterAll(async () => {
@@ -359,6 +365,108 @@ describe.sequential("Scorecard module with PostgreSQL Testcontainers", () => {
       { period: "2026-Q2", score: 100 },
       { period: "2026-Q3", score: 50 },
     ]);
+  });
+  it("derives objective progress from effective measurements, targets, polarity, and all aligned KPIs", async () => {
+    const financialAlignment = await prisma.alignment.findFirstOrThrow({
+      where: { strategyNodeId: financialObjectiveId },
+      include: { kpiDefinition: { include: { activeVersion: true } } },
+    });
+    const financialVersion = financialAlignment.kpiDefinition.activeVersion!;
+
+    await prisma.targetSeries.create({
+      data: {
+        kpiVersionId: financialVersion.id,
+        scopeNodeId: financialObjectiveId,
+        period: "2026-Q3",
+        targetValue: 100,
+        planVersionId,
+      },
+    });
+    const original = await prisma.measurement.create({
+      data: {
+        kpiVersionId: financialVersion.id,
+        scopeNodeId: financialObjectiveId,
+        period: "2026-Q3",
+        value: 20,
+        source: "MANUAL",
+        submittedById: submitterId,
+      },
+    });
+    await prisma.measurement.create({
+      data: {
+        kpiVersionId: financialVersion.id,
+        scopeNodeId: financialObjectiveId,
+        period: "2026-Q3",
+        value: 60,
+        source: "MANUAL",
+        submittedById: submitterId,
+        supersedesId: original.id,
+      },
+    });
+
+    const lowerDefinition = await prisma.kpiDefinition.create({ data: { status: "ACTIVE" } });
+    const lowerVersion = await prisma.kpiVersion.create({
+      data: {
+        kpiDefinitionId: lowerDefinition.id,
+        version: 1,
+        nameEn: "Cost KPI",
+        nameAr: "Cost KPI",
+        unit: "USD",
+        polarity: "LOWER_IS_BETTER",
+        frequency: "MONTHLY",
+        dataSourceType: "MANUAL",
+        ownerUserId: submitterId,
+        activeFrom: new Date("2026-08-01T00:00:00Z"),
+        publishedAt: new Date("2026-08-01T00:00:00Z"),
+      },
+    });
+    await prisma.kpiDefinition.update({ where: { id: lowerDefinition.id }, data: { activeVersionId: lowerVersion.id } });
+    await prisma.alignment.create({ data: { kpiDefinitionId: lowerDefinition.id, strategyNodeId: financialObjectiveId, alignmentType: "OBJECTIVE" } });
+    await prisma.statusResult.create({
+      data: {
+        kpiVersionId: lowerVersion.id,
+        scopeNodeId: financialObjectiveId,
+        period: "2026-Q3",
+        status: "watch",
+        ruleVersionUsed: ragRuleId,
+        dedupeKey: `scorecard-progress:${lowerVersion.id}`,
+      },
+    });
+    await prisma.targetSeries.create({
+      data: { kpiVersionId: lowerVersion.id, scopeNodeId: financialObjectiveId, period: "2026-Q3", targetValue: 10, planVersionId },
+    });
+    await prisma.measurement.create({
+      data: { kpiVersionId: lowerVersion.id, scopeNodeId: financialObjectiveId, period: "2026-Q3", value: 20, source: "MANUAL", submittedById: submitterId },
+    });
+
+    let details = await scorecard.listPlacementDetails(scorecardId);
+    expect(details.find((row) => row.objectiveNodeId === financialObjectiveId)?.progress).toBe(55);
+    expect(details.find((row) => row.objectiveNodeId === customerObjectiveId)?.progress).toBeNull();
+
+    const customerAlignment = await prisma.alignment.findFirstOrThrow({
+      where: { strategyNodeId: customerObjectiveId },
+      include: { kpiDefinition: { include: { activeVersion: true } } },
+    });
+    const customerVersion = customerAlignment.kpiDefinition.activeVersion!;
+    await prisma.targetSeries.create({
+      data: { kpiVersionId: customerVersion.id, scopeNodeId: customerObjectiveId, period: "2026-Q3", targetValue: 0, planVersionId },
+    });
+    await prisma.measurement.create({
+      data: { kpiVersionId: customerVersion.id, scopeNodeId: customerObjectiveId, period: "2026-Q3", value: 0, source: "MANUAL", submittedById: submitterId },
+    });
+    details = await scorecard.listPlacementDetails(scorecardId);
+    expect(details.find((row) => row.objectiveNodeId === customerObjectiveId)?.progress).toBeNull();
+
+    await prisma.targetSeries.updateMany({
+      where: { kpiVersionId: customerVersion.id, scopeNodeId: customerObjectiveId },
+      data: { targetValue: 50 },
+    });
+    await prisma.measurement.updateMany({
+      where: { kpiVersionId: customerVersion.id, scopeNodeId: customerObjectiveId },
+      data: { value: 75 },
+    });
+    details = await scorecard.listPlacementDetails(scorecardId);
+    expect(details.find((row) => row.objectiveNodeId === customerObjectiveId)?.progress).toBe(100);
   });
   it("requires an approved workflow case for a structural perspective change", async () => {
     await expect(scorecard.addPerspective({

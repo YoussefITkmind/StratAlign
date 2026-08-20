@@ -88,7 +88,7 @@ async function bootstrap(): Promise<void> {
     new PerformanceResultsService(prisma),
     new KpiDetailService(prisma),
   );
-  const scorecard = new ScorecardService(prisma, governance, rules);
+  const scorecard = new ScorecardService(prisma, governance, rules, measurements);
   const execution = new StageAwareExecutionService(prisma, prisma, eventBus);
   const portfolio = new PortfolioService(prisma, rules);
   const schedulerRead = new SchedulerReadService(prisma);

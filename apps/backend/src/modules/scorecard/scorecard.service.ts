@@ -1,5 +1,6 @@
 import type { PrismaService } from "../../database/prisma.service";
 import type { GovernanceService } from "../governance/governance.service";
+import type { MeasurementService } from "../performance/measurement.service";
 import type { RulesService } from "../rules/rules.service";
 import { scorecardErrors } from "./scorecard.errors";
 import {
@@ -62,6 +63,22 @@ function uiScore(riskScore: number): number {
   return Math.round((1 - riskScore) * 10_000) / 100;
 }
 
+function targetAttainment(
+  actual: number,
+  target: number,
+  polarity: "HIGHER_IS_BETTER" | "LOWER_IS_BETTER",
+): number | null {
+  if (!Number.isFinite(actual) || !Number.isFinite(target) || actual < 0 || target < 0) return null;
+
+  if (polarity === "HIGHER_IS_BETTER") {
+    if (target === 0) return null;
+    return Math.min(100, Math.round((actual / target) * 10_000) / 100);
+  }
+
+  if (actual === 0) return 100;
+  return Math.min(100, Math.round((target / actual) * 10_000) / 100);
+}
+
 function proposalFromSnapshot(snapshot: unknown): { before: unknown; after: unknown; impactSummary?: unknown } | null {
   if (typeof snapshot !== "object" || snapshot === null) return null;
   const context = (snapshot as { context?: unknown }).context;
@@ -76,6 +93,7 @@ export class ScorecardService {
     private readonly prisma: PrismaService,
     private readonly governance: GovernanceService,
     private readonly rules: RulesService,
+    private readonly measurements: MeasurementService,
   ) {}
 
   async listScorecards(): Promise<ScorecardRow[]> {
@@ -113,6 +131,7 @@ export class ScorecardService {
     kpiNameEn: string | null;
     status: RagStatus | null;
     score: number | null;
+    progress: number | null;
     trend: Array<{ period: string; score: number }>;
   }>> {
     const perspectives = await this.listPerspectives(scorecardId);
@@ -158,7 +177,7 @@ export class ScorecardService {
       alignmentsByObjective.set(alignment.strategyNodeId, existing);
     }
 
-    const statusByKey = new Map<string, string>();
+    const statusByKey = new Map<string, { status: string; period: string }>();
     const statusHistoryByObjective = new Map<
       string,
       Map<string, Array<{ id: string; status: RagStatus }>>
@@ -183,7 +202,7 @@ export class ScorecardService {
       for (const status of statuses) {
         const key = `${status.kpiVersionId}:${status.scopeNodeId}`;
         if (!statusByKey.has(key)) {
-          statusByKey.set(key, status.status);
+          statusByKey.set(key, { status: status.status, period: status.period });
         }
 
         const normalized = normalizeStatus(status.status);
@@ -234,14 +253,14 @@ export class ScorecardService {
           const activeVersionId = alignment.kpiDefinition.activeVersionId;
           if (!activeVersionId) continue;
 
-          const rawStatus =
+          const currentStatus =
             statusByKey.get(
               `${activeVersionId}:${placement.objectiveNodeId}`,
             ) ?? null;
 
-          if (!rawStatus) continue;
+          if (!currentStatus) continue;
 
-          const normalized = normalizeStatus(rawStatus);
+          const normalized = normalizeStatus(currentStatus.status);
           if (!normalized) continue;
 
           childStatuses.push({
@@ -252,6 +271,49 @@ export class ScorecardService {
 
         let status: RagStatus | null = null;
         let score: number | null = null;
+        const progressValues: number[] = [];
+
+        await Promise.all(objectiveAlignments.map(async (alignment) => {
+          const activeVersion = alignment.kpiDefinition.activeVersion;
+          if (!activeVersion) return;
+
+          const currentStatus = statusByKey.get(
+            `${activeVersion.id}:${placement.objectiveNodeId}`,
+          );
+          if (!currentStatus) return;
+
+          const [measurement, target] = await Promise.all([
+            this.measurements.resolveCurrent({
+              kpiVersionId: activeVersion.id,
+              scopeNodeId: placement.objectiveNodeId,
+              period: currentStatus.period,
+            }),
+            this.prisma.targetSeries.findUnique({
+              where: {
+                kpiVersionId_scopeNodeId_period_planVersionId: {
+                  kpiVersionId: activeVersion.id,
+                  scopeNodeId: placement.objectiveNodeId,
+                  period: currentStatus.period,
+                  planVersionId: objective.planVersionId,
+                },
+              },
+            }),
+          ]);
+
+          if (!measurement || !target) return;
+          const progress = targetAttainment(
+            Number(measurement.value),
+            Number(target.targetValue),
+            activeVersion.polarity,
+          );
+          if (progress !== null) progressValues.push(progress);
+        }));
+
+        const progress = progressValues.length === 0
+          ? null
+          : Math.round(
+              (progressValues.reduce((sum, value) => sum + value, 0) / progressValues.length) * 100,
+            ) / 100;
 
         if (activeWeighting && childStatuses.length > 0) {
           const result = await this.rules.evaluate(
@@ -331,6 +393,7 @@ export class ScorecardService {
             primaryAlignment?.kpiDefinition.activeVersion?.nameEn ?? null,
           status,
           score,
+          progress,
           trend,
         };
       }),
