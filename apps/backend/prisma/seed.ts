@@ -181,11 +181,20 @@ async function seedTestUsers(): Promise<void> {
   const kpiOwnerRole = await prisma.role.findUniqueOrThrow({
     where: { name: "kpi_owner" },
   });
+  const seoAdministratorRole = await prisma.role.findUniqueOrThrow({
+    where: { name: "seo_administrator" },
+  });
 
   for (const grant of [
     { userId: administratorId, roleId: administratorRole.id },
+    // `platform_administrator` covers IAM/config; strategy content actions
+    // (theme/node creation, AI-suggestion authoring) are gated on
+    // `seo_administrator` instead, so the demo admin needs both to exercise
+    // the full app.
+    { userId: administratorId, roleId: seoAdministratorRole.id },
     { userId: ordinaryUserId, roleId: analystRole.id },
     { userId: teamUserId, roleId: administratorRole.id },
+    { userId: teamUserId, roleId: seoAdministratorRole.id },
     { userId: executiveViewerId, roleId: executiveViewerRole.id },
     { userId: kpiOwnerId, roleId: kpiOwnerRole.id },
   ]) {
@@ -215,6 +224,22 @@ async function seedTestUsers(): Promise<void> {
       data: {
         groupClaim: "stratalign-admins",
         roleId: administratorRole.id,
+        orgScopeType: "FUNCTION",
+        orgScopeId: "platform",
+        version: 1,
+        createdById: administratorId,
+      },
+    });
+  }
+
+  const currentSeoMapping = await prisma.groupRoleMapping.findFirst({
+    where: { groupClaim: "stratalign-admins", roleId: seoAdministratorRole.id, isCurrent: true },
+  });
+  if (!currentSeoMapping) {
+    await prisma.groupRoleMapping.create({
+      data: {
+        groupClaim: "stratalign-admins",
+        roleId: seoAdministratorRole.id,
         orgScopeType: "FUNCTION",
         orgScopeId: "platform",
         version: 1,
