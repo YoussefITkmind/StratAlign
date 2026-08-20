@@ -67,7 +67,6 @@ export default function OkrLibraryTable() {
   const [status, setStatus] = useState("all");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ [initialObjectives[0]?.id ?? ""]: true });
   const [showCreate, setShowCreate] = useState(false);
-  const [showSuggest, setShowSuggest] = useState(false);
 
   const filtered = useMemo(() => {
     return allObjectives.filter((objective) => {
@@ -101,13 +100,6 @@ export default function OkrLibraryTable() {
           options={(Object.keys(STATUS_META) as OkrStatus[]).map((s) => STATUS_META[s].label)}
           rawValues={Object.keys(STATUS_META)}
         />
-
-        <button
-          onClick={() => setShowSuggest(true)}
-          className="flex items-center gap-1.5 rounded-full bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-        >
-          <Sparkles className="h-3.5 w-3.5" /> Suggest one by one
-        </button>
 
         <button
           onClick={() => setShowCreate(true)}
@@ -212,8 +204,6 @@ export default function OkrLibraryTable() {
           }}
         />
       )}
-
-      {showSuggest && <AiSuggestModal initialMode="one-by-one" initialTypeFilter="okr" onClose={() => setShowSuggest(false)} />}
     </div>
   );
 }
