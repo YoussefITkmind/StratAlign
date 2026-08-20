@@ -8,7 +8,7 @@ export interface KpiLibraryRow {
   tag: string;
   perspective: KpiPerspective;
   department: string;
-  owner: { initials: string; color: string };
+  owner: { initials: string; name: string; color: string };
   actual: string;
   target: string;
   variance: string;
@@ -18,6 +18,7 @@ export interface KpiLibraryRow {
   freq: "Weekly" | "Monthly" | "Quarterly";
   approval: KpiApproval;
   status: KpiStatus;
+  description?: string;
 }
 
 // Explicit literal classes (not a hash-derived lookup) so Tailwind's
@@ -30,8 +31,16 @@ const OWNER_COLORS: Record<string, string> = {
   TR: "bg-rose-600",
 };
 
+const OWNER_NAMES: Record<string, string> = {
+  MW: "Mike Wallace",
+  PN: "Priya Nair",
+  DF: "Dana Fisher",
+  AM: "Alex Morgan",
+  TR: "Tom Reilly",
+};
+
 function owner(initials: string) {
-  return { initials, color: OWNER_COLORS[initials] ?? "bg-slate-500" };
+  return { initials, name: OWNER_NAMES[initials] ?? initials, color: OWNER_COLORS[initials] ?? "bg-slate-500" };
 }
 
 export const kpiLibraryRows: KpiLibraryRow[] = [
