@@ -56,7 +56,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Strategy Hierarchy', href: '/strategy-hierarchy', icon: Layers },
       { label: 'Balanced Scorecards', href: '/balanced-scorecards', icon: BookOpen },
       { label: 'Strategy Maps', href: '/strategy-maps', icon: Map },
-      { label: 'Strategy Map (Demo)', href: '/strategy-maps/demo', icon: Sparkles },
+      { label: 'Strategy Map', href: '/strategy-maps/demo', icon: Sparkles },
     ],
   },
   {
