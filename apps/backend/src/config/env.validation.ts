@@ -253,7 +253,7 @@ const environmentSchema = z.object({
    * startup. `AI_API_KEY` is server-only and never reaches a browser bundle.
    */
   AI_PROVIDER: z
-    .enum(["anthropic", "disabled"])
+    .enum(["anthropic", "openai", "disabled"])
     .default("disabled"),
 
   AI_API_KEY: z
@@ -261,15 +261,20 @@ const environmentSchema = z.object({
     .min(1)
     .optional(),
 
+  /**
+   * Left unset by default rather than defaulting to a vendor-specific value:
+   * the right default depends on which `AI_PROVIDER` is chosen, and that
+   * choice is only known at the call site in `llm.factory.ts`.
+   */
   AI_MODEL: z
     .string()
     .min(1)
-    .default("claude-sonnet-5"),
+    .optional(),
 
   AI_BASE_URL: z
     .string()
     .url()
-    .default("https://api.anthropic.com"),
+    .optional(),
 
   AI_TIMEOUT_MS: z.coerce
     .number()
