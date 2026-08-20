@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ draft });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Failed to generate draft description" },
       { status: 500 }
