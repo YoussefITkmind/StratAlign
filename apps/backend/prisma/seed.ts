@@ -231,22 +231,11 @@ async function seedTestUsers(): Promise<void> {
       },
     });
   }
-
-  const currentSeoMapping = await prisma.groupRoleMapping.findFirst({
-    where: { groupClaim: "stratalign-admins", roleId: seoAdministratorRole.id, isCurrent: true },
-  });
-  if (!currentSeoMapping) {
-    await prisma.groupRoleMapping.create({
-      data: {
-        groupClaim: "stratalign-admins",
-        roleId: seoAdministratorRole.id,
-        orgScopeType: "FUNCTION",
-        orgScopeId: "platform",
-        version: 1,
-        createdById: administratorId,
-      },
-    });
-  }
+  // `GroupRoleMapping` is a single versioned pointer per `groupClaim` (see the
+  // `[groupClaim, version]` unique constraint) — it maps an OIDC group to one
+  // current role, not a set. `seo_administrator` is granted directly via
+  // `ScopeGrant` above instead, which is what local-credential test users
+  // (bob@example.test, team@test.com) actually resolve roles from.
 }
 
 async function seedNotificationTemplates(): Promise<void> {
