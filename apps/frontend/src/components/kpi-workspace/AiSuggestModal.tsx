@@ -2,11 +2,25 @@
 
 import { useMemo, useState } from "react";
 import {
-  Sparkles, X, ChevronDown, Plus, Check, Pencil, AlertTriangle, Loader2, Info, ShieldCheck,
+  Sparkles, X, Globe, ArrowRight, ChevronDown, Plus, Check, Pencil,
+  AlertTriangle, Loader2, Info, ShieldCheck,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 
-type TypeFilter = "all" | "kpi" | "okr";
+/**
+ * Kind of proposal. Previously imported from the KPI suggestion mock data;
+ * that file is gone now the modal is backed by the real generation API, so the
+ * union is declared here and kept identical so `initialTypeFilter="okr"` at
+ * existing call sites still type-checks.
+ */
+type SuggestionKind = "okr" | "kpi";
+type TypeFilter = "all" | SuggestionKind;
+
+/**
+ * How the generated batch is presented: everything at once, or one card at a
+ * time with a cursor that advances as each item is resolved.
+ */
+type Mode = "global" | "one-by-one";
 
 type Batch = NonNullable<ReturnType<typeof useGenerate>["data"]>;
 type Suggestion = Batch["suggestions"][number];
@@ -61,9 +75,19 @@ type EditDraft = {
   keyResultTargets: number[];
 };
 
-export default function AiSuggestModal({ onClose }: { onClose: () => void }) {
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+export default function AiSuggestModal({
+  onClose,
+  initialMode = "global",
+  initialTypeFilter = "kpi",
+}: {
+  onClose: () => void;
+  initialMode?: Mode;
+  initialTypeFilter?: TypeFilter;
+}) {
+  const [mode, setMode] = useState<Mode>(initialMode);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(initialTypeFilter);
   const [themeNodeId, setThemeNodeId] = useState("");
+  const [cursor, setCursor] = useState(0);
   const [resolved, setResolved] = useState<Record<string, "accepted" | "rejected">>({});
   const [edits, setEdits] = useState<Record<string, EditDraft>>({});
   const [editing, setEditing] = useState<string | null>(null);
@@ -90,19 +114,27 @@ export default function AiSuggestModal({ onClose }: { onClose: () => void }) {
 
   const batch = generate.data ?? null;
 
-  const visible = (batch?.suggestions ?? []).filter((suggestion) => {
+  /** Everything still awaiting a decision, after the kind filter. */
+  const reviewable = (batch?.suggestions ?? []).filter((suggestion) => {
     if (resolved[suggestion.suggestionId]) return false;
     if (typeFilter !== "all" && suggestion.kind !== typeFilter) return false;
     return true;
   });
 
+  // "One By One" narrows what is shown, never what a batch action operates on.
+  const visible = mode === "one-by-one" ? reviewable.slice(cursor, cursor + 1) : reviewable;
+
   const busy = generate.isPending || accept.isPending || acceptMany.isPending;
 
   /** What "Accept all" would actually submit — strong duplicates excluded. */
-  const acceptAllCount = visible.filter(
+  const acceptAllCount = reviewable.filter(
     (suggestion) =>
       !isStrongDuplicate(suggestion) || confirmedDuplicates[suggestion.suggestionId],
   ).length;
+
+  /** Keeps the one-by-one cursor inside the list as items are resolved. */
+  const advanceCursor = () =>
+    setCursor((current) => Math.min(current, Math.max(0, reviewable.length - 2)));
 
   /** The payload the server re-validates. Edits win; everything else is as generated. */
   const toAcceptPayload = (suggestion: Suggestion) => {
@@ -146,6 +178,8 @@ export default function AiSuggestModal({ onClose }: { onClose: () => void }) {
     setResolved({});
     setEdits({});
     setConfirmedDuplicates({});
+    setConfirming(null);
+    setCursor(0);
     try {
       await generate.mutateAsync({
         themeNodeId,
@@ -173,6 +207,7 @@ export default function AiSuggestModal({ onClose }: { onClose: () => void }) {
     try {
       const result = await accept.mutateAsync(toAcceptPayload(suggestion));
       setResolved((prev) => ({ ...prev, [suggestion.suggestionId]: "accepted" }));
+      advanceCursor();
       setNotice(
         result.alreadyAccepted
           ? "This suggestion had already been accepted — nothing was created twice."
@@ -189,11 +224,11 @@ export default function AiSuggestModal({ onClose }: { onClose: () => void }) {
     // Unconfirmed strong duplicates are never swept up by a batch action. They
     // stay listed for individual review, which is the whole point of flagging
     // them.
-    const withheld = visible.filter(
+    const withheld = reviewable.filter(
       (suggestion) =>
         isStrongDuplicate(suggestion) && !confirmedDuplicates[suggestion.suggestionId],
     );
-    const submittable = visible.filter((suggestion) => !withheld.includes(suggestion));
+    const submittable = reviewable.filter((suggestion) => !withheld.includes(suggestion));
     const payloads = submittable.map(toAcceptPayload);
 
     if (payloads.length === 0) {
@@ -212,6 +247,7 @@ export default function AiSuggestModal({ onClose }: { onClose: () => void }) {
         for (const item of result.accepted) next[item.suggestionId] = "accepted";
         return next;
       });
+      setCursor(0);
       const withheldNote =
         withheld.length > 0
           ? ` ${withheld.length} possible duplicate(s) were left for individual review.`
@@ -233,6 +269,7 @@ export default function AiSuggestModal({ onClose }: { onClose: () => void }) {
   const reject = (suggestionId: string) => {
     // Purely local: rejection creates nothing and touches nothing persisted.
     setResolved((prev) => ({ ...prev, [suggestionId]: "rejected" }));
+    advanceCursor();
   };
 
   return (
@@ -254,6 +291,23 @@ export default function AiSuggestModal({ onClose }: { onClose: () => void }) {
 
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-5 py-3">
           <div className="flex items-center overflow-hidden rounded-full border border-gray-200">
+            <button
+              data-testid="mode-global"
+              onClick={() => setMode("global")}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-medium ${mode === "global" ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+            >
+              <Globe className="h-3.5 w-3.5" /> All Suggestions
+            </button>
+            <button
+              data-testid="mode-one-by-one"
+              onClick={() => { setMode("one-by-one"); setCursor(0); }}
+              className={`flex items-center gap-1.5 border-l border-gray-200 px-3.5 py-1.5 text-sm font-medium ${mode === "one-by-one" ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+            >
+              <ArrowRight className="h-3.5 w-3.5" /> One By One
+            </button>
+          </div>
+
+          <div className="flex items-center overflow-hidden rounded-full border border-gray-200">
             {(["all", "okr", "kpi"] as TypeFilter[]).map((key) => (
               <button
                 key={key}
@@ -267,8 +321,8 @@ export default function AiSuggestModal({ onClose }: { onClose: () => void }) {
 
           <div className="relative">
             <select
-              value={themeNodeId}
               data-testid="theme-select"
+              value={themeNodeId}
               onChange={(event) => setThemeNodeId(event.target.value)}
               className="appearance-none rounded-full border border-gray-200 bg-white py-1.5 pl-3.5 pr-8 text-sm font-medium text-gray-600 hover:bg-gray-50 focus:outline-none"
             >
@@ -290,7 +344,7 @@ export default function AiSuggestModal({ onClose }: { onClose: () => void }) {
             {batch ? "Regenerate" : "Generate"}
           </button>
 
-          {visible.length > 0 && (
+          {reviewable.length > 0 && (
             <button
               data-testid="accept-all"
               onClick={() => void acceptAll()}

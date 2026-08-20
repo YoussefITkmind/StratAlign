@@ -151,10 +151,16 @@ function batch(suggestions: unknown[]) {
   };
 }
 
-/** Renders with a generation already returned, as after a successful Generate. */
-function renderWithBatch(suggestions: unknown[]) {
+/**
+ * Renders with a generation already returned, as after a successful Generate.
+ *
+ * `initialTypeFilter="all"` because the component's own default is "kpi"
+ * (origin/main's call-site contract) and most of these cases assert across both
+ * kinds. Tests that care about the default set it explicitly.
+ */
+function renderWithBatch(suggestions: unknown[], props: Record<string, unknown> = {}) {
   hooks.state.generateData = batch(suggestions);
-  return render(<AiSuggestModal onClose={() => {}} />);
+  return render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" {...props} />);
 }
 
 function isDisabled(element: HTMLElement): boolean {
@@ -214,7 +220,7 @@ describe("AiSuggestModal — theme selection and generation", () => {
   });
 
   it("generates for the selected theme with the active kind filter", async () => {
-    render(<AiSuggestModal onClose={() => {}} />);
+    render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
     fireEvent.change(screen.getByTestId("theme-select"), { target: { value: THEME_ID } });
     fireEvent.click(screen.getByRole("button", { name: "KPI" }));
     fireEvent.click(screen.getByTestId("generate"));
@@ -548,7 +554,7 @@ describe("AiSuggestModal — duplicate confirmation", () => {
     fireEvent.change(screen.getByTestId("theme-select"), { target: { value: THEME_ID } });
     fireEvent.click(screen.getByTestId("generate"));
     await waitFor(() => expect(hooks.generate).toHaveBeenCalledOnce());
-    rerender(<AiSuggestModal onClose={() => {}} />);
+    rerender(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
 
     expect(screen.queryByText(/Duplicate confirmed/)).toBeNull();
   });
@@ -666,5 +672,93 @@ describe("AiSuggestModal — accept all", () => {
       expect(screen.getByText("Unable to accept these suggestions")).toBeTruthy(),
     );
     expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy();
+  });
+});
+
+describe("AiSuggestModal — origin/main component API", () => {
+  it("defaults to the KPI filter, as its call-site contract promises", () => {
+    hooks.state.generateData = batch([kpiSuggestion(), okrSuggestion()]);
+    render(<AiSuggestModal onClose={() => {}} />);
+
+    // Default initialTypeFilter="kpi" — the OKR is filtered out.
+    expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy();
+    expect(screen.queryByText("Expand into enterprise accounts")).toBeNull();
+  });
+
+  it("honours initialTypeFilter from the OKR library call site", () => {
+    hooks.state.generateData = batch([kpiSuggestion(), okrSuggestion()]);
+    render(<AiSuggestModal onClose={() => {}} initialTypeFilter="okr" />);
+
+    expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
+    expect(screen.queryByText("LTV to CAC Ratio")).toBeNull();
+  });
+
+  it("generates only the pre-selected kind without the reviewer touching a tab", async () => {
+    render(<AiSuggestModal onClose={() => {}} initialTypeFilter="okr" />);
+    fireEvent.change(screen.getByTestId("theme-select"), { target: { value: THEME_ID } });
+    fireEvent.click(screen.getByTestId("generate"));
+
+    await waitFor(() => expect(hooks.generate).toHaveBeenCalledOnce());
+    expect(payloadOf(hooks.generate).kinds).toEqual(["okr"]);
+  });
+
+  it("defaults to global mode, showing the whole batch", () => {
+    renderWithBatch([kpiSuggestion(), okrSuggestion()]);
+
+    expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy();
+    expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
+  });
+
+  it("honours initialMode=\"one-by-one\" and shows a single card", () => {
+    renderWithBatch([kpiSuggestion(), okrSuggestion()], { initialMode: "one-by-one" });
+
+    expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy();
+    expect(screen.queryByText("Expand into enterprise accounts")).toBeNull();
+  });
+
+  it("advances to the next card as each one is resolved in one-by-one mode", () => {
+    renderWithBatch([kpiSuggestion(), okrSuggestion()], { initialMode: "one-by-one" });
+
+    fireEvent.click(screen.getByTestId(`reject-${CLEAN_ID}`));
+
+    expect(screen.queryByText("LTV to CAC Ratio")).toBeNull();
+    expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
+  });
+
+  it("lets the reviewer switch presentation mode after generating", () => {
+    renderWithBatch([kpiSuggestion(), okrSuggestion()]);
+
+    fireEvent.click(screen.getByTestId("mode-one-by-one"));
+    expect(screen.queryByText("Expand into enterprise accounts")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("mode-global"));
+    expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
+  });
+
+  it("Accept all still covers the whole remaining batch in one-by-one mode", async () => {
+    // Only one card is on screen, but "Accept all" means all of them — a batch
+    // action must not silently shrink to whatever the cursor happens to show.
+    renderWithBatch([kpiSuggestion(), okrSuggestion()], { initialMode: "one-by-one" });
+
+    expect(screen.getByTestId("accept-all").textContent).toContain("Accept all (2)");
+    fireEvent.click(screen.getByTestId("accept-all"));
+
+    await waitFor(() => expect(hooks.acceptMany).toHaveBeenCalledOnce());
+    const sent = payloadOf(hooks.acceptMany).suggestions as Array<{ suggestionId: string }>;
+    expect(sent.map((item) => item.suggestionId).sort()).toEqual([CLEAN_ID, OKR_ID].sort());
+  });
+
+  it("never imports the deleted suggestion mock data", async () => {
+    // A plain path, not import.meta.url: the happy-dom environment rewrites
+    // import.meta.url to a non-file scheme that readFileSync rejects.
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(
+      "src/components/kpi-workspace/AiSuggestModal.tsx",
+      "utf8",
+    );
+
+    expect(source).not.toContain("mockKpiSuggestions");
+    expect(source).not.toContain("kpiSuggestions");
+    expect(source).toContain("trpc.aiSuggestion.generate.useMutation");
   });
 });
