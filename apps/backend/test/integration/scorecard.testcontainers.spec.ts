@@ -277,6 +277,49 @@ describe.sequential("Scorecard module with PostgreSQL Testcontainers", () => {
       });
     }
   });
+  it("returns objective score trend from persisted status periods", async () => {
+    const alignment = await prisma.alignment.findFirst({
+      where: { strategyNodeId: financialObjectiveId },
+      select: {
+        kpiDefinition: {
+          select: { activeVersionId: true },
+        },
+      },
+    });
+
+    const activeVersionId = alignment?.kpiDefinition.activeVersionId;
+    if (!activeVersionId) throw new Error("Expected an active KPI version");
+
+    const historicalStatus = await prisma.statusResult.create({
+      data: {
+        kpiVersionId: activeVersionId,
+        scopeNodeId: financialObjectiveId,
+        period: "2026-Q2",
+        status: "on_track",
+        computedAt: new Date("2026-07-01T00:00:00Z"),
+        ruleVersionUsed: ragRuleId,
+        dedupeKey: `scorecard-objective-trend:${activeVersionId}:2026-Q2`,
+      },
+    });
+
+    try {
+      const details = await scorecard.listPlacementDetails(scorecardId);
+
+      expect(details).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          objectiveNodeId: financialObjectiveId,
+          trend: [
+            { period: "2026-Q2", score: 100 },
+            { period: "2026-Q3", score: 0 },
+          ],
+        }),
+      ]));
+    } finally {
+      await prisma.statusResult.delete({
+        where: { id: historicalStatus.id },
+      });
+    }
+  });
   it("returns historical score trend using the current weighting across persisted status periods", async () => {
     const alignments = await prisma.alignment.findMany({
       where: {

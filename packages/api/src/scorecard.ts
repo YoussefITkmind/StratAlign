@@ -11,6 +11,7 @@ export interface ScorecardPlacementDetail {
   kpiNameEn: string | null;
   status: "on_track" | "watch" | "off_track" | null;
   score: number | null;
+  trend: Array<{ period: string; score: number }>;
 }
 export interface ScorecardServiceContract {
   listScorecards(): Promise<unknown[]>;

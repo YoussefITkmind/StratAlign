@@ -113,6 +113,7 @@ export class ScorecardService {
     kpiNameEn: string | null;
     status: RagStatus | null;
     score: number | null;
+    trend: Array<{ period: string; score: number }>;
   }>> {
     const perspectives = await this.listPerspectives(scorecardId);
     if (perspectives.length === 0) return [];
@@ -158,6 +159,11 @@ export class ScorecardService {
     }
 
     const statusByKey = new Map<string, string>();
+    const statusHistoryByObjective = new Map<
+      string,
+      Map<string, Array<{ id: string; status: RagStatus }>>
+    >();
+    const seenHistoryKeys = new Set<string>();
 
     const withVersion = alignments.filter(
       (alignment) => alignment.kpiDefinition.activeVersionId,
@@ -179,6 +185,29 @@ export class ScorecardService {
         if (!statusByKey.has(key)) {
           statusByKey.set(key, status.status);
         }
+
+        const normalized = normalizeStatus(status.status);
+        if (!normalized) continue;
+
+        const historyKey =
+          `${status.kpiVersionId}:${status.scopeNodeId}:${status.period}`;
+
+        if (seenHistoryKeys.has(historyKey)) continue;
+        seenHistoryKeys.add(historyKey);
+
+        const periods =
+          statusHistoryByObjective.get(status.scopeNodeId) ??
+          new Map<string, Array<{ id: string; status: RagStatus }>>();
+
+        const children = periods.get(status.period) ?? [];
+
+        children.push({
+          id: `${status.scopeNodeId}:${status.kpiVersionId}`,
+          status: normalized,
+        });
+
+        periods.set(status.period, children);
+        statusHistoryByObjective.set(status.scopeNodeId, periods);
       }
     }
 
@@ -258,6 +287,40 @@ export class ScorecardService {
           status = childStatuses[0]!.status;
         }
 
+        const trend: Array<{ period: string; score: number }> = [];
+
+        if (activeWeighting) {
+          const periods =
+            statusHistoryByObjective.get(placement.objectiveNodeId) ??
+            new Map<string, Array<{ id: string; status: RagStatus }>>();
+
+          for (const period of [...periods.keys()].sort()) {
+            const children = periods.get(period) ?? [];
+            if (children.length === 0) continue;
+
+            const result = await this.rules.evaluate(
+              activeWeighting.scoringFormulaId,
+              { children },
+            );
+
+            if (
+              typeof result !== "object" ||
+              result === null ||
+              !("score" in result) ||
+              typeof (result as { score?: unknown }).score !== "number"
+            ) {
+              throw scorecardErrors.ruleInvalid(
+                activeWeighting.scoringFormulaId,
+              );
+            }
+
+            trend.push({
+              period,
+              score: uiScore((result as { score: number }).score),
+            });
+          }
+        }
+
         return {
           perspectiveId: placement.perspectiveId,
           objectiveNodeId: placement.objectiveNodeId,
@@ -268,6 +331,7 @@ export class ScorecardService {
             primaryAlignment?.kpiDefinition.activeVersion?.nameEn ?? null,
           status,
           score,
+          trend,
         };
       }),
     );
