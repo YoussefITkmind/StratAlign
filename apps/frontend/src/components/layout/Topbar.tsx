@@ -4,23 +4,22 @@ import {
   Search, Calendar, SlidersHorizontal, Share2, HelpCircle, Bell, ChevronDown, Menu,
 } from "lucide-react";
 import { LogoutButton } from "@/components/auth/logout-button";
-import { LocaleSwitcher } from "@/components/locale-switcher";
-
-const CURRENT_USER = {
-  initials: "AM",
-  name: "Alex Morgan",
-  role: "CSO · StratAlign",
-};
+import { getInitials } from "@/lib/user";
 
 export default function Topbar({
   breadcrumb = ["Home", "Strategy", "Strategy Hierarchy"],
   email,
+  name,
+  role = "Chief Strategy Officer",
   onMenuClick,
 }: {
   breadcrumb?: string[];
   email?: string;
+  name?: string;
+  role?: string;
   onMenuClick?: () => void;
 }) {
+  const displayName = name ?? email ?? "";
   return (
     <div className="border-b border-gray-200 bg-white">
       <div className="flex flex-wrap items-center gap-y-2 gap-x-2 px-4 py-3 sm:gap-x-3 sm:px-6">
@@ -79,19 +78,17 @@ export default function Topbar({
           </span>
         </button>
 
-        <LocaleSwitcher className="static hidden shrink-0 sm:block" />
-
         <div className="group relative shrink-0">
           <button
             title={email}
             className="flex items-center gap-2.5 whitespace-nowrap rounded-full pl-1 pr-0 hover:bg-gray-50 md:pr-2"
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white">
-              {CURRENT_USER.initials}
+              {getInitials(displayName)}
             </span>
             <span className="hidden text-left leading-tight md:block">
-              <span className="block text-sm font-semibold text-gray-900">{CURRENT_USER.name}</span>
-              <span className="block text-xs text-gray-500">{CURRENT_USER.role}</span>
+              <span className="block text-sm font-semibold text-gray-900">{displayName}</span>
+              <span className="block text-xs text-gray-500">{role}</span>
             </span>
             <ChevronDown className="hidden h-3.5 w-3.5 text-gray-400 md:block" />
           </button>

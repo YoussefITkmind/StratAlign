@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import { Sparkles } from "lucide-react";
 import Sidebar, { NAV_SECTIONS } from "@/components/layout/Sidebar";
 import Topbar from "@/components/layout/Topbar";
 
@@ -28,10 +29,12 @@ function breadcrumbFor(pathname: string): string[] {
 
 export function AppShell({
   email,
+  name,
   children,
 }: {
   role: Role;
   email: string;
+  name: string;
   children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -39,13 +42,22 @@ export function AppShell({
 
   return (
     <div className="flex h-dvh overflow-hidden">
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} name={name} />
       <div className="app-scroll flex h-dvh min-w-0 w-full flex-col overflow-y-auto overflow-x-hidden bg-slate-50">
-        <Topbar breadcrumb={breadcrumbFor(pathname ?? "")} email={email} onMenuClick={() => setSidebarOpen(true)} />
+        <Topbar breadcrumb={breadcrumbFor(pathname ?? "")} email={email} name={name} onMenuClick={() => setSidebarOpen(true)} />
         <main className="w-full max-w-none flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
           {children}
         </main>
       </div>
+
+      <button
+        type="button"
+        title="AI assistant — coming soon"
+        className="fixed bottom-6 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-blue-600 text-white shadow-lg hover:brightness-110"
+      >
+        <Sparkles className="h-6 w-6" />
+        <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-orange-500 px-1 text-[11px] font-semibold text-white">2</span>
+      </button>
     </div>
   );
 }
