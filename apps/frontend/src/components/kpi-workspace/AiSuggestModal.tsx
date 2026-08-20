@@ -378,7 +378,7 @@ export default function AiSuggestModal({
 
         {nodes.isError && (
           <div className="border-b border-gray-100 bg-red-50 px-5 py-2 text-sm text-red-600">
-            Couldn't load strategy themes: {message(nodes.error)}
+            Couldn&apos;t load strategy themes: {message(nodes.error)}
           </div>
         )}
 
