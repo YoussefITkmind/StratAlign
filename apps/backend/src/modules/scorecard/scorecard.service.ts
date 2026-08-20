@@ -112,29 +112,57 @@ export class ScorecardService {
     kpiDefinitionId: string | null;
     kpiNameEn: string | null;
     status: RagStatus | null;
+    score: number | null;
   }>> {
     const perspectives = await this.listPerspectives(scorecardId);
     if (perspectives.length === 0) return [];
+
     const perspectiveIds = perspectives.map((p) => p.id);
     const placements = await this.prisma.$queryRaw<PlacementRow[]>`
       SELECT perspective_id AS "perspectiveId", objective_node_id AS "objectiveNodeId"
       FROM scorecard.placements
       WHERE perspective_id = ANY(${perspectiveIds}::uuid[])`;
+
     if (placements.length === 0) return [];
 
     const objectiveIds = [...new Set(placements.map((placement) => placement.objectiveNodeId))];
-    const [objectives, alignments] = await Promise.all([
-      this.prisma.strategyNode.findMany({ where: { id: { in: objectiveIds } } }),
+
+    const [objectives, alignments, activeWeighting] = await Promise.all([
+      this.prisma.strategyNode.findMany({
+        where: { id: { in: objectiveIds } },
+      }),
       this.prisma.alignment.findMany({
         where: { strategyNodeId: { in: objectiveIds } },
-        include: { kpiDefinition: { include: { activeVersion: true } } },
+        include: {
+          kpiDefinition: {
+            include: { activeVersion: true },
+          },
+        },
       }),
+      this.getActiveWeighting(scorecardId),
     ]);
-    const objectiveById = new Map(objectives.map((node) => [node.id, node]));
-    const alignmentByObjective = new Map(alignments.map((alignment) => [alignment.strategyNodeId, alignment]));
+
+    const objectiveById = new Map(
+      objectives.map((node) => [node.id, node]),
+    );
+
+    const alignmentsByObjective = new Map<
+      string,
+      typeof alignments
+    >();
+
+    for (const alignment of alignments) {
+      const existing = alignmentsByObjective.get(alignment.strategyNodeId) ?? [];
+      existing.push(alignment);
+      alignmentsByObjective.set(alignment.strategyNodeId, existing);
+    }
 
     const statusByKey = new Map<string, string>();
-    const withVersion = alignments.filter((alignment) => alignment.kpiDefinition.activeVersionId);
+
+    const withVersion = alignments.filter(
+      (alignment) => alignment.kpiDefinition.activeVersionId,
+    );
+
     if (withVersion.length > 0) {
       const statuses = await this.prisma.statusResult.findMany({
         where: {
@@ -145,32 +173,109 @@ export class ScorecardService {
         },
         orderBy: [{ computedAt: "desc" }, { id: "desc" }],
       });
+
       for (const status of statuses) {
         const key = `${status.kpiVersionId}:${status.scopeNodeId}`;
-        if (!statusByKey.has(key)) statusByKey.set(key, status.status);
+        if (!statusByKey.has(key)) {
+          statusByKey.set(key, status.status);
+        }
       }
     }
 
-    return placements
-      .map((placement) => {
+    if (activeWeighting) {
+      await this.requireRagRule(activeWeighting.scoringFormulaId);
+    }
+
+    const details = await Promise.all(
+      placements.map(async (placement) => {
         const objective = objectiveById.get(placement.objectiveNodeId);
         if (!objective) return null;
-        const alignment = alignmentByObjective.get(placement.objectiveNodeId);
-        const activeVersionId = alignment?.kpiDefinition.activeVersionId ?? null;
-        const rawStatus = activeVersionId ? statusByKey.get(`${activeVersionId}:${placement.objectiveNodeId}`) ?? null : null;
+
+        const objectiveAlignments =
+          alignmentsByObjective.get(placement.objectiveNodeId) ?? [];
+
+        const primaryAlignment = objectiveAlignments[0] ?? null;
+
+        const childStatuses: Array<{
+          id: string;
+          status: RagStatus;
+        }> = [];
+
+        for (const alignment of objectiveAlignments) {
+          const activeVersionId = alignment.kpiDefinition.activeVersionId;
+          if (!activeVersionId) continue;
+
+          const rawStatus =
+            statusByKey.get(
+              `${activeVersionId}:${placement.objectiveNodeId}`,
+            ) ?? null;
+
+          if (!rawStatus) continue;
+
+          const normalized = normalizeStatus(rawStatus);
+          if (!normalized) continue;
+
+          childStatuses.push({
+            id: `${placement.objectiveNodeId}:${activeVersionId}`,
+            status: normalized,
+          });
+        }
+
+        let status: RagStatus | null = null;
+        let score: number | null = null;
+
+        if (activeWeighting && childStatuses.length > 0) {
+          const result = await this.rules.evaluate(
+            activeWeighting.scoringFormulaId,
+            { children: childStatuses },
+          );
+
+          if (
+            typeof result !== "object" ||
+            result === null ||
+            !("status" in result) ||
+            !("score" in result)
+          ) {
+            throw scorecardErrors.ruleInvalid(
+              activeWeighting.scoringFormulaId,
+            );
+          }
+
+          status = normalizeStatus(
+            String((result as { status: unknown }).status),
+          );
+
+          const riskScore = (result as { score: unknown }).score;
+
+          if (!status || typeof riskScore !== "number") {
+            throw scorecardErrors.ruleInvalid(
+              activeWeighting.scoringFormulaId,
+            );
+          }
+
+          score = uiScore(riskScore);
+        } else if (childStatuses.length === 1) {
+          status = childStatuses[0]!.status;
+        }
+
         return {
           perspectiveId: placement.perspectiveId,
           objectiveNodeId: placement.objectiveNodeId,
           objectiveNameEn: objective.nameEn,
           objectiveNameAr: objective.nameAr,
-          kpiDefinitionId: alignment?.kpiDefinitionId ?? null,
-          kpiNameEn: alignment?.kpiDefinition.activeVersion?.nameEn ?? null,
-          status: rawStatus ? normalizeStatus(rawStatus) : null,
+          kpiDefinitionId: primaryAlignment?.kpiDefinitionId ?? null,
+          kpiNameEn:
+            primaryAlignment?.kpiDefinition.activeVersion?.nameEn ?? null,
+          status,
+          score,
         };
-      })
-      .filter((row): row is NonNullable<typeof row> => row !== null);
-  }
+      }),
+    );
 
+    return details.filter(
+      (row): row is NonNullable<typeof row> => row !== null,
+    );
+  }
   async createScorecard(input: {
     nameEn: string;
     nameAr: string;
@@ -289,6 +394,82 @@ export class ScorecardService {
     };
   }
 
+  async scoreTrend(scorecardId: string): Promise<Array<{ period: string; score: number }>> {
+    const perspectives = await this.listPerspectives(scorecardId);
+    const current = await this.getActiveWeighting(scorecardId);
+    if (!current || perspectives.length === 0) return [];
+
+    const perspectiveIds = perspectives.map((perspective) => perspective.id);
+    const weights = validatePerspectiveWeights(current.perspectiveWeights, perspectiveIds);
+    await this.requireRagRule(current.scoringFormulaId);
+
+    const placements = await this.prisma.$queryRaw<PlacementRow[]>`
+      SELECT perspective_id AS "perspectiveId", objective_node_id AS "objectiveNodeId"
+      FROM scorecard.placements
+      WHERE perspective_id IN (
+        SELECT id FROM scorecard.perspectives
+        WHERE scorecard_id = ${scorecardId}::uuid
+      )`;
+
+    const periodSets: Array<Set<string>> = [];
+
+    for (const perspective of perspectives) {
+      const objectiveIds = placements
+        .filter((placement) => placement.perspectiveId === perspective.id)
+        .map((placement) => placement.objectiveNodeId);
+
+      if (objectiveIds.length === 0) return [];
+
+      const alignments = await this.prisma.alignment.findMany({
+        where: { strategyNodeId: { in: objectiveIds } },
+        select: {
+          strategyNodeId: true,
+          kpiDefinition: { select: { activeVersionId: true } },
+        },
+      });
+
+      const statusCoordinates = alignments.flatMap((alignment) => {
+        const activeVersionId = alignment.kpiDefinition.activeVersionId;
+        return activeVersionId
+          ? [{
+              kpiVersionId: activeVersionId,
+              scopeNodeId: alignment.strategyNodeId,
+            }]
+          : [];
+      });
+
+      if (statusCoordinates.length === 0) return [];
+
+      const rows = await this.prisma.statusResult.findMany({
+        where: { OR: statusCoordinates },
+        select: { period: true },
+        distinct: ["period"],
+      });
+
+      periodSets.push(new Set(rows.map((row) => row.period)));
+    }
+
+    const [firstPeriodSet, ...remainingPeriodSets] = periodSets;
+    if (!firstPeriodSet) return [];
+
+    const periods = [...firstPeriodSet]
+      .filter((period) => remainingPeriodSets.every((set) => set.has(period)))
+      .sort();
+
+    const trend: Array<{ period: string; score: number }> = [];
+
+    for (const period of periods) {
+      const result = await this.computeWeightingScore(
+        scorecardId,
+        weights,
+        current.scoringFormulaId,
+        period,
+      );
+      trend.push({ period, score: result.score });
+    }
+
+    return trend;
+  }
   async proposeWeighting(input: {
     scorecardId: string;
     draftWeights: unknown;
@@ -430,7 +611,7 @@ export class ScorecardService {
     return map ? { ...map, links: await this.listMapLinks(map.id) } : null;
   }
 
-  private async computeWeightingScore(scorecardId: string, weights: PerspectiveWeights, scoringFormulaId: string) {
+  private async computeWeightingScore(scorecardId: string, weights: PerspectiveWeights, scoringFormulaId: string, period?: string) {
     const perspectives = await this.listPerspectives(scorecardId);
     const placements = await this.prisma.$queryRaw<PlacementRow[]>`
       SELECT perspective_id AS "perspectiveId", objective_node_id AS "objectiveNodeId"
@@ -453,11 +634,19 @@ export class ScorecardService {
         if (!activeVersionId) continue;
         const [status, rollup] = await Promise.all([
           this.prisma.statusResult.findFirst({
-            where: { kpiVersionId: activeVersionId, scopeNodeId: alignment.strategyNodeId },
+            where: {
+              kpiVersionId: activeVersionId,
+              scopeNodeId: alignment.strategyNodeId,
+              ...(period ? { period } : {}),
+            },
             orderBy: [{ computedAt: "desc" }, { id: "desc" }],
           }),
           this.prisma.rollupResult.findFirst({
-            where: { parentKpiId: alignment.kpiDefinitionId, scopeNodeId: alignment.strategyNodeId },
+            where: {
+              parentKpiId: alignment.kpiDefinitionId,
+              scopeNodeId: alignment.strategyNodeId,
+              ...(period ? { period } : {}),
+            },
             orderBy: [{ computedAt: "desc" }, { id: "desc" }],
           }),
         ]);

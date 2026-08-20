@@ -207,6 +207,116 @@ describe.sequential("Scorecard module with PostgreSQL Testcontainers", () => {
     ]));
   });
 
+  it("aggregates all KPI statuses into an objective score using the active scorecard RAG rule", async () => {
+    const definition = await prisma.kpiDefinition.create({
+      data: { status: "ACTIVE" },
+    });
+
+    const version = await prisma.kpiVersion.create({
+      data: {
+        kpiDefinitionId: definition.id,
+        version: 1,
+        nameEn: "Margin resilience KPI",
+        nameAr: "Margin resilience KPI",
+        unit: "%",
+        polarity: "HIGHER_IS_BETTER",
+        frequency: "MONTHLY",
+        dataSourceType: "MANUAL",
+        ownerUserId: submitterId,
+        activeFrom: new Date("2026-08-01T00:00:00Z"),
+        publishedAt: new Date("2026-08-01T00:00:00Z"),
+      },
+    });
+
+    await prisma.kpiDefinition.update({
+      where: { id: definition.id },
+      data: { activeVersionId: version.id },
+    });
+
+    await prisma.alignment.create({
+      data: {
+        kpiDefinitionId: definition.id,
+        strategyNodeId: financialObjectiveId,
+        alignmentType: "OBJECTIVE",
+      },
+    });
+
+    await prisma.statusResult.create({
+      data: {
+        kpiVersionId: version.id,
+        scopeNodeId: financialObjectiveId,
+        period: "2026-Q3",
+        status: "on_track",
+        ruleVersionUsed: ragRuleId,
+        dedupeKey: `scorecard-objective-score:${version.id}`,
+      },
+    });
+
+    try {
+      const details = await scorecard.listPlacementDetails(scorecardId);
+
+      expect(details).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          objectiveNodeId: financialObjectiveId,
+          status: "watch",
+          score: 50,
+        }),
+        expect.objectContaining({
+          objectiveNodeId: customerObjectiveId,
+          status: "on_track",
+          score: 100,
+        }),
+      ]));
+    } finally {
+      await prisma.statusResult.deleteMany({
+        where: { kpiVersionId: version.id },
+      });
+
+      await prisma.alignment.deleteMany({
+        where: { kpiDefinitionId: definition.id },
+      });
+    }
+  });
+  it("returns historical score trend using the current weighting across persisted status periods", async () => {
+    const alignments = await prisma.alignment.findMany({
+      where: {
+        strategyNodeId: {
+          in: [financialObjectiveId, customerObjectiveId],
+        },
+      },
+      select: {
+        strategyNodeId: true,
+        kpiDefinition: {
+          select: {
+            activeVersionId: true,
+          },
+        },
+      },
+    });
+
+    for (const alignment of alignments) {
+      const activeVersionId = alignment.kpiDefinition.activeVersionId;
+      if (!activeVersionId) throw new Error("Expected an active KPI version");
+
+      await prisma.statusResult.create({
+        data: {
+          kpiVersionId: activeVersionId,
+          scopeNodeId: alignment.strategyNodeId,
+          period: "2026-Q2",
+          status: "on_track",
+          ruleVersionUsed: ragRuleId,
+          dedupeKey: `scorecard-trend-status:${activeVersionId}:2026-Q2`,
+        },
+      });
+    }
+
+    const trend = await scorecard.scoreTrend(scorecardId);
+
+    expect(trend).toEqual([
+      { period: "2026-Q2", score: 100 },
+      { period: "2026-Q3", score: 50 },
+    ]);
+  });
   it("requires an approved workflow case for a structural perspective change", async () => {
     await expect(scorecard.addPerspective({
       scorecardId,
