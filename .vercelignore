@@ -1,0 +1,10 @@
+.turbo
+**/.turbo
+**/.next
+**/dist
+**/coverage
+**/playwright-report
+**/test-results
+**/*.tsbuildinfo
+node_modules
+**/node_modules
