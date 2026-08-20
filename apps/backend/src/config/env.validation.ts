@@ -244,6 +244,47 @@ const environmentSchema = z.object({
     .min(1)
     .default(50),
 
+  /**
+   * AI suggestion provider.
+   *
+   * Optional by design. The platform must boot and serve every non-AI route in
+   * an environment with no AI credentials — local development and CI both run
+   * that way — so an unset key downgrades the feature rather than failing
+   * startup. `AI_API_KEY` is server-only and never reaches a browser bundle.
+   */
+  AI_PROVIDER: z
+    .enum(["anthropic", "disabled"])
+    .default("disabled"),
+
+  AI_API_KEY: z
+    .string()
+    .min(1)
+    .optional(),
+
+  AI_MODEL: z
+    .string()
+    .min(1)
+    .default("claude-sonnet-5"),
+
+  AI_BASE_URL: z
+    .string()
+    .url()
+    .default("https://api.anthropic.com"),
+
+  AI_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(120_000)
+    .default(45_000),
+
+  AI_MAX_RETRIES: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(5)
+    .default(2),
+
   AUTH_SECRET: z
     .string()
     .min(32, "AUTH_SECRET must be at least 32 characters"),

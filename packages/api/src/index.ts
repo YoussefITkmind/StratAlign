@@ -183,7 +183,8 @@ export type AlignmentTypeValue =
   | "objective"
   | "play"
   | "sector"
-  | "project";
+  | "project"
+  | "theme";
 
 export interface KpiDefinitionOutput {
   id: string;
@@ -276,6 +277,8 @@ export interface KeyResultOutput {
   id: string;
   okrId: string;
   type: KeyResultTypeValue;
+  titleEn: string | null;
+  titleAr: string | null;
   targetValue: number;
   unit: string;
   currentValue: number | null;
@@ -350,6 +353,8 @@ export interface RegistryOkrServiceContract {
       type: KeyResultTypeValue;
       targetValue: number;
       unit: string;
+      titleEn?: string | null;
+      titleAr?: string | null;
     }>;
   }): Promise<OkrOutput>;
 
@@ -1382,6 +1387,7 @@ const alignmentTypeSchema = z.enum([
   "play",
   "sector",
   "project",
+  "theme",
 ]);
 
 const strategyNodeIdSchema = z.string().trim().min(1).max(200);
@@ -1527,6 +1533,10 @@ const keyResultOutputSchema = z.object({
   id: z.string().uuid(),
   okrId: z.string().uuid(),
   type: keyResultTypeSchema,
+  // Nullish rather than nullable: key results created before the title columns
+  // existed carry no title, and the contract must not force one.
+  titleEn: z.string().nullish(),
+  titleAr: z.string().nullish(),
   targetValue: z.number(),
   unit: z.string(),
   currentValue: z.number().nullable(),
@@ -1552,6 +1562,8 @@ const registryCreateOkrInputSchema = z.object({
     type: keyResultTypeSchema,
     targetValue: z.number().finite(),
     unit: z.string().trim().min(1).max(50),
+    titleEn: z.string().trim().min(1).max(300).nullish(),
+    titleAr: z.string().trim().min(1).max(300).nullish(),
   }).strict()).min(1).max(20),
 }).strict();
 

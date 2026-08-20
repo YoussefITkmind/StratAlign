@@ -4,6 +4,7 @@ import {
   Search, Calendar, SlidersHorizontal, Share2, HelpCircle, Bell, ChevronDown, Menu,
 } from "lucide-react";
 import { LogoutButton } from "@/components/auth/logout-button";
+import { LocaleSwitcher } from "@/components/locale-switcher";
 import { getInitials } from "@/lib/user";
 
 export default function Topbar({
@@ -66,6 +67,15 @@ export default function Topbar({
         <button className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 lg:flex">
           <Share2 className="h-4 w-4" /> Share
         </button>
+
+        {/*
+          The language control belongs to the authenticated shell. It lived in
+          AppNav until that header was replaced by Sidebar + Topbar, and was not
+          carried across — which removed the only way to switch locale once
+          signed in. `static` overrides the switcher's default fixed placement so
+          it sits inline with the other utility controls.
+        */}
+        <LocaleSwitcher className="static shrink-0" />
 
         <button aria-label="Help" className="hidden shrink-0 text-gray-400 hover:text-gray-600 sm:block">
           <HelpCircle className="h-5 w-5" />
