@@ -13,7 +13,11 @@ import TreeRow from "./TreeRow";
 import AddNodeModal from "./AddNodeModal";
 import Topbar from "@/components/layout/Topbar";
 
-export default function StrategyHierarchyPage() {
+interface Props {
+  canManageStrategy: boolean;
+}
+
+export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
   const [tree, setTree] = useState<StrategyNode>(initialStrategyData);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
     new Set(["plan-1", "pillar-revenue", "obj-drive-revenue", "init-enterprise-sales"])
@@ -41,6 +45,7 @@ export default function StrategyHierarchyPage() {
   const collapseAll = () => setExpandedIds(new Set());
 
   const handleAdd = (parentId: string, node: StrategyNode) => {
+    if (!canManageStrategy) return;
     setTree((prev) => addChild(prev, parentId, node));
     setExpandedIds((prev) => new Set(prev).add(parentId));
   };
@@ -87,12 +92,14 @@ export default function StrategyHierarchyPage() {
           <button className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-blue-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:opacity-90">
             <Sparkles className="h-4 w-4" /> Generate Strategy Brief
           </button>
-          <button
-            onClick={() => setModalParentId(tree.id)}
-            className="flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-          >
-            <Plus className="h-4 w-4" /> Add Node
-          </button>
+          {canManageStrategy && (
+            <button
+              onClick={() => setModalParentId(tree.id)}
+              className="flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            >
+              <Plus className="h-4 w-4" /> Add Node
+            </button>
+          )}
         </div>
       </div>
 
@@ -177,6 +184,7 @@ export default function StrategyHierarchyPage() {
             expandedIds={expandedIds}
             forceExpanded={filtering}
             onToggle={toggle}
+            canAddChild={canManageStrategy}
             onAddChild={(id) => setModalParentId(id)}
           />
         )}
@@ -215,7 +223,7 @@ export default function StrategyHierarchyPage() {
       </div>
       </div>
 
-      {modalParentId && (
+      {canManageStrategy && modalParentId && (
         <AddNodeModal
           tree={tree}
           defaultParentId={modalParentId}

@@ -12,6 +12,7 @@ interface Props {
   expandedIds: Set<string>;
   forceExpanded: boolean; // true while search/filter is active
   onToggle: (id: string) => void;
+  canAddChild: boolean;
   onAddChild: (parentId: string) => void;
 }
 
@@ -20,7 +21,7 @@ interface Props {
 // when a row grows taller (mobile's stacked meta line).
 const ELBOW_Y = 26;
 
-export default function TreeRow({ node, depth, lines, hasNextSibling, expandedIds, forceExpanded, onToggle, onAddChild }: Props) {
+export default function TreeRow({ node, depth, lines, hasNextSibling, expandedIds, forceExpanded, onToggle, canAddChild, onAddChild }: Props) {
   const hasChildren = !!node.children?.length;
   const isOpen = forceExpanded || expandedIds.has(node.id);
   const typeCfg = TYPE_CONFIG[node.type];
@@ -73,13 +74,15 @@ export default function TreeRow({ node, depth, lines, hasNextSibling, expandedId
               <Icon className={`h-3.5 w-3.5 ${typeCfg.text}`} />
             </span>
             <span className="truncate text-[15px] text-gray-900">{node.name}</span>
-            <button
-              onClick={() => onAddChild(node.id)}
-              title="Add child node"
-              className="ml-1 hidden shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600 group-hover:inline-flex"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
+            {canAddChild && (
+              <button
+                onClick={() => onAddChild(node.id)}
+                title="Add child node"
+                className="ml-1 hidden shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600 group-hover:inline-flex"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-3 pl-[38px] md:shrink-0 md:gap-6 md:pl-0">
@@ -111,6 +114,7 @@ export default function TreeRow({ node, depth, lines, hasNextSibling, expandedId
               expandedIds={expandedIds}
               forceExpanded={forceExpanded}
               onToggle={onToggle}
+              canAddChild={canAddChild}
               onAddChild={onAddChild}
             />
           ))}

@@ -181,11 +181,20 @@ async function seedTestUsers(): Promise<void> {
   const kpiOwnerRole = await prisma.role.findUniqueOrThrow({
     where: { name: "kpi_owner" },
   });
+  const seoAdministratorRole = await prisma.role.findUniqueOrThrow({
+    where: { name: "seo_administrator" },
+  });
 
   for (const grant of [
     { userId: administratorId, roleId: administratorRole.id },
+    // `platform_administrator` covers IAM/config; strategy content actions
+    // (theme/node creation, AI-suggestion authoring) are gated on
+    // `seo_administrator` instead, so the demo admin needs both to exercise
+    // the full app.
+    { userId: administratorId, roleId: seoAdministratorRole.id },
     { userId: ordinaryUserId, roleId: analystRole.id },
     { userId: teamUserId, roleId: administratorRole.id },
+    { userId: teamUserId, roleId: seoAdministratorRole.id },
     { userId: executiveViewerId, roleId: executiveViewerRole.id },
     { userId: kpiOwnerId, roleId: kpiOwnerRole.id },
   ]) {
@@ -222,6 +231,11 @@ async function seedTestUsers(): Promise<void> {
       },
     });
   }
+  // `GroupRoleMapping` is a single versioned pointer per `groupClaim` (see the
+  // `[groupClaim, version]` unique constraint) — it maps an OIDC group to one
+  // current role, not a set. `seo_administrator` is granted directly via
+  // `ScopeGrant` above instead, which is what local-credential test users
+  // (bob@example.test, team@test.com) actually resolve roles from.
 }
 
 async function seedNotificationTemplates(): Promise<void> {
