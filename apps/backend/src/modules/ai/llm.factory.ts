@@ -4,16 +4,25 @@ import {
   AnthropicLlmProvider,
   UnconfiguredLlmProvider,
 } from "./anthropic.provider";
+import { OpenAiLlmProvider } from "./openai.provider";
 import type { LlmProvider } from "./llm.provider";
 
 export interface LlmProviderConfig {
-  readonly provider: "anthropic" | "disabled";
+  readonly provider: "anthropic" | "openai" | "disabled";
   readonly apiKey?: string;
-  readonly model: string;
-  readonly baseUrl: string;
+  /** Falls back to a provider-specific default when unset. */
+  readonly model?: string;
+  /** Falls back to a provider-specific default when unset. */
+  readonly baseUrl?: string;
   readonly timeoutMs: number;
   readonly maxRetries: number;
 }
+
+/** Vendor-specific defaults, used only when the environment leaves them unset. */
+const PROVIDER_DEFAULTS = {
+  anthropic: { model: "claude-sonnet-5", baseUrl: "https://api.anthropic.com" },
+  openai: { model: "gpt-4o-mini", baseUrl: "https://api.openai.com" },
+} as const;
 
 /**
  * Single construction point for the platform's LLM client.
@@ -40,14 +49,16 @@ export function createLlmProvider(
     return new UnconfiguredLlmProvider();
   }
 
-  return new AnthropicLlmProvider(
-    {
-      apiKey: config.apiKey,
-      model: config.model,
-      baseUrl: config.baseUrl,
-      timeoutMs: config.timeoutMs,
-      maxRetries: config.maxRetries,
-    },
-    logger,
-  );
+  const defaults = PROVIDER_DEFAULTS[config.provider];
+  const options = {
+    apiKey: config.apiKey,
+    model: config.model ?? defaults.model,
+    baseUrl: config.baseUrl ?? defaults.baseUrl,
+    timeoutMs: config.timeoutMs,
+    maxRetries: config.maxRetries,
+  };
+
+  return config.provider === "openai"
+    ? new OpenAiLlmProvider(options, logger)
+    : new AnthropicLlmProvider(options, logger);
 }
