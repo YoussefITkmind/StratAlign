@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant, useNodesState, useEdgesState,
   type Node, type Edge, type NodeMouseHandler, type EdgeMouseHandler,
@@ -25,9 +25,12 @@ interface StrategyMapFlowCanvasProps {
   selectedObjectiveId: string | null;
   onSelectObjective: (objectiveId: string) => void;
   onRemoveLink?: (linkId: string) => void;
+  connecting?: boolean;
+  pendingSourceId?: string | null;
+  infoLabel?: ReactNode;
 }
 
-function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiveId, onSelectObjective, onRemoveLink }: StrategyMapFlowCanvasProps) {
+function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiveId, onSelectObjective, onRemoveLink, connecting, pendingSourceId, infoLabel }: StrategyMapFlowCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -40,14 +43,14 @@ function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiv
 
     setNodes(
       buildLaneAndObjectiveNodes(perspectives, placements, targetWidth).map((node) =>
-        node.type === "objective" && node.id === selectedObjectiveId
-          ? { ...node, data: { ...node.data, active: true } }
+        node.type === "objective"
+          ? { ...node, data: { ...node.data, active: node.id === selectedObjectiveId, pendingSource: node.id === pendingSourceId, connecting } }
           : node,
       ),
     );
     setEdges(buildLinkEdges(links, editing));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perspectives, placements, links, editing, selectedObjectiveId]);
+  }, [perspectives, placements, links, editing, selectedObjectiveId, connecting, pendingSourceId]);
 
   const handleNodeClick: NodeMouseHandler = (_, node) => {
     if (node.type !== "objective") return;
@@ -55,7 +58,7 @@ function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiv
   };
 
   const handleEdgeClick: EdgeMouseHandler = (_, edge) => {
-    if (editing && onRemoveLink) onRemoveLink(edge.id);
+    onRemoveLink?.(edge.id);
   };
 
   return (
@@ -82,6 +85,7 @@ function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiv
         <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#e2e8f0" />
         <ZoomControls zoomPct={zoomPct} />
       </ReactFlow>
+      {infoLabel && <div className="absolute left-3 top-3 z-10">{infoLabel}</div>}
       <EdgeMarkerDefs />
     </div>
   );

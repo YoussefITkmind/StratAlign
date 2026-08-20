@@ -3,14 +3,13 @@ import { perspectiveColors } from "@/lib/strategyMapVisualConfig";
 
 interface LaneData {
   nameEn: string;
-  nameAr: string;
   laneIndex: number;
   weight?: number;
   [key: string]: unknown;
 }
 
 export default function LaneNode({ data }: NodeProps) {
-  const { nameEn, nameAr, laneIndex, weight } = data as LaneData;
+  const { nameEn, laneIndex, weight } = data as LaneData;
   const cfg = perspectiveColors(laneIndex);
 
   return (
@@ -20,7 +19,6 @@ export default function LaneNode({ data }: NodeProps) {
         <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: cfg.textColor }}>
           {nameEn}
         </p>
-        <p dir="rtl" className="text-[10px] text-gray-400">{nameAr}</p>
         {weight != null && <p className="mt-0.5 text-[10px] text-gray-400">{weight}% weight</p>}
       </div>
     </div>

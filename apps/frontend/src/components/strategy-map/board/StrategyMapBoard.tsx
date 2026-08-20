@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ReactFlow, Background, BackgroundVariant, useNodesState, useEdgesState,
   type Node, type Edge, type NodeMouseHandler, type OnNodeDrag, type OnMove,
@@ -10,24 +10,22 @@ import {
   Search, Download, Plus, Link2, X, Map as MapIcon,
 } from "lucide-react";
 import { Objective, Dependency, DependencyType, PerspectiveKey, StatusFilter, StrategyMap } from "@/types/strategyMap";
-import { PERSPECTIVE_ORDER, PERSPECTIVE_CONFIG, DEPENDENCY_ORDER, DEPENDENCY_CONFIG, LANE_HEIGHT, scoreStatus } from "@/lib/mapConfig";
+import { PERSPECTIVE_ORDER, PERSPECTIVE_CONFIG, DEPENDENCY_ORDER, DEPENDENCY_CONFIG, scoreStatus } from "@/lib/mapConfig";
 import { buildNodes, buildEdges } from "@/lib/buildFlow";
 import { initialMaps } from "@/data/mockMapData";
-import { useIsMobile } from "@/lib/useIsMobile";
-import LaneNode from "./MapOverviewLaneNode";
-import ObjectiveNode from "./MapOverviewObjectiveNode";
+import LaneNode from "./LaneNode";
+import ObjectiveNode from "./ObjectiveNode";
 import DependencyEdge from "./DependencyEdge";
-import EdgeMarkerDefs from "./MapOverviewEdgeMarkerDefs";
+import EdgeMarkerDefs from "./EdgeMarkerDefs";
 import DependencyLegend from "./DependencyLegend";
 import ZoomControls from "./ZoomControls";
 import AddObjectiveModal from "./AddObjectiveModal";
 import NewMapModal from "./NewMapModal";
-import MobileMapList from "./MobileMapList";
 
 const nodeTypes = { lane: LaneNode, objective: ObjectiveNode };
 const edgeTypes = { dependency: DependencyEdge };
 
-export default function StrategyMapPage() {
+export default function StrategyMapBoard() {
   const [mapCache, setMapCache] = useState<Record<string, StrategyMap>>(() =>
     Object.fromEntries(initialMaps.map((m) => [m.id, m]))
   );
@@ -37,15 +35,10 @@ export default function StrategyMapPage() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const canvasRef = useRef<HTMLDivElement>(null);
-  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (!activeMap) return;
-    const rect = canvasRef.current?.getBoundingClientRect();
-    const contentHeight = PERSPECTIVE_ORDER.length * LANE_HEIGHT;
-    const targetWidth = rect && rect.width > 0 && rect.height > 0 ? (rect.width / rect.height) * contentHeight : 0;
-    setNodes(buildNodes(activeMap.objectives, targetWidth));
+    setNodes(buildNodes(activeMap.objectives));
     setEdges(buildEdges(activeMap.dependencies));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMapId, activeMap]);
@@ -176,11 +169,8 @@ export default function StrategyMapPage() {
   const toggleDepType = (type: DependencyType) => {
     setVisibleDepTypes((prev) => {
       const next = new Set(prev);
-      if (next.has(type)) {
-        next.delete(type);
-      } else {
-        next.add(type);
-      }
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
       return next;
     });
   };
@@ -199,12 +189,12 @@ export default function StrategyMapPage() {
   if (!activeMap) return null;
 
   return (
-    <div className="mx-auto max-w-[1600px] p-4 sm:p-6">
+    <div className="mx-auto max-w-[1600px] p-4 sm:p-6" data-testid="strategy-map-board">
       {/* map tabs + actions */}
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white">
-            <MapIcon className="h-4 w-4 text-gray-500" />
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2 overflow-x-auto pb-1">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50">
+            <MapIcon className="h-4 w-4 text-blue-600" />
           </span>
           {mapOrder.map((id) => {
             const map = mapCache[id];
@@ -230,20 +220,18 @@ export default function StrategyMapPage() {
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {!isMobile && (
-            <button
-              onClick={() => {
-                setConnectMode((v) => !v);
-                setPendingSource(null);
-              }}
-              className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium ${
-                connectMode ? "border-slate-900 bg-slate-900 text-white" : "border-gray-300 text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <Link2 className="h-4 w-4" /> Connect Nodes
-            </button>
-          )}
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => {
+              setConnectMode((v) => !v);
+              setPendingSource(null);
+            }}
+            className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium ${
+              connectMode ? "border-slate-900 bg-slate-900 text-white" : "border-gray-300 text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <Link2 className="h-4 w-4" /> Connect Nodes
+          </button>
           <button
             onClick={() => setAddObjectiveOpen(true)}
             className="flex items-center gap-1.5 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -257,74 +245,75 @@ export default function StrategyMapPage() {
       </div>
 
       {/* toolbar */}
-      <div className="mb-3 flex flex-col gap-3">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div className="relative w-full sm:w-auto">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search objectives..."
-                className="w-full rounded-full border border-gray-300 py-2 pl-9 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 sm:w-56"
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                onClick={() => setPerspectiveFilter("all")}
-                className={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-wide ${
-                  perspectiveFilter === "all" ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                All
-              </button>
-              {PERSPECTIVE_ORDER.map((key) => {
-                const cfg = PERSPECTIVE_CONFIG[key];
-                const active = perspectiveFilter === key;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => setPerspectiveFilter(active ? "all" : key)}
-                    className={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-wide transition-colors ${
-                      active ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"
-                    }`}
-                  >
-                    {cfg.label}
-                  </button>
-                );
-              })}
-            </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as StatusFilter | "all")}
-              className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500"
-            >
-              <option value="all">All Status</option>
-              <option value="on-track">On Track</option>
-              <option value="at-risk">At Risk</option>
-              <option value="off-track">Off Track</option>
-            </select>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search objectives..."
+              className="w-56 rounded-full border border-gray-300 py-2 pl-9 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="flex items-center gap-1 overflow-x-auto">
             <button
-              onClick={() => setDepsVisible((v) => !v)}
-              className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium ${
-                depsVisible ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
+              onClick={() => setPerspectiveFilter("all")}
+              className={`shrink-0 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-wide ${
+                perspectiveFilter === "all" ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"
               }`}
             >
-              <Link2 className="h-3.5 w-3.5" /> Dependencies
+              All
             </button>
+            {PERSPECTIVE_ORDER.map((key) => {
+              const cfg = PERSPECTIVE_CONFIG[key];
+              const active = perspectiveFilter === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setPerspectiveFilter(active ? "all" : key)}
+                  className="shrink-0 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-wide transition-colors"
+                  style={{
+                    background: active ? cfg.accent : "white",
+                    color: active ? "white" : cfg.textColor,
+                    border: `1px solid ${active ? cfg.accent : "#e5e7eb"}`,
+                  }}
+                >
+                  {cfg.label}
+                </button>
+              );
+            })}
           </div>
-
-          {depsVisible && <DependencyLegend visibleTypes={visibleDepTypes} onToggle={toggleDepType} />}
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter | "all")}
+            className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500"
+          >
+            <option value="all">All Status</option>
+            <option value="on-track">On Track</option>
+            <option value="at-risk">At Risk</option>
+            <option value="off-track">Off Track</option>
+          </select>
+          <button
+            onClick={() => setDepsVisible((v) => !v)}
+            className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium ${
+              depsVisible ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            <Link2 className="h-3.5 w-3.5" /> Dependencies
+          </button>
         </div>
+
+        <DependencyLegend visibleTypes={visibleDepTypes} onToggle={toggleDepType} />
       </div>
 
       {/* connect-mode banner */}
-      {!isMobile && connectMode && (
+      {connectMode && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-900 px-4 py-2.5 text-white">
           <p className="text-sm">
             {pendingSource ? "Click the target objective to connect it." : "Pick a relationship type, then click a source objective."}
           </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             {DEPENDENCY_ORDER.map((type) => {
               const cfg = DEPENDENCY_CONFIG[type];
               const on = connectType === type;
@@ -353,61 +342,40 @@ export default function StrategyMapPage() {
         </div>
       )}
 
-      {/* map summary */}
-      <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm sm:hidden">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-gray-900">{activeMap.name}</p>
-          <p className="mt-0.5 truncate text-xs text-gray-400">
+      {/* canvas */}
+      <div className="relative h-[70vh] min-h-[560px] w-full overflow-hidden rounded-xl border border-gray-200">
+        <div className="absolute left-3 top-3 z-10 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+          <p className="text-sm font-semibold text-gray-900">{activeMap.name}</p>
+          <p className="mt-0.5 text-xs text-gray-400">
             {activeMap.period} · {activeMap.objectives.length} objectives · {activeMap.dependencies.length} connections
           </p>
         </div>
+
+        <ReactFlow
+          nodes={displayedNodes}
+          edges={displayedEdges}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={handleNodeClick}
+          onNodeMouseEnter={handleNodeMouseEnter}
+          onNodeMouseLeave={handleNodeMouseLeave}
+          onNodeDragStart={handleNodeDragStart}
+          onNodeDragStop={handleNodeDragStop}
+          onMove={handleMove}
+          fitView
+          fitViewOptions={{ padding: 0.15 }}
+          minZoom={0.4}
+          maxZoom={1.5}
+          proOptions={{ hideAttribution: true }}
+          className="bg-[#fafbfc]"
+        >
+          <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#e2e8f0" />
+          <ZoomControls zoomPct={zoomPct} />
+        </ReactFlow>
+        <EdgeMarkerDefs />
       </div>
-
-      {isMobile ? (
-        <MobileMapList
-          objectives={activeMap.objectives}
-          dependencies={activeMap.dependencies}
-          perspectiveFilter={perspectiveFilter}
-          objectiveMatches={objectiveMatches}
-          filtering={filtering}
-          depsVisible={depsVisible}
-          visibleDepTypes={visibleDepTypes}
-        />
-      ) : (
-        <div ref={canvasRef} className="relative h-[70vh] min-h-[560px] w-full overflow-hidden rounded-xl border border-gray-200">
-          <div className="absolute left-3 top-3 z-10 max-w-[calc(100%-1.5rem)] rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-            <p className="truncate text-sm font-semibold text-gray-900">{activeMap.name}</p>
-            <p className="mt-0.5 truncate text-xs text-gray-400">
-              {activeMap.period} · {activeMap.objectives.length} objectives · {activeMap.dependencies.length} connections
-            </p>
-          </div>
-
-          <ReactFlow
-            nodes={displayedNodes}
-            edges={displayedEdges}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onNodeClick={handleNodeClick}
-            onNodeMouseEnter={handleNodeMouseEnter}
-            onNodeMouseLeave={handleNodeMouseLeave}
-            onNodeDragStart={handleNodeDragStart}
-            onNodeDragStop={handleNodeDragStop}
-            onMove={handleMove}
-            fitView
-            fitViewOptions={{ padding: 0.15 }}
-            minZoom={0.4}
-            maxZoom={1.5}
-            proOptions={{ hideAttribution: true }}
-            className="bg-[#fafbfc]"
-          >
-            <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#e2e8f0" />
-            <ZoomControls zoomPct={zoomPct} />
-          </ReactFlow>
-          <EdgeMarkerDefs />
-        </div>
-      )}
 
       {addObjectiveOpen && (
         <AddObjectiveModal onClose={() => setAddObjectiveOpen(false)} onAdd={addObjective} nextColumn={nextColumn} />
