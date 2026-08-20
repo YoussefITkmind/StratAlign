@@ -1,4 +1,5 @@
 import { router } from "@/server/trpc";
+import { authRouter } from "@/server/routers/auth";
 import { iamRouter } from "@/server/routers/iam";
 import { auditRouter } from "@/server/routers/audit";
 import { governanceRouter } from "@/server/routers/governance";
@@ -10,8 +11,10 @@ import { scorecardRouter } from "@/server/routers/scorecard";
 import { homeRouter } from "@/server/routers/home";
 import { executionRouter } from "@/server/routers/execution";
 import { valueGateRouter } from "@/server/routers/value-gate";
+import { aiSuggestionRouter } from "@/server/routers/ai-suggestion";
 
 export const appRouter = router({
+  auth: authRouter,
   iam: iamRouter,
   audit: auditRouter,
   governance: governanceRouter,
@@ -23,6 +26,7 @@ export const appRouter = router({
   home: homeRouter,
   execution: executionRouter,
   valueGate: valueGateRouter,
+  aiSuggestion: aiSuggestionRouter,
 });
 
 export type AppRouter = typeof appRouter;

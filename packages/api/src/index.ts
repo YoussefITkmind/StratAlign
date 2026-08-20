@@ -35,6 +35,7 @@ export interface HealthServiceContract { check(): Promise<HealthStatus>; }
 export interface AuthenticatedUser { id: string; email: string; displayName: string | null; }
 export interface CredentialServiceContract {
   authenticate(email: string, password: string): Promise<AuthenticatedUser | null>;
+  register(email: string, password: string, displayName: string): Promise<AuthenticatedUser>;
 }
 export interface LoginRateLimitResult {
   allowed: boolean;
@@ -182,7 +183,8 @@ export type AlignmentTypeValue =
   | "objective"
   | "play"
   | "sector"
-  | "project";
+  | "project"
+  | "theme";
 
 export interface KpiDefinitionOutput {
   id: string;
@@ -275,6 +277,8 @@ export interface KeyResultOutput {
   id: string;
   okrId: string;
   type: KeyResultTypeValue;
+  titleEn: string | null;
+  titleAr: string | null;
   targetValue: number;
   unit: string;
   currentValue: number | null;
@@ -349,6 +353,8 @@ export interface RegistryOkrServiceContract {
       type: KeyResultTypeValue;
       targetValue: number;
       unit: string;
+      titleEn?: string | null;
+      titleAr?: string | null;
     }>;
   }): Promise<OkrOutput>;
 
@@ -880,6 +886,16 @@ function isExpectedOidcError(error: unknown): boolean {
     typeof error.code === "string" && expectedOidcErrors.has(error.code);
 }
 
+/**
+ * `CredentialService.register` raises `EmailAlreadyRegisteredError` with a
+ * stable `code`, duck-typed here for the same reason as `isExpectedOidcError`:
+ * this package must not depend on backend error classes.
+ */
+function isEmailAlreadyRegisteredError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error &&
+    error.code === "EMAIL_ALREADY_REGISTERED";
+}
+
 const mappingOutput = z.object({
   id: z.string().uuid(), groupClaim: boundedIdentifierSchema,
   roleName: platformRoleSchema, orgScopeType: orgScopeTypeSchema,
@@ -1371,6 +1387,7 @@ const alignmentTypeSchema = z.enum([
   "play",
   "sector",
   "project",
+  "theme",
 ]);
 
 const strategyNodeIdSchema = z.string().trim().min(1).max(200);
@@ -1516,6 +1533,10 @@ const keyResultOutputSchema = z.object({
   id: z.string().uuid(),
   okrId: z.string().uuid(),
   type: keyResultTypeSchema,
+  // Nullish rather than nullable: key results created before the title columns
+  // existed carry no title, and the contract must not force one.
+  titleEn: z.string().nullish(),
+  titleAr: z.string().nullish(),
   targetValue: z.number(),
   unit: z.string(),
   currentValue: z.number().nullable(),
@@ -1541,6 +1562,8 @@ const registryCreateOkrInputSchema = z.object({
     type: keyResultTypeSchema,
     targetValue: z.number().finite(),
     unit: z.string().trim().min(1).max(50),
+    titleEn: z.string().trim().min(1).max(300).nullish(),
+    titleAr: z.string().trim().min(1).max(300).nullish(),
   }).strict()).min(1).max(20),
 }).strict();
 
@@ -2075,6 +2098,31 @@ export const appRouter = router({
       if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid email or password" });
       await ctx.loginRateLimiter.reset(ctx.clientIp, input.email);
       return user;
+    }),
+    signup: publicProcedure.input(z.object({
+      email: z.string().trim().email(),
+      password: z.string().min(8).max(256),
+      displayName: z.string().trim().min(1).max(200),
+    }).strict()).mutation(async ({ ctx, input }) => {
+      const limit = await ctx.loginRateLimiter.consume(ctx.clientIp, input.email);
+      if (!limit.allowed) {
+        throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Too many attempts. Please try again later." });
+      }
+      try {
+        const user = await ctx.credentials.register(input.email, input.password, input.displayName);
+        await ctx.loginRateLimiter.reset(ctx.clientIp, input.email);
+        return user;
+      } catch (error) {
+        if (isEmailAlreadyRegisteredError(error)) {
+          throw new TRPCError({ code: "CONFLICT", message: "An account with this email already exists." });
+        }
+        console.error("auth.signup failed", error);
+        // TEMPORARY DIAGNOSTIC: surfacing the real error message to find a
+        // production-only bug that isn't showing up in reachable logs.
+        // Revert this to a generic message once the cause is found.
+        const detail = error instanceof Error ? error.message : JSON.stringify(error);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Unable to create account: ${detail}` });
+      }
     }),
   }),
   iam: router({

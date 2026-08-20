@@ -82,6 +82,9 @@ jobs:
           pnpm --filter @spm/backend exec prisma migrate deploy
 
       - name: Install Chromium
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
         run: pnpm --filter @spm/frontend exec playwright install --with-deps chromium
 
       - name: Run Governance acceptance flow

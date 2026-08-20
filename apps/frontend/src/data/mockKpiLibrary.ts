@@ -8,16 +8,16 @@ export interface KpiLibraryRow {
   tag: string;
   perspective: KpiPerspective;
   department: string;
-  owner: { initials: string; color: string };
+  owner: { initials: string; name: string; color: string };
   actual: string;
   target: string;
   variance: string;
   favorable: boolean;
   trend: number[];
-  warning?: boolean;
   freq: "Weekly" | "Monthly" | "Quarterly";
   approval: KpiApproval;
   status: KpiStatus;
+  description?: string;
 }
 
 // Explicit literal classes (not a hash-derived lookup) so Tailwind's
@@ -30,14 +30,22 @@ const OWNER_COLORS: Record<string, string> = {
   TR: "bg-rose-600",
 };
 
+const OWNER_NAMES: Record<string, string> = {
+  MW: "Mike Wallace",
+  PN: "Priya Nair",
+  DF: "Dana Fisher",
+  AM: "Alex Morgan",
+  TR: "Tom Reilly",
+};
+
 function owner(initials: string) {
-  return { initials, color: OWNER_COLORS[initials] ?? "bg-slate-500" };
+  return { initials, name: OWNER_NAMES[initials] ?? initials, color: OWNER_COLORS[initials] ?? "bg-slate-500" };
 }
 
 export const kpiLibraryRows: KpiLibraryRow[] = [
   { id: "kpi-annual-churn-rate", name: "Annual Churn Rate", tag: "Retention", perspective: "customer", department: "Customer Success", owner: owner("MW"), actual: "5.5%", target: "5%", variance: "+0.5%", favorable: false, trend: [3, 4, 4.2, 4.8, 5.1, 5.5], freq: "Monthly", approval: "draft", status: "at-risk" },
   { id: "kpi-bug-backlog-reduction", name: "Bug Backlog Reduction", tag: "Quality", perspective: "internal", department: "Engineering", owner: owner("PN"), actual: "43%", target: "60%", variance: "-17%", favorable: false, trend: [65, 58, 52, 48, 45, 43], freq: "Weekly", approval: "approved", status: "behind" },
-  { id: "kpi-csat-score", name: "CSAT Score", tag: "Satisfaction", perspective: "customer", department: "Customer Success", owner: owner("MW"), actual: "4.1", target: "4.5", variance: "-0.4", favorable: false, trend: [4.6, 4.5, 4.3, 4.2, 4.1, 4.1], warning: true, freq: "Monthly", approval: "approved", status: "at-risk" },
+  { id: "kpi-csat-score", name: "CSAT Score", tag: "Satisfaction", perspective: "customer", department: "Customer Success", owner: owner("MW"), actual: "4.1", target: "4.5", variance: "-0.4", favorable: false, trend: [4.6, 4.5, 4.3, 4.2, 4.1, 4.1], freq: "Monthly", approval: "approved", status: "at-risk" },
   { id: "kpi-customer-acquisition-cost", name: "Customer Acquisition Cost", tag: "Efficiency", perspective: "financial", department: "Marketing", owner: owner("MW"), actual: "$5,200", target: "$4,800", variance: "+$400", favorable: false, trend: [4600, 4750, 4900, 5000, 5100, 5200], freq: "Monthly", approval: "pending", status: "at-risk" },
   { id: "kpi-customer-retention-rate", name: "Customer Retention Rate", tag: "Retention", perspective: "customer", department: "Customer Success", owner: owner("MW"), actual: "94.5%", target: "95%", variance: "-0.5%", favorable: false, trend: [92.5, 93, 93.5, 94, 94.2, 94.5], freq: "Monthly", approval: "approved", status: "on-track" },
   { id: "kpi-deployment-frequency", name: "Deployment Frequency (/wk)", tag: "DevOps", perspective: "internal", department: "Engineering", owner: owner("PN"), actual: "8.4", target: "10", variance: "-1.6", favorable: false, trend: [6.5, 7, 7.5, 7.8, 8.1, 8.4], freq: "Weekly", approval: "approved", status: "at-risk" },

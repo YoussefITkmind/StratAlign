@@ -7,6 +7,7 @@ import { ROUTES } from "@/lib/auth/constants";
 type LogoutButtonProps = {
   className?: string;
   children?: React.ReactNode;
+  "aria-label"?: string;
 };
 
 /**
@@ -15,7 +16,7 @@ type LogoutButtonProps = {
  * supported) is handled server-side per Prompt 1.1 — this button doesn't
  * need to know which auth method the user came in through.
  */
-export function LogoutButton({ className, children }: LogoutButtonProps) {
+export function LogoutButton({ className, children, "aria-label": ariaLabel }: LogoutButtonProps) {
   const [pending, setPending] = useState(false);
 
   async function handleLogout() {
@@ -32,6 +33,7 @@ export function LogoutButton({ className, children }: LogoutButtonProps) {
       type="button"
       onClick={handleLogout}
       disabled={pending}
+      aria-label={ariaLabel}
       className={
         className ??
         "rounded-lg px-3 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-100 disabled:opacity-60"

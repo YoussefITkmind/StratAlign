@@ -9,6 +9,7 @@ import {
 
 describe("auth router", () => {
   const authenticate = vi.fn();
+  const register = vi.fn();
   const consume = vi.fn();
   const reset = vi.fn();
   const reconcile = vi.fn();
@@ -20,6 +21,7 @@ describe("auth router", () => {
     },
     credentials: {
       authenticate,
+      register,
     },
     loginRateLimiter: {
       consume,
@@ -42,6 +44,7 @@ describe("auth router", () => {
 
   beforeEach(() => {
     authenticate.mockReset();
+    register.mockReset();
     consume.mockReset();
     reset.mockReset();
     reconcile.mockReset();
@@ -151,6 +154,107 @@ describe("auth router", () => {
 
     expect(consume).not.toHaveBeenCalled();
     expect(authenticate).not.toHaveBeenCalled();
+  });
+
+  it("creates an account and resets the limit", async () => {
+    const user = {
+      id: "user-2",
+      email: "bob@example.test",
+      displayName: "Bob Test User",
+    };
+
+    register.mockResolvedValue(user);
+
+    await expect(
+      caller.auth.signup({
+        email: "bob@example.test",
+        password: "LocalTestPassword123!",
+        displayName: "Bob Test User",
+      }),
+    ).resolves.toEqual(user);
+
+    expect(register).toHaveBeenCalledWith(
+      "bob@example.test",
+      "LocalTestPassword123!",
+      "Bob Test User",
+    );
+    expect(reset).toHaveBeenCalledWith("127.0.0.1", "bob@example.test");
+  });
+
+  it("returns CONFLICT for an already-registered email", async () => {
+    register.mockRejectedValue({
+      code: "EMAIL_ALREADY_REGISTERED",
+      message: "An account with this email already exists.",
+    });
+
+    await expect(
+      caller.auth.signup({
+        email: "bob@example.test",
+        password: "LocalTestPassword123!",
+        displayName: "Bob Test User",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "An account with this email already exists.",
+    });
+
+    expect(reset).not.toHaveBeenCalled();
+  });
+
+  it("maps unexpected signup failures to a safe internal error", async () => {
+    const sensitiveValue = "database-constraint-details";
+    register.mockRejectedValue(new Error(sensitiveValue));
+
+    let caught: unknown;
+    try {
+      await caller.auth.signup({
+        email: "bob@example.test",
+        password: "LocalTestPassword123!",
+        displayName: "Bob Test User",
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+    });
+    expect((caught as Error).message).toContain("Unable to create account");
+    expect(JSON.stringify(caught)).not.toContain(sensitiveValue);
+  });
+
+  it("blocks signup when the rate limit is exceeded", async () => {
+    consume.mockResolvedValue({
+      allowed: false,
+      remainingAttempts: 0,
+      retryAfterSeconds: 600,
+    });
+
+    await expect(
+      caller.auth.signup({
+        email: "bob@example.test",
+        password: "LocalTestPassword123!",
+        displayName: "Bob Test User",
+      }),
+    ).rejects.toMatchObject({
+      code: "TOO_MANY_REQUESTS",
+      message: "Too many attempts. Please try again later.",
+    });
+
+    expect(register).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["invalid email", { email: "not-an-email", password: "LocalTestPassword123!", displayName: "Bob" }],
+    ["short password", { email: "bob@example.test", password: "short", displayName: "Bob" }],
+    ["empty display name", { email: "bob@example.test", password: "LocalTestPassword123!", displayName: "" }],
+  ])("rejects signup with %s", async (_case, input) => {
+    await expect(caller.auth.signup(input)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+
+    expect(consume).not.toHaveBeenCalled();
+    expect(register).not.toHaveBeenCalled();
   });
 
   it("reconciles an OIDC token to safe platform user data", async () => {

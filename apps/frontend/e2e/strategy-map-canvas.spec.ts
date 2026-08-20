@@ -52,9 +52,9 @@ test.describe("Strategy Map canvas — real data and governance", () => {
     await loginAs(page, "member");
     await page.goto(`/strategy-maps/${fixture.scorecardId}`);
     await expect(page.getByTestId("map-canvas-page")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId("viewer-role-label")).toContainText("Strategy analyst");
-    await page.getByTestId("edit-mode-toggle").click();
+    await expect(page.getByTestId("add-objective-button")).toBeVisible();
 
+    await page.getByTestId("add-objective-button").click();
     await page.getByTestId("existing-objective-select").selectOption(fixture.extraObjectiveId);
     await page.getByTestId("objective-perspective-select").selectOption(fixture.perspectiveId);
     await page.getByTestId("add-existing-objective").click();
@@ -62,14 +62,18 @@ test.describe("Strategy Map canvas — real data and governance", () => {
 
     await page.reload();
     await expect(page.getByTestId(`map-objective-${fixture.extraObjectiveId}`)).toBeVisible();
-    await page.getByTestId("edit-mode-toggle").click();
+    await page.getByTestId("add-objective-button").click();
     await expect(page.getByTestId("existing-objective-select").locator(`option[value="${fixture.extraObjectiveId}"]`)).toHaveCount(0);
+    await page.getByRole("button", { name: "Close" }).click();
 
-    await page.getByTestId("link-source-select").selectOption(fixture.csatObjectiveId);
-    await page.getByTestId("link-target-select").selectOption(fixture.extraObjectiveId);
-    await page.getByTestId("link-strength-select").selectOption("weak");
-    await page.getByTestId("confirm-link-button").click();
-    await expect(page.getByTestId("map-links-panel").locator('[data-testid^="map-link-"]')).toHaveCount(2);
+    await page.getByTestId("connect-nodes-button").click();
+    await page.getByTestId("connect-strength-weak").click();
+    await page.getByTestId(`map-objective-${fixture.csatObjectiveId}`).click();
+    await page.getByTestId(`map-objective-${fixture.extraObjectiveId}`).click();
+    await page.getByTestId("connect-nodes-button").click();
+
+    await page.getByTestId(`map-objective-${fixture.extraObjectiveId}`).click();
+    await expect(page.getByTestId("node-connections-list").locator('[data-testid^="map-link-"]')).toHaveCount(1);
 
     await page.getByTestId("approval-participant-id").fill(fixture.bobId);
     await page.getByTestId("submit-for-approval-button").click();
@@ -102,9 +106,11 @@ test.describe("Strategy Map canvas — real data and governance", () => {
     const viewerPage = await viewer.newPage();
     await loginAs(viewerPage, "executive_viewer");
     await viewerPage.goto(`/strategy-maps/${fixture.scorecardId}`);
-    await expect(viewerPage.getByTestId("edit-mode-toggle")).toBeDisabled();
+    await expect(viewerPage.getByTestId("add-objective-button")).toHaveCount(0);
+    await expect(viewerPage.getByTestId("connect-nodes-button")).toHaveCount(0);
     await expect(viewerPage.getByTestId(`map-objective-${fixture.extraObjectiveId}`)).toBeVisible();
-    await expect(viewerPage.getByTestId("map-links-panel").locator('[data-testid^="map-link-"]')).toHaveCount(2);
+    await viewerPage.getByTestId(`map-objective-${fixture.extraObjectiveId}`).click();
+    await expect(viewerPage.getByTestId("node-connections-list").locator('[data-testid^="map-link-"]')).toHaveCount(1);
     await viewer.close();
   });
 

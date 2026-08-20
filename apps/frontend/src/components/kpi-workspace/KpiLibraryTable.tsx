@@ -3,11 +3,14 @@
 import { useMemo, useState } from "react";
 import {
   Search, ChevronDown, Plus, Download, Sparkles, ArrowUpDown,
-  TrendingUp, Users, Activity, Zap, Pencil, Check, Clock, AlertTriangle,
+  TrendingUp, Users, Activity, Zap, Pencil, Check, Clock,
 } from "lucide-react";
-import { kpiLibraryRows, type KpiPerspective, type KpiApproval, type KpiStatus } from "@/data/mockKpiLibrary";
+import { kpiLibraryRows, type KpiLibraryRow, type KpiPerspective, type KpiApproval, type KpiStatus } from "@/data/mockKpiLibrary";
+import KpiDetailDrawer from "./KpiDetailDrawer";
+import AiSuggestModal from "./AiSuggestModal";
+import CreateKpiModal from "./CreateKpiModal";
 
-const PERSPECTIVE_META: Record<KpiPerspective, { label: string; icon: typeof TrendingUp; text: string }> = {
+export const PERSPECTIVE_META: Record<KpiPerspective, { label: string; icon: typeof TrendingUp; text: string }> = {
   financial: { label: "Financial", icon: TrendingUp, text: "text-blue-600" },
   customer: { label: "Customer", icon: Users, text: "text-teal-600" },
   internal: { label: "Internal", icon: Activity, text: "text-orange-600" },
@@ -34,7 +37,7 @@ const PERSPECTIVE_FILTERS: { key: "all" | KpiPerspective; label: string; icon?: 
   { key: "learning", label: "Learning", icon: Zap },
 ];
 
-const GRID_COLS = "grid-cols-[4px_minmax(220px,2fr)_130px_140px_60px_90px_90px_90px_100px_90px_120px_120px]";
+const GRID_COLS = "grid-cols-[4px_minmax(140px,2.2fr)_minmax(80px,1fr)_minmax(80px,1fr)_28px_minmax(48px,0.7fr)_minmax(48px,0.7fr)_minmax(48px,0.7fr)_64px_minmax(56px,0.6fr)_minmax(76px,1fr)_minmax(76px,1fr)]";
 
 function Sparkline({ values, color }: { values: number[]; color: string }) {
   const min = Math.min(...values);
@@ -62,17 +65,20 @@ function HeaderCell({ label, className = "" }: { label: string; className?: stri
   );
 }
 
-export default function KpiLibraryTable({ onSelectKpi }: { onSelectKpi?: (kpiId: string) => void }) {
+export default function KpiLibraryTable() {
+  const [allRows, setAllRows] = useState<KpiLibraryRow[]>(kpiLibraryRows);
   const [search, setSearch] = useState("");
   const [perspective, setPerspective] = useState<"all" | KpiPerspective>("all");
   const [department, setDepartment] = useState("all");
   const [status, setStatus] = useState("all");
   const [approval, setApproval] = useState("all");
+  const [selectedKpi, setSelectedKpi] = useState<KpiLibraryRow | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
 
-  const departments = useMemo(() => Array.from(new Set(kpiLibraryRows.map((r) => r.department))).sort(), []);
+  const departments = useMemo(() => Array.from(new Set(allRows.map((r) => r.department))).sort(), [allRows]);
 
   const rows = useMemo(() => {
-    return kpiLibraryRows.filter((row) => {
+    return allRows.filter((row) => {
       if (perspective !== "all" && row.perspective !== perspective) return false;
       if (department !== "all" && row.department !== department) return false;
       if (status !== "all" && row.status !== status) return false;
@@ -80,7 +86,7 @@ export default function KpiLibraryTable({ onSelectKpi }: { onSelectKpi?: (kpiId:
       if (search.trim() && !row.name.toLowerCase().includes(search.trim().toLowerCase())) return false;
       return true;
     });
-  }, [search, perspective, department, status, approval]);
+  }, [allRows, search, perspective, department, status, approval]);
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white">
@@ -125,8 +131,11 @@ export default function KpiLibraryTable({ onSelectKpi }: { onSelectKpi?: (kpiId:
           rawValues={Object.keys(APPROVAL_META)}
         />
 
-        <button className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-          <Plus className="h-4 w-4" /> Add KPI <ChevronDown className="h-3.5 w-3.5" />
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          <Plus className="h-4 w-4" /> Add KPI
         </button>
 
         <span className="ml-auto whitespace-nowrap text-sm text-gray-500">
@@ -134,78 +143,156 @@ export default function KpiLibraryTable({ onSelectKpi }: { onSelectKpi?: (kpiId:
         </span>
       </div>
 
-      <div className="overflow-x-auto">
-        <div className="min-w-[1100px]">
-          <div className={`grid ${GRID_COLS} items-center gap-3 border-b border-gray-100 px-4 py-2.5`}>
-            <div />
-            <HeaderCell label="KPI Name" />
-            <HeaderCell label="Perspective" />
-            <HeaderCell label="Department" />
-            <HeaderCell label="Owner" />
-            <HeaderCell label="Actual" />
-            <HeaderCell label="Target" />
-            <HeaderCell label="Variance" />
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Trend</div>
-            <HeaderCell label="Freq" />
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Approval</div>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Status</div>
-          </div>
+      {/* Below md: a stacked card per KPI — the 12-column grid has no room to
+          breathe on a phone, so it adapts instead of squeezing or scrolling. */}
+      <div className="divide-y divide-gray-100 md:hidden">
+        {rows.map((row) => (
+          <KpiCard key={row.id} row={row} onSelect={() => setSelectedKpi(row)} />
+        ))}
+        {rows.length === 0 && <p className="p-10 text-center text-sm text-gray-400">No KPIs match these filters.</p>}
+      </div>
 
-          {rows.map((row) => {
-            const perspectiveMeta = PERSPECTIVE_META[row.perspective];
-            const statusMeta = STATUS_META[row.status];
-            const approvalMeta = APPROVAL_META[row.approval];
-            const PerspectiveIcon = perspectiveMeta.icon;
-            const ApprovalIcon = approvalMeta.icon;
-            return (
-              <div
-                key={row.id}
-                onClick={() => onSelectKpi?.(row.id)}
-                className={`grid ${GRID_COLS} items-center gap-3 border-b border-gray-50 px-4 py-3 last:border-b-0 hover:bg-gray-50 ${onSelectKpi ? "cursor-pointer" : ""}`}
-              >
-                <span className={`h-8 w-1 justify-self-center rounded-full ${statusMeta.dot}`} />
+      {/* md and up: the full table. */}
+      <div className="hidden md:block">
+        <div className={`grid ${GRID_COLS} items-center gap-3 border-b border-gray-100 px-4 py-2.5`}>
+          <div />
+          <HeaderCell label="KPI Name" />
+          <HeaderCell label="Perspective" />
+          <HeaderCell label="Department" />
+          <HeaderCell label="Owner" />
+          <HeaderCell label="Actual" />
+          <HeaderCell label="Target" />
+          <HeaderCell label="Variance" />
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Trend</div>
+          <HeaderCell label="Freq" />
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Approval</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Status</div>
+        </div>
 
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-gray-900">{row.name}</div>
-                  <div className={`text-xs font-medium ${perspectiveMeta.text}`}>{row.tag}</div>
-                </div>
+        {rows.map((row) => {
+          const perspectiveMeta = PERSPECTIVE_META[row.perspective];
+          const statusMeta = STATUS_META[row.status];
+          const approvalMeta = APPROVAL_META[row.approval];
+          const PerspectiveIcon = perspectiveMeta.icon;
+          const ApprovalIcon = approvalMeta.icon;
+          return (
+            <div
+              key={row.id}
+              onClick={() => setSelectedKpi(row)}
+              className={`grid ${GRID_COLS} items-center gap-3 border-b border-gray-50 px-4 py-3 last:border-b-0 hover:bg-gray-50 cursor-pointer`}
+            >
+              <span className={`h-8 w-1 justify-self-center rounded-full ${statusMeta.dot}`} />
 
-                <div className={`flex items-center gap-1.5 text-sm ${perspectiveMeta.text}`}>
-                  <PerspectiveIcon className="h-3.5 w-3.5" /> {perspectiveMeta.label}
-                </div>
-
-                <div className="truncate text-sm text-gray-600">{row.department}</div>
-
-                <span className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold text-white ${row.owner.color}`}>
-                  {row.owner.initials}
-                </span>
-
-                <div className="text-sm font-semibold text-gray-900">{row.actual}</div>
-                <div className="text-sm text-gray-600">{row.target}</div>
-                <div className={`text-sm font-medium ${row.favorable ? "text-emerald-600" : "text-red-500"}`}>{row.variance}</div>
-
-                <div className="flex items-center gap-1.5">
-                  <Sparkline values={row.trend} color={perspectiveMeta.text} />
-                  {row.warning && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />}
-                </div>
-
-                <div className="text-sm text-gray-600">{row.freq}</div>
-
-                <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${approvalMeta.bg} ${approvalMeta.text} ${approvalMeta.border}`}>
-                  <ApprovalIcon className="h-3 w-3" /> {approvalMeta.label}
-                </span>
-
-                <span className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${statusMeta.bg} ${statusMeta.text}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${statusMeta.dot}`} /> {statusMeta.label}
-                </span>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-gray-900">{row.name}</div>
+                <div className={`text-xs font-medium ${perspectiveMeta.text}`}>{row.tag}</div>
               </div>
-            );
-          })}
 
-          {rows.length === 0 && <p className="p-10 text-center text-sm text-gray-400">No KPIs match these filters.</p>}
+              <div className={`flex items-center gap-1.5 text-sm ${perspectiveMeta.text}`}>
+                <PerspectiveIcon className="h-3.5 w-3.5" /> {perspectiveMeta.label}
+              </div>
+
+              <div className="truncate text-sm text-gray-600">{row.department}</div>
+
+              <span className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold text-white ${row.owner.color}`}>
+                {row.owner.initials}
+              </span>
+
+              <div className="text-sm font-semibold text-gray-900">{row.actual}</div>
+              <div className="text-sm text-gray-600">{row.target}</div>
+              <div className={`text-sm font-medium ${row.favorable ? "text-emerald-600" : "text-red-500"}`}>{row.variance}</div>
+
+              <Sparkline values={row.trend} color={perspectiveMeta.text} />
+
+              <div className="text-sm text-gray-600">{row.freq}</div>
+
+              <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium ${approvalMeta.bg} ${approvalMeta.text} ${approvalMeta.border}`}>
+                <ApprovalIcon className="h-3 w-3" /> {approvalMeta.label}
+              </span>
+
+              <span className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${statusMeta.bg} ${statusMeta.text}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${statusMeta.dot}`} /> {statusMeta.label}
+              </span>
+            </div>
+          );
+        })}
+
+        {rows.length === 0 && <p className="p-10 text-center text-sm text-gray-400">No KPIs match these filters.</p>}
+      </div>
+
+      {selectedKpi && <KpiDetailDrawer row={selectedKpi} onClose={() => setSelectedKpi(null)} />}
+
+      {showCreate && (
+        <CreateKpiModal
+          onClose={() => setShowCreate(false)}
+          onCreate={(row) => {
+            setAllRows((current) => [row, ...current]);
+            setShowCreate(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function KpiCard({ row, onSelect }: { row: KpiLibraryRow; onSelect: () => void }) {
+  const perspectiveMeta = PERSPECTIVE_META[row.perspective];
+  const statusMeta = STATUS_META[row.status];
+  const approvalMeta = APPROVAL_META[row.approval];
+  const PerspectiveIcon = perspectiveMeta.icon;
+  const ApprovalIcon = approvalMeta.icon;
+
+  return (
+    <button type="button" onClick={onSelect} className="flex w-full flex-col gap-3 p-4 text-left hover:bg-gray-50">
+      <div className="flex items-start gap-3">
+        <span className={`mt-0.5 h-8 w-1 shrink-0 rounded-full ${statusMeta.dot}`} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className="truncate text-sm font-semibold text-gray-900">{row.name}</p>
+            <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusMeta.bg} ${statusMeta.text}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${statusMeta.dot}`} /> {statusMeta.label}
+            </span>
+          </div>
+          <p className={`text-xs font-medium ${perspectiveMeta.text}`}>{row.tag}</p>
         </div>
       </div>
-    </div>
+
+      <div className="grid grid-cols-3 gap-2 rounded-lg bg-gray-50 px-2 py-2.5 text-center">
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Actual</p>
+          <p className="mt-0.5 text-sm font-semibold text-gray-900">{row.actual}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Target</p>
+          <p className="mt-0.5 text-sm text-gray-600">{row.target}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Variance</p>
+          <p className={`mt-0.5 text-sm font-medium ${row.favorable ? "text-emerald-600" : "text-red-500"}`}>{row.variance}</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-gray-500">
+        <span className={`flex items-center gap-1 ${perspectiveMeta.text}`}>
+          <PerspectiveIcon className="h-3.5 w-3.5" /> {perspectiveMeta.label}
+        </span>
+        <span>{row.department}</span>
+        <span>{row.freq}</span>
+        <span className="flex items-center gap-1.5">
+          <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white ${row.owner.color}`}>
+            {row.owner.initials}
+          </span>
+          {row.owner.name}
+        </span>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium ${approvalMeta.bg} ${approvalMeta.text} ${approvalMeta.border}`}>
+          <ApprovalIcon className="h-3 w-3" /> {approvalMeta.label}
+        </span>
+        <Sparkline values={row.trend} color={perspectiveMeta.text} />
+      </div>
+    </button>
   );
 }
 
@@ -241,14 +328,20 @@ export function KpiStatusBadge({ label, count, tone }: { label: string; count: n
 }
 
 export function KpiLibraryActions() {
+  const [showAiSuggest, setShowAiSuggest] = useState(false);
   return (
     <div className="flex items-center gap-2">
       <button className="flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
         <Download className="h-4 w-4" /> Export
       </button>
-      <button className="flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+      <button
+        onClick={() => setShowAiSuggest(true)}
+        className="flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+      >
         <Sparkles className="h-4 w-4" /> AI Suggest
       </button>
+
+      {showAiSuggest && <AiSuggestModal onClose={() => setShowAiSuggest(false)} />}
     </div>
   );
 }

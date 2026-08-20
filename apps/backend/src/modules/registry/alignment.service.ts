@@ -140,7 +140,7 @@ export class AlignmentService {
     id: string;
     kpiDefinitionId: string;
     strategyNodeId: string;
-    alignmentType: "OBJECTIVE" | "PLAY" | "SECTOR" | "PROJECT";
+    alignmentType: "OBJECTIVE" | "PLAY" | "SECTOR" | "PROJECT" | "THEME";
     createdAt: Date;
   }): AlignmentView {
     return {

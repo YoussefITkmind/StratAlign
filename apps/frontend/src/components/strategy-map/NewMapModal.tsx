@@ -2,20 +2,21 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
-import { StrategyMap } from "@/types/strategyMap";
 
 interface Props {
+  busy?: boolean;
   onClose: () => void;
-  onCreate: (map: StrategyMap) => void;
+  onCreate: (name: string) => void | Promise<void>;
 }
 
-export default function NewMapModal({ onClose, onCreate }: Props) {
+export default function NewMapModal({ busy, onClose, onCreate }: Props) {
   const [name, setName] = useState("");
-  const [period, setPeriod] = useState("FY 2025");
 
-  const submit = () => {
-    if (!name.trim()) return;
-    onCreate({ id: `map-${Date.now()}`, name: name.trim(), period, objectives: [], dependencies: [] });
+  const canSubmit = Boolean(name.trim()) && !busy;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    await onCreate(name.trim());
     onClose();
   };
 
@@ -39,14 +40,6 @@ export default function NewMapModal({ onClose, onCreate }: Props) {
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
             />
           </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Period</label>
-            <input
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-            />
-          </div>
         </div>
 
         <div className="mt-6 flex justify-end gap-2">
@@ -54,8 +47,8 @@ export default function NewMapModal({ onClose, onCreate }: Props) {
             Cancel
           </button>
           <button
-            onClick={submit}
-            disabled={!name.trim()}
+            onClick={() => void submit()}
+            disabled={!canSubmit}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Create Map

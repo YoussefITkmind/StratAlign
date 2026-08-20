@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 import { Rocket, Target, ClipboardList, SlidersHorizontal } from "lucide-react";
-import KpiDetailView from "@/components/kpi-detail/KpiDetailView";
 import CaptureTaskList from "@/components/capture/CaptureTaskList";
 import CaptureSessionView from "@/components/capture/CaptureSessionView";
-import { OkrRegistryPanel } from "@/components/kpi-registry/RegistryPanels";
+import OkrLibraryTable, { OkrLibraryStats, OkrLibraryActions } from "@/components/kpi-workspace/OkrLibraryTable";
 import { RuleBuilderPanel } from "@/components/rule-builder/RuleBuilderPanel";
 import KpiLibraryTable, { KpiStatusBadge, KpiLibraryActions } from "@/components/kpi-workspace/KpiLibraryTable";
 import { kpiStatusCounts } from "@/data/mockKpiLibrary";
@@ -16,17 +15,15 @@ type View =
   | { type: "okr" }
   | { type: "library" }
   | { type: "rules" }
-  | { type: "detail"; kpiId: string }
   | { type: "capture-list" }
   | { type: "capture-session"; taskId: string };
 
 export default function KpiWorkspacePage() {
   const [view, setView] = useState<View>({ type: "library" });
 
-  // which top-level tab reads as "active" even while drilled into a definition/detail/session view
+  // which top-level tab reads as "active" even while drilled into a session view
   const activeTab: TopTab =
-    view.type === "detail" ? "library"
-      : view.type === "capture-session" ? "capture"
+    view.type === "capture-session" ? "capture"
       : view.type === "capture-list" ? "capture"
       : view.type;
 
@@ -48,27 +45,18 @@ export default function KpiWorkspacePage() {
                 <KpiStatusBadge label="Behind" count={kpiStatusCounts.behind} tone="behind" />
               </>
             )}
+            {activeTab === "okr" && <OkrLibraryStats />}
           </div>
           {activeTab === "library" && <KpiLibraryActions />}
+          {activeTab === "okr" && <OkrLibraryActions />}
         </div>
       )}
 
-      {view.type === "okr" && <OkrRegistryPanel />}
+      {view.type === "okr" && <OkrLibraryTable />}
 
-      {view.type === "library" && (
-        <KpiLibraryTable onSelectKpi={(kpiId) => setView({ type: "detail", kpiId })} />
-      )}
+      {view.type === "library" && <KpiLibraryTable />}
 
       {view.type === "rules" && <RuleBuilderPanel />}
-
-      {view.type === "detail" && (
-        <KpiDetailView
-          kpiId={view.kpiId}
-          onBack={() => setView({ type: "library" })}
-          onNavigateKpi={(kpiId) => setView({ type: "detail", kpiId })}
-          onEditDefinition={() => setView({ type: "library" })}
-        />
-      )}
 
       {view.type === "capture-list" && (
         <CaptureTaskList onSelectTask={(taskId) => setView({ type: "capture-session", taskId })} />

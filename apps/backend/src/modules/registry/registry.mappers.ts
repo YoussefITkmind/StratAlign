@@ -85,6 +85,8 @@ export function toAlignmentTypeView(value: AlignmentType): AlignmentTypeView {
       return "sector";
     case "PROJECT":
       return "project";
+    case "THEME":
+      return "theme";
   }
 }
 
@@ -98,6 +100,8 @@ export function fromAlignmentTypeView(value: AlignmentTypeView): AlignmentType {
       return "SECTOR";
     case "project":
       return "PROJECT";
+    case "theme":
+      return "THEME";
   }
 }
 

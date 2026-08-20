@@ -19,7 +19,7 @@ import ObjectiveNode from "./MapOverviewObjectiveNode";
 import DependencyEdge from "./DependencyEdge";
 import EdgeMarkerDefs from "./MapOverviewEdgeMarkerDefs";
 import DependencyLegend from "./DependencyLegend";
-import ZoomControls from "./ZoomControls";
+import ZoomControls from "../ZoomControls";
 import AddObjectiveModal from "./AddObjectiveModal";
 import NewMapModal from "./NewMapModal";
 import MobileMapList from "./MobileMapList";
