@@ -127,8 +127,12 @@ export class ScorecardService {
     objectiveNodeId: string;
     objectiveNameEn: string;
     objectiveNameAr: string;
+    perspective: { id: string; nameEn: string; nameAr: string };
+    owners: Array<{ id: string; displayName: string | null; email: string }>;
     kpiDefinitionId: string | null;
     kpiNameEn: string | null;
+    kpiCount: number;
+    initiativeCount: number;
     status: RagStatus | null;
     score: number | null;
     progress: number | null;
@@ -147,12 +151,18 @@ export class ScorecardService {
 
     const objectiveIds = [...new Set(placements.map((placement) => placement.objectiveNodeId))];
 
-    const [objectives, alignments, activeWeighting] = await Promise.all([
+    const [objectives, alignments, activeWeighting, executionEdges] = await Promise.all([
       this.prisma.strategyNode.findMany({
         where: { id: { in: objectiveIds } },
+        include: {
+          ownerAssignments: {
+            orderBy: [{ assignedAt: "asc" }, { id: "asc" }],
+            include: { owner: { select: { id: true, displayName: true, email: true } } },
+          },
+        },
       }),
       this.prisma.alignment.findMany({
-        where: { strategyNodeId: { in: objectiveIds } },
+        where: { strategyNodeId: { in: objectiveIds }, alignmentType: "OBJECTIVE" },
         include: {
           kpiDefinition: {
             include: { activeVersion: true },
@@ -160,7 +170,36 @@ export class ScorecardService {
         },
       }),
       this.getActiveWeighting(scorecardId),
+      this.prisma.strategyEdge.findMany({
+        where: {
+          fromNodeId: { in: objectiveIds },
+          edgeType: "EXECUTED_BY",
+          toNode: { type: "STRATEGIC_PLAY" },
+        },
+        select: { fromNodeId: true, toNodeId: true },
+      }),
     ]);
+
+    const playIds = [...new Set(executionEdges.map((edge) => edge.toNodeId))];
+    const initiativeGroups = playIds.length === 0
+      ? []
+      : await this.prisma.initiative.groupBy({
+          by: ["strategicPlayNodeId"],
+          where: { strategicPlayNodeId: { in: playIds } },
+          _count: { _all: true },
+        });
+    const initiativeCountByPlay = new Map(
+      initiativeGroups.map((group) => [group.strategicPlayNodeId, group._count._all]),
+    );
+    const initiativeCountByObjective = new Map<string, number>();
+    for (const edge of executionEdges) {
+      initiativeCountByObjective.set(
+        edge.fromNodeId,
+        (initiativeCountByObjective.get(edge.fromNodeId) ?? 0) +
+          (initiativeCountByPlay.get(edge.toNodeId) ?? 0),
+      );
+    }
+    const perspectiveById = new Map(perspectives.map((perspective) => [perspective.id, perspective]));
 
     const objectiveById = new Map(
       objectives.map((node) => [node.id, node]),
@@ -237,7 +276,8 @@ export class ScorecardService {
     const details = await Promise.all(
       placements.map(async (placement) => {
         const objective = objectiveById.get(placement.objectiveNodeId);
-        if (!objective) return null;
+        const perspective = perspectiveById.get(placement.perspectiveId);
+        if (!objective || !perspective) return null;
 
         const objectiveAlignments =
           alignmentsByObjective.get(placement.objectiveNodeId) ?? [];
@@ -388,9 +428,17 @@ export class ScorecardService {
           objectiveNodeId: placement.objectiveNodeId,
           objectiveNameEn: objective.nameEn,
           objectiveNameAr: objective.nameAr,
+          perspective: {
+            id: perspective.id,
+            nameEn: perspective.nameEn,
+            nameAr: perspective.nameAr,
+          },
+          owners: objective.ownerAssignments.map((assignment) => assignment.owner),
           kpiDefinitionId: primaryAlignment?.kpiDefinitionId ?? null,
           kpiNameEn:
             primaryAlignment?.kpiDefinition.activeVersion?.nameEn ?? null,
+          kpiCount: objectiveAlignments.length,
+          initiativeCount: initiativeCountByObjective.get(placement.objectiveNodeId) ?? 0,
           status,
           score,
           progress,

@@ -7,8 +7,12 @@ export interface ScorecardPlacementDetail {
   objectiveNodeId: string;
   objectiveNameEn: string;
   objectiveNameAr: string;
+  perspective: { id: string; nameEn: string; nameAr: string };
+  owners: Array<{ id: string; displayName: string | null; email: string }>;
   kpiDefinitionId: string | null;
   kpiNameEn: string | null;
+  kpiCount: number;
+  initiativeCount: number;
   status: "on_track" | "watch" | "off_track" | null;
   score: number | null;
   progress: number | null;

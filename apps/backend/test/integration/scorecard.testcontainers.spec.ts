@@ -76,6 +76,7 @@ describe.sequential("Scorecard module with PostgreSQL Testcontainers", () => {
       "scorecard"."placements",
       "scorecard"."perspectives",
       "scorecard"."scorecards",
+      "execution"."initiatives",
       "governance"."decision_log_entries",
       "governance"."escalation_cases",
       "governance"."approval_cases",
@@ -467,6 +468,48 @@ describe.sequential("Scorecard module with PostgreSQL Testcontainers", () => {
     });
     details = await scorecard.listPlacementDetails(scorecardId);
     expect(details.find((row) => row.objectiveNodeId === customerObjectiveId)?.progress).toBe(100);
+  });
+  it("exposes persisted Strategy Map objective properties without duplicating score semantics", async () => {
+    await prisma.ownerAssignment.create({
+      data: { nodeId: financialObjectiveId, ownerUserId: approverId, assignedBy: submitterId },
+    });
+    const play = await prisma.strategyNode.create({
+      data: {
+        type: "STRATEGIC_PLAY",
+        nameEn: "Margin transformation",
+        nameAr: "Margin transformation",
+        planVersionId,
+        state: "ACTIVE",
+        createdBy: submitterId,
+      },
+    });
+    await prisma.strategyEdge.create({
+      data: {
+        fromNodeId: financialObjectiveId,
+        toNodeId: play.id,
+        edgeType: "EXECUTED_BY",
+        planVersionId,
+      },
+    });
+    await prisma.initiative.createMany({
+      data: [
+        { nameEn: "Pricing", nameAr: "Pricing", strategicPlayNodeId: play.id, ownerUserId: approverId, stage: "DESIGN" },
+        { nameEn: "Sourcing", nameAr: "Sourcing", strategicPlayNodeId: play.id, ownerUserId: approverId, stage: "PILOT" },
+      ],
+    });
+
+    const details = await scorecard.listPlacementDetails(scorecardId);
+    const financial = details.find((row) => row.objectiveNodeId === financialObjectiveId);
+    const customer = details.find((row) => row.objectiveNodeId === customerObjectiveId);
+
+    expect(financial).toMatchObject({
+      perspective: { id: financialId, nameEn: "Financial", nameAr: expect.any(String) },
+      owners: [{ id: approverId, displayName: "Scorecard Approver", email: "scorecard-approver@example.test" }],
+      score: 0,
+      kpiCount: 1,
+      initiativeCount: 2,
+    });
+    expect(customer).toMatchObject({ owners: [], score: 100, kpiCount: 1, initiativeCount: 0 });
   });
   it("requires an approved workflow case for a structural perspective change", async () => {
     await expect(scorecard.addPerspective({
