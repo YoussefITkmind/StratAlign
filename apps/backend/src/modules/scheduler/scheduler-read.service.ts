@@ -1,4 +1,18 @@
 import type { PrismaService } from "../../database/prisma.service";
+import type { CadenceInstanceStatus } from "../../generated/prisma/enums";
+
+export interface ListCadenceInstancesInput {
+  from: Date;
+  to: Date;
+  statuses?: CadenceInstanceStatus[];
+  cadenceDefinitionId?: string;
+}
+
+const calendarInclude = {
+  cadenceDefinition: {
+    select: { id: true, key: true, name: true, subjectType: true, subjectId: true },
+  },
+} as const;
 
 /**
  * Read-only projection over the canonical scheduling tables for UI surfaces
@@ -41,5 +55,26 @@ export class SchedulerReadService {
       status: row.status,
       reviewDueAt: row.reviewDueAt,
     }));
+  }
+
+  async listInstances(input: ListCadenceInstancesInput) {
+    if (!(input.from < input.to)) throw new Error("Cadence instance range must have from before to");
+
+    return this.prisma.cadenceInstance.findMany({
+      where: {
+        occurrenceAt: { gte: input.from, lt: input.to },
+        ...(input.statuses?.length ? { status: { in: input.statuses } } : {}),
+        ...(input.cadenceDefinitionId ? { cadenceDefinitionId: input.cadenceDefinitionId } : {}),
+      },
+      include: calendarInclude,
+      orderBy: [{ occurrenceAt: "asc" }, { id: "asc" }],
+    });
+  }
+
+  async getInstance(instanceId: string) {
+    return this.prisma.cadenceInstance.findUnique({
+      where: { id: instanceId },
+      include: calendarInclude,
+    });
   }
 }
