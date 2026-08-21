@@ -210,13 +210,111 @@ describe("AiSuggestModal — theme selection and generation", () => {
     expect(options).not.toContain("Sunset Theme");
   });
 
-  it("cannot generate until a theme is chosen", () => {
-    render(<AiSuggestModal onClose={() => {}} />);
+  it("in one-by-one mode, cannot generate until a theme is chosen", () => {
+    render(<AiSuggestModal onClose={() => {}} initialMode="one-by-one" />);
     const generate = screen.getByTestId("generate");
 
     expect(isDisabled(generate)).toBe(true);
     fireEvent.click(generate);
     expect(hooks.generate).not.toHaveBeenCalled();
+  });
+
+  it("in global mode, Generate is enabled without choosing a theme", () => {
+    render(<AiSuggestModal onClose={() => {}} />);
+    expect(isDisabled(screen.getByTestId("generate"))).toBe(false);
+  });
+
+  it("in global mode with no theme chosen, fans out one generate call per active theme", async () => {
+    render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
+    fireEvent.click(screen.getByTestId("generate"));
+
+    await waitFor(() => expect(hooks.generate).toHaveBeenCalledTimes(2));
+    const calls = hooks.generate.mock.calls.map((call) => call[0]).sort(
+      (a, b) => (a as { themeNodeId: string }).themeNodeId.localeCompare((b as { themeNodeId: string }).themeNodeId),
+    );
+    expect(calls).toEqual(
+      [
+        { themeNodeId: OTHER_THEME_ID, kinds: ["kpi", "okr"], maxSuggestions: 8 },
+        { themeNodeId: THEME_ID, kinds: ["kpi", "okr"], maxSuggestions: 8 },
+      ].sort((a, b) => a.themeNodeId.localeCompare(b.themeNodeId)),
+    );
+  });
+
+  it("in global mode, merges suggestions generated for every theme so each theme badge is represented", async () => {
+    hooks.generate.mockImplementation(async ({ themeNodeId }: { themeNodeId: string }) => {
+      if (themeNodeId === THEME_ID) return batch([kpiSuggestion()]);
+      return {
+        ...batch([]),
+        themeNodeId: OTHER_THEME_ID,
+        suggestions: [
+          okrSuggestion({ themeNodeId: OTHER_THEME_ID, themeNameEn: "Customer Experience" }),
+        ],
+      };
+    });
+    render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
+    fireEvent.click(screen.getByTestId("generate"));
+
+    await waitFor(() => expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy());
+    expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
+
+    const kpiCard = screen.getByText("LTV to CAC Ratio").closest("div.rounded-xl") as HTMLElement;
+    const okrCard = screen
+      .getByText("Expand into enterprise accounts")
+      .closest("div.rounded-xl") as HTMLElement;
+    expect(within(kpiCard).getByText("Revenue & Growth")).toBeTruthy();
+    expect(within(okrCard).getByText("Customer Experience")).toBeTruthy();
+  });
+
+  it("in global mode, the theme selector filters the merged results without re-generating", async () => {
+    hooks.generate.mockImplementation(async ({ themeNodeId }: { themeNodeId: string }) => {
+      if (themeNodeId === THEME_ID) return batch([kpiSuggestion()]);
+      return {
+        ...batch([]),
+        themeNodeId: OTHER_THEME_ID,
+        suggestions: [
+          okrSuggestion({ themeNodeId: OTHER_THEME_ID, themeNameEn: "Customer Experience" }),
+        ],
+      };
+    });
+    render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
+    fireEvent.click(screen.getByTestId("generate"));
+    await waitFor(() => expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy());
+    expect(hooks.generate).toHaveBeenCalledTimes(2);
+
+    fireEvent.change(screen.getByTestId("theme-select"), { target: { value: OTHER_THEME_ID } });
+
+    expect(screen.queryByText("LTV to CAC Ratio")).toBeNull();
+    expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
+    // Filtering alone never re-triggers generation.
+    expect(hooks.generate).toHaveBeenCalledTimes(2);
+  });
+
+  it("in global mode, surfaces a per-theme failure without hiding the themes that succeeded", async () => {
+    hooks.generate.mockImplementation(async ({ themeNodeId }: { themeNodeId: string }) => {
+      if (themeNodeId === THEME_ID) return batch([kpiSuggestion()]);
+      throw new Error("Theme context unavailable");
+    });
+    render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
+    fireEvent.click(screen.getByTestId("generate"));
+
+    await waitFor(() => expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy());
+    expect(screen.getByText(/Customer Experience.*Theme context unavailable/)).toBeTruthy();
+  });
+
+  it("in global mode, accept uses the provider/model from the suggestion's own theme batch", async () => {
+    hooks.generate.mockImplementation(async ({ themeNodeId }: { themeNodeId: string }) => {
+      if (themeNodeId === THEME_ID) {
+        return { ...batch([kpiSuggestion()]), provider: "anthropic", model: "claude-sonnet-5" };
+      }
+      return { ...batch([]), themeNodeId: OTHER_THEME_ID, provider: "other-provider", model: "other-model" };
+    });
+    render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
+    fireEvent.click(screen.getByTestId("generate"));
+    await waitFor(() => expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId(`accept-${CLEAN_ID}`));
+    await waitFor(() => expect(hooks.accept).toHaveBeenCalledOnce());
+    expect(payloadOf(hooks.accept)).toMatchObject({ provider: "anthropic", model: "claude-sonnet-5" });
   });
 
   it("generates for the selected theme with the active kind filter", async () => {
