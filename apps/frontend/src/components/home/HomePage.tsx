@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import type { PlatformRole } from "@spm/domain-iam";
 import { trpc } from "@/lib/trpc/client";
-import { resolveHomeRole, widgetsForRole, type WidgetKey } from "@/lib/roleWidgetConfig";
+import type { WidgetKey } from "@/lib/roleWidgetConfig";
 
 interface HomeKpi {
   id: string;
@@ -252,9 +252,10 @@ const WIDGET_SPAN: Record<WidgetKey, string> = {
   initiativesPlaceholder: "lg:col-span-2",
 };
 
-export function HomePage({ roles }: { roles: PlatformRole[] }) {
-  const role = useMemo(() => resolveHomeRole(roles), [roles]);
-  const widgets = useMemo(() => widgetsForRole(role), [role]);
+export function HomePage({ resolvedRole: role, resolvedWidgets: widgets }: {
+  resolvedRole: PlatformRole | null;
+  resolvedWidgets: WidgetKey[];
+}) {
   const snapshotQuery = trpc.home.snapshot.useQuery();
   const snapshot = (snapshotQuery.data as HomeSnapshot | undefined) ?? { kpis: [], upcomingReviews: [] };
 

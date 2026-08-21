@@ -2,6 +2,22 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, requireRole, router } from "./index";
 
+export interface ScorecardPlacementDetail {
+  perspectiveId: string;
+  objectiveNodeId: string;
+  objectiveNameEn: string;
+  objectiveNameAr: string;
+  perspective: { id: string; nameEn: string; nameAr: string };
+  owners: Array<{ id: string; displayName: string | null; email: string }>;
+  kpiDefinitionId: string | null;
+  kpiNameEn: string | null;
+  kpiCount: number;
+  initiativeCount: number;
+  status: "on_track" | "watch" | "off_track" | null;
+  score: number | null;
+  progress: number | null;
+  trend: Array<{ period: string; score: number }>;
+}
 export interface ScorecardServiceContract {
   listScorecards(): Promise<unknown[]>;
   getScorecard(scorecardId: string): Promise<unknown>;
@@ -32,12 +48,13 @@ export interface ScorecardServiceContract {
     perspectiveId: string;
     objectiveNodeId: string;
   }): Promise<{ perspectiveId: string; objectiveNodeId: string }>;
-  listPlacementDetails(scorecardId: string): Promise<unknown[]>;
+  listPlacementDetails(scorecardId: string): Promise<ScorecardPlacementDetail[]>;
   previewWeighting(input: {
     scorecardId: string;
     draftWeights: Record<string, number>;
     scoringFormulaId?: string;
   }): Promise<unknown>;
+  scoreTrend(scorecardId: string): Promise<Array<{ period: string; score: number }>>;
   proposeWeighting(input: {
     scorecardId: string;
     draftWeights: Record<string, number>;
@@ -158,6 +175,11 @@ export const scorecardRouter = router({
       .input(z.object({ scorecardId: id, draftWeights: weights, scoringFormulaId: id.optional() }).strict())
       .query(async ({ ctx, input }) => {
         try { return await service(ctx).previewWeighting(input); } catch (error) { return fail(error); }
+      }),
+    trend: protectedProcedure
+      .input(z.object({ scorecardId: id }).strict())
+      .query(async ({ ctx, input }) => {
+        try { return await service(ctx).scoreTrend(input.scorecardId); } catch (error) { return fail(error); }
       }),
     propose: scorecardAuthor()
       .input(z.object({ scorecardId: id, draftWeights: weights, scoringFormulaId: id.optional(), activeFrom: z.coerce.date(), approvalParticipantId: id }).strict())

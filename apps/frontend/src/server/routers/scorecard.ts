@@ -21,5 +21,8 @@ export const scorecardRouter = router({
     preview: authenticatedProcedure
       .input(z.object({ scorecardId: id, draftWeights: weights, scoringFormulaId: id.optional() }).strict())
       .query(({ ctx, input }) => forward(() => backend(ctx).scorecard.weighting.preview.query(input))),
+    trend: authenticatedProcedure
+      .input(z.object({ scorecardId: id }).strict())
+      .query(({ ctx, input }) => forward(() => backend(ctx).scorecard.weighting.trend.query(input))),
   }),
 });

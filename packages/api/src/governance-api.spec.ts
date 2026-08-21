@@ -9,6 +9,7 @@ import {
   appRouter,
   type GovernanceCaseOutput,
   type GovernanceEscalationOutput,
+  type GovernanceEscalationListOutput,
   type TrpcContext,
 } from "./index";
 
@@ -95,6 +96,19 @@ const escalationOutput:
       ),
   };
 
+const escalationListOutput: GovernanceEscalationListOutput = {
+  ...escalationOutput,
+  approvalCase: {
+    id: CASE_ID,
+    entityType: "RuleDefinition",
+    entityId: "rule-definition-123",
+    currentState: "PENDING_APPROVAL",
+    approvalSlaMs: 86_400_000,
+  },
+  participantUser: { id: USER_ID, displayName: "Approver", email: "approver@example.test" },
+  acknowledger: { id: USER_ID, displayName: "Approver", email: "approver@example.test" },
+};
+
 function createContext() {
   const myPendingApprovals =
     vi.fn(
@@ -127,6 +141,7 @@ function createContext() {
       async () =>
         escalationOutput,
     );
+  const listEscalations = vi.fn(async () => [escalationListOutput]);
 
   const auditTap =
     vi.fn(
@@ -180,6 +195,7 @@ function createContext() {
     },
 
     governanceEscalation: {
+      listForParticipant: listEscalations,
       acknowledge:
         acknowledgeEscalation,
     },
@@ -198,6 +214,7 @@ function createContext() {
     submitCase,
     transition,
     acknowledgeEscalation,
+    listEscalations,
     auditTap,
   };
 }
@@ -205,6 +222,13 @@ function createContext() {
 describe(
   "governance API",
   () => {
+    it("lists persisted escalations for the authenticated participant", async () => {
+      const { context, listEscalations } = createContext();
+      const caller = appRouter.createCaller(context);
+      await expect(caller.governance.escalation.list({ includeAcknowledged: false }))
+        .resolves.toEqual([escalationListOutput]);
+      expect(listEscalations).toHaveBeenCalledWith(USER_ID, false);
+    });
     it(
       "returns the authenticated user's pending approvals",
       async () => {

@@ -649,10 +649,26 @@ export interface GovernanceEscalationOutput {
 }
 
 export interface GovernanceEscalationServiceContract {
+  listForParticipant(
+    participantUserId: string,
+    includeAcknowledged?: boolean,
+  ): Promise<GovernanceEscalationListOutput[]>;
   acknowledge(
     escalationId: string,
     actingUserId: string,
   ): Promise<GovernanceEscalationOutput>;
+}
+
+export interface GovernanceEscalationListOutput extends GovernanceEscalationOutput {
+  approvalCase: {
+    id: string;
+    entityType: string;
+    entityId: string;
+    currentState: string;
+    approvalSlaMs: number;
+  };
+  participantUser: { id: string; displayName: string | null; email: string };
+  acknowledger: { id: string; displayName: string | null; email: string } | null;
 }
 
 export interface AuditTapServiceContract {
@@ -985,6 +1001,22 @@ const governanceEscalationOutputSchema = z.object({
   acknowledgedAt: z.date().nullable(),
   acknowledgedBy: z.string().uuid().nullable(),
   createdAt: z.date(),
+}).strict();
+
+const governanceEscalationListOutputSchema = governanceEscalationOutputSchema.extend({
+  approvalCase: z.object({
+    id: z.string().uuid(),
+    entityType: z.string(),
+    entityId: z.string(),
+    currentState: z.string(),
+    approvalSlaMs: z.number().int().nonnegative(),
+  }).strict(),
+  participantUser: z.object({
+    id: z.string().uuid(), displayName: z.string().nullable(), email: z.string().email(),
+  }).strict(),
+  acknowledger: z.object({
+    id: z.string().uuid(), displayName: z.string().nullable(), email: z.string().email(),
+  }).strict().nullable(),
 }).strict();
 
 const governanceDecisionInputSchema = z.object({
@@ -1706,6 +1738,18 @@ export const appRouter = router({
         ),
 
     escalation: router({
+      list:
+        protectedProcedure
+          .input(z.object({ includeAcknowledged: z.boolean().optional().default(true) }).strict())
+          .output(z.array(governanceEscalationListOutputSchema))
+          .query(({ ctx, input }) =>
+            mapGovernanceErrors(() =>
+              ctx.governanceEscalation.listForParticipant(
+                ctx.session.user.id,
+                input.includeAcknowledged,
+              ),
+            ),
+          ),
       acknowledge:
         protectedProcedure
           .input(
