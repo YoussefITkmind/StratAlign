@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { requireRole, router } from "./index";
+import { protectedProcedure, requireRole, router } from "./index";
 
 /**
  * Theme-level AI suggestion surface.
@@ -141,10 +141,16 @@ declare module "./index" {
 const id = z.string().uuid();
 
 /**
- * Both operations need the ability to author registry content, because both
- * ultimately create it — accepting a proposal is a KPI or OKR creation with an
- * extra provenance row, so it cannot be reachable to anyone who could not
- * create the same thing by hand.
+ * Generation is read-only against the registry (it proposes, nothing is
+ * created yet), so any signed-in user may request suggestions.
+ */
+const suggestionGenerator = () => protectedProcedure;
+
+/**
+ * Accepting a suggestion creates real KPI/OKR registry content, so it needs
+ * the same authorization as creating that content by hand — anyone who could
+ * not call `registry.kpi.createDraft`/`registry.okr.create` directly must not
+ * be able to reach the same effect through acceptance.
  */
 const suggestionAuthor = () =>
   requireRole(
@@ -367,7 +373,7 @@ export const aiSuggestionRouter = router({
    * Generation is a mutation rather than a query: it spends money, is not
    * cacheable, and must never be replayed by a client-side refetch.
    */
-  generate: suggestionAuthor()
+  generate: suggestionGenerator()
     .input(
       z
         .object({
