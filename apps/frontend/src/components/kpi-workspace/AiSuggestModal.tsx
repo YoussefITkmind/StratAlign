@@ -25,6 +25,15 @@ type Mode = "global" | "one-by-one";
 type Batch = NonNullable<ReturnType<typeof useGenerate>["data"]>;
 type Suggestion = Batch["suggestions"][number];
 
+/**
+ * What the card list actually renders. `provider`/`model` are carried per
+ * suggestion (not read off a single shared batch) because "Global (All
+ * Themes)" merges suggestions generated from several independent per-theme
+ * batches — each one may have been produced by a different call, so the
+ * accept payload must use the batch that suggestion actually came from.
+ */
+type DisplaySuggestion = Suggestion & { provider: string; model: string };
+
 function useGenerate() {
   return trpc.aiSuggestion.generate.useMutation();
 }
@@ -53,7 +62,7 @@ function toneFor(name: string) {
  */
 const STRONG_DUPLICATE_THRESHOLD = 0.9;
 
-function isStrongDuplicate(suggestion: Suggestion): boolean {
+function isStrongDuplicate(suggestion: DisplaySuggestion): boolean {
   return suggestion.duplicateMatches.some(
     (match) => match.similarity >= STRONG_DUPLICATE_THRESHOLD,
   );
@@ -86,8 +95,20 @@ export default function AiSuggestModal({
 }) {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>(initialTypeFilter);
+  /**
+   * Dual purpose, by design: in "one-by-one" mode this is the one theme
+   * Generate targets. In "global" mode it is optional — empty means "every
+   * active theme" (fanned out on Generate) and also narrows which already-
+   * generated cards are shown, mirroring the "All Themes" filter in the
+   * design.
+   */
   const [themeNodeId, setThemeNodeId] = useState("");
   const [cursor, setCursor] = useState(0);
+  /** Suggestions merged from a "Global (All Themes)" fan-out. Null until one runs. */
+  const [manualSuggestions, setManualSuggestions] = useState<DisplaySuggestion[] | null>(null);
+  /** True only while the in-flight/last generate spanned every theme, for copy. */
+  const [wasFanOut, setWasFanOut] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [resolved, setResolved] = useState<Record<string, "accepted" | "rejected">>({});
   const [edits, setEdits] = useState<Record<string, EditDraft>>({});
   const [editing, setEditing] = useState<string | null>(null);
@@ -112,19 +133,35 @@ export default function AiSuggestModal({
   const accept = trpc.aiSuggestion.accept.useMutation();
   const acceptMany = trpc.aiSuggestion.acceptMany.useMutation();
 
-  const batch = generate.data ?? null;
+  const rawBatch = generate.data ?? null;
+  /**
+   * The working list, always enriched with the provider/model that produced
+   * each item. `manualSuggestions` (a merge across themes) wins when present;
+   * otherwise this falls back to the single most recent generate call.
+   */
+  const suggestions: DisplaySuggestion[] =
+    manualSuggestions ??
+    (rawBatch
+      ? rawBatch.suggestions.map((suggestion) => ({
+          ...suggestion,
+          provider: rawBatch.provider,
+          model: rawBatch.model,
+        }))
+      : []);
+  const hasBatch = manualSuggestions !== null || rawBatch !== null;
 
-  /** Everything still awaiting a decision, after the kind filter. */
-  const reviewable = (batch?.suggestions ?? []).filter((suggestion) => {
+  /** Everything still awaiting a decision, after the kind and (in global mode) theme filter. */
+  const reviewable = suggestions.filter((suggestion) => {
     if (resolved[suggestion.suggestionId]) return false;
     if (typeFilter !== "all" && suggestion.kind !== typeFilter) return false;
+    if (mode === "global" && themeNodeId && suggestion.themeNodeId !== themeNodeId) return false;
     return true;
   });
 
   // "One By One" narrows what is shown, never what a batch action operates on.
   const visible = mode === "one-by-one" ? reviewable.slice(cursor, cursor + 1) : reviewable;
 
-  const busy = generate.isPending || accept.isPending || acceptMany.isPending;
+  const busy = isGenerating || generate.isPending || accept.isPending || acceptMany.isPending;
 
   /** What "Accept all" would actually submit — strong duplicates excluded. */
   const acceptAllCount = reviewable.filter(
@@ -137,7 +174,7 @@ export default function AiSuggestModal({
     setCursor((current) => Math.min(current, Math.max(0, reviewable.length - 2)));
 
   /** The payload the server re-validates. Edits win; everything else is as generated. */
-  const toAcceptPayload = (suggestion: Suggestion) => {
+  const toAcceptPayload = (suggestion: DisplaySuggestion) => {
     const draft = edits[suggestion.suggestionId];
     const keyResults = suggestion.okr?.keyResults.map((keyResult, index) => ({
       ...keyResult,
@@ -154,8 +191,8 @@ export default function AiSuggestModal({
       descriptionEn: draft?.descriptionEn ?? suggestion.descriptionEn,
       descriptionAr: suggestion.descriptionAr,
       confidence: suggestion.confidence,
-      provider: batch?.provider ?? "",
-      model: batch?.model ?? "",
+      provider: suggestion.provider,
+      model: suggestion.model,
       edited: Boolean(draft),
       // Only ever true for a suggestion the reviewer explicitly confirmed. A
       // flag on its own is not consent: sending true just because a duplicate
@@ -180,18 +217,52 @@ export default function AiSuggestModal({
     setConfirmedDuplicates({});
     setConfirming(null);
     setCursor(0);
+    setManualSuggestions(null);
+    setWasFanOut(false);
+    setIsGenerating(true);
+
+    const kinds: SuggestionKind[] = typeFilter === "all" ? ["kpi", "okr"] : [typeFilter];
+
     try {
-      await generate.mutateAsync({
-        themeNodeId,
-        kinds: typeFilter === "all" ? ["kpi", "okr"] : [typeFilter],
-        maxSuggestions: 8,
-      });
+      if (mode === "global" && !themeNodeId) {
+        // "Global (All Themes)" with nothing narrowed down: fan out one
+        // generate call per active theme (each still scoped to just that
+        // theme, matching the prompt's "stay inside that theme's scope" rule)
+        // and merge the results so every real theme from the hierarchy is
+        // represented at once, the way the design shows.
+        setWasFanOut(true);
+        const targets = themes;
+        const settled = await Promise.allSettled(
+          targets.map((theme) =>
+            generate.mutateAsync({ themeNodeId: theme.id, kinds, maxSuggestions: 8 }),
+          ),
+        );
+
+        const merged: DisplaySuggestion[] = [];
+        const failures: string[] = [];
+        settled.forEach((result, index) => {
+          if (result.status === "fulfilled") {
+            for (const suggestion of result.value.suggestions) {
+              merged.push({ ...suggestion, provider: result.value.provider, model: result.value.model });
+            }
+          } else {
+            failures.push(`${targets[index].nameEn}: ${message(result.reason)}`);
+          }
+        });
+
+        setManualSuggestions(merged);
+        if (failures.length > 0) setError(failures.join(" · "));
+      } else {
+        await generate.mutateAsync({ themeNodeId, kinds, maxSuggestions: 8 });
+      }
     } catch (cause) {
       setError(message(cause));
+    } finally {
+      setIsGenerating(false);
     }
   };
 
-  const acceptOne = async (suggestion: Suggestion) => {
+  const acceptOne = async (suggestion: DisplaySuggestion) => {
     // A strong duplicate needs a second, deliberate action. Returning here
     // means no mutation is issued at all, so the reviewer cannot create a
     // near-identical record by clicking the same button they use for
@@ -281,7 +352,7 @@ export default function AiSuggestModal({
               <Sparkles className="h-5 w-5 text-indigo-600" /> AI-Suggested OKRs &amp; KPIs
             </h2>
             <p className="mt-1 text-sm text-gray-500">
-              Generated from the selected strategy theme, its place in the hierarchy, and the OKRs and KPIs it already has.
+              Generated from your strategy themes, each one&apos;s place in the hierarchy, and the OKRs and KPIs it already has.
             </p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
@@ -296,7 +367,7 @@ export default function AiSuggestModal({
               onClick={() => setMode("global")}
               className={`flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-medium ${mode === "global" ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
             >
-              <Globe className="h-3.5 w-3.5" /> All Suggestions
+              <Globe className="h-3.5 w-3.5" /> Global (All Themes)
             </button>
             <button
               data-testid="mode-one-by-one"
@@ -334,7 +405,9 @@ export default function AiSuggestModal({
                     ? "Couldn't load themes"
                     : themes.length === 0
                       ? "No themes yet"
-                      : "Select a theme…"}
+                      : mode === "global"
+                        ? "All Themes"
+                        : "Select a theme…"}
               </option>
               {themes.map((theme) => (
                 <option key={theme.id} value={theme.id}>{theme.nameEn}</option>
@@ -356,11 +429,11 @@ export default function AiSuggestModal({
           <button
             data-testid="generate"
             onClick={() => void runGenerate()}
-            disabled={!themeNodeId || busy}
+            disabled={busy || (mode === "one-by-one" ? !themeNodeId : themes.length === 0)}
             className="flex items-center gap-1.5 rounded-full bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
           >
-            {generate.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {batch ? "Regenerate" : "Generate"}
+            {isGenerating || generate.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {hasBatch ? "Regenerate" : "Generate"}
           </button>
 
           {reviewable.length > 0 && (
@@ -390,35 +463,42 @@ export default function AiSuggestModal({
         )}
 
         <div className="app-scroll flex-1 space-y-3 overflow-y-auto p-5">
-          {generate.isPending && (
+          {(isGenerating || generate.isPending) && (
             <p className="flex items-center justify-center gap-2 p-10 text-sm text-gray-400">
-              <Loader2 className="h-4 w-4 animate-spin" /> Generating suggestions for this theme…
+              <Loader2 className="h-4 w-4 animate-spin" />{" "}
+              {wasFanOut
+                ? "Generating suggestions across every strategy theme…"
+                : "Generating suggestions for this theme…"}
             </p>
           )}
 
-          {!generate.isPending && !batch && (
+          {!(isGenerating || generate.isPending) && !hasBatch && (
             <p className="p-10 text-center text-sm text-gray-400">
               {nodes.isError
                 ? "Themes failed to load — use Retry above, or try again after refreshing."
                 : nodes.isLoading
                   ? "Loading strategy themes…"
-                  : themeNodeId
-                    ? "Choose Generate to propose OKRs and KPIs for this theme."
-                    : themes.length === 0
-                      ? "No strategy themes exist yet — create one before generating suggestions."
-                      : "Select a strategy theme to get started."}
+                  : themes.length === 0
+                    ? "No strategy themes exist yet — create one before generating suggestions."
+                    : themeNodeId
+                      ? "Choose Generate to propose OKRs and KPIs for this theme."
+                      : mode === "global"
+                        ? "Choose Generate to propose OKRs and KPIs across every strategy theme."
+                        : "Select a strategy theme to get started."}
             </p>
           )}
 
-          {!generate.isPending && batch && visible.length === 0 && (
+          {!(isGenerating || generate.isPending) && hasBatch && visible.length === 0 && (
             <p className="p-10 text-center text-sm text-gray-400">
-              {batch.suggestions.length === 0
-                ? "The model had nothing new to propose for this theme."
+              {suggestions.length === 0
+                ? wasFanOut
+                  ? "The model had nothing new to propose across your strategy themes."
+                  : "The model had nothing new to propose for this theme."
                 : "No remaining suggestions match this filter — you have reviewed them all."}
             </p>
           )}
 
-          {!generate.isPending &&
+          {!(isGenerating || generate.isPending) &&
             visible.map((suggestion) => {
               const tone = toneFor(suggestion.themeNameEn);
               const draft = edits[suggestion.suggestionId];
