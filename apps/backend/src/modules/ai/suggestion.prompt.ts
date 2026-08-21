@@ -79,6 +79,10 @@ export interface SuggestionPromptOptions {
   /** Restricts what the model is asked for, matching the review UI's filter. */
   readonly kinds: readonly ("kpi" | "okr")[];
   readonly maxSuggestions: number;
+  /** Free-text intent the caller already has, e.g. a name typed before asking
+   * for a suggestion. Optional — omitted entirely from the prompt when absent,
+   * so existing callers see no change in output. */
+  readonly userIntent?: string;
 }
 
 /**
@@ -102,7 +106,7 @@ export function buildSuggestionPrompt(
     wantsKpi ? "KPIs" : null,
   ].filter((entry): entry is string => entry !== null);
 
-  return [
+  const lines: (string | null)[] = [
     "SELECTED THEME",
     `id: ${context.theme.id}`,
     `name (en): ${context.theme.nameEn}`,
@@ -122,6 +126,9 @@ export function buildSuggestionPrompt(
     "",
     "TASK",
     `Propose up to ${cap} new items for this theme: ${asked.join(" and ")}.`,
+    options.userIntent
+      ? `The requester already has this specific intent in mind: "${options.userIntent}". Treat it as the starting point for the proposal — center the item(s) on it — but stay inside the theme's scope and everything else stated above.`
+      : null,
     "Return them all in one response.",
     "",
     "RESPONSE SHAPE",
@@ -135,7 +142,9 @@ export function buildSuggestionPrompt(
     '      "rationale": "why this fits the theme and what it adds",',
     '      "unit": "%",',
     '      "frequency": "monthly" | "quarterly",',
-    '      "polarity": "higher_is_better" | "lower_is_better"',
+    '      "polarity": "higher_is_better" | "lower_is_better",',
+    '      "perspective": "financial" | "customer" | "internal" | "learning",',
+    '      "targetValue": 0',
     "    },",
     "    {",
     '      "type": "okr",',
@@ -151,7 +160,9 @@ export function buildSuggestionPrompt(
     "  ]",
     "}",
     "",
-    `A KPI must carry unit, frequency, and polarity. An OKR must carry objectiveNodeId and between 1 and ${MAX_KEY_RESULTS} key results.`,
+    `A KPI must carry unit, frequency, polarity, perspective, and targetValue. perspective is the Balanced Scorecard quadrant this KPI best fits — financial, customer, internal, or learning. targetValue is a single realistic numeric target in the given unit. An OKR must carry objectiveNodeId and between 1 and ${MAX_KEY_RESULTS} key results.`,
     "Omit the fields that do not apply to an item's type. Return an empty `suggestions` array if you genuinely have nothing worth proposing.",
-  ].join("\n");
+  ];
+
+  return lines.filter((line): line is string => line !== null).join("\n");
 }

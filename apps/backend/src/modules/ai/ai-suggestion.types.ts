@@ -72,10 +72,15 @@ export interface SuggestionDuplicateMatch {
   similarity: number;
 }
 
+/** Balanced Scorecard quadrant. Advisory only — see `suggestion.schema.ts`. */
+export type KpiPerspective = "financial" | "customer" | "internal" | "learning";
+
 export interface KpiSuggestionFields {
   unit: string;
   frequency: KpiFrequencyView;
   polarity: KpiPolarityView;
+  perspective: KpiPerspective;
+  targetValue: number;
 }
 
 export interface OkrSuggestionFields {

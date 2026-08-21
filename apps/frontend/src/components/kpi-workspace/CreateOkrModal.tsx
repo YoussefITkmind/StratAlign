@@ -1,12 +1,48 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { Plus, Trash2, X } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
+import { AlertTriangle, Loader2, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { newOwnerFromName, type KeyResult, type Objective } from "@/data/mockOkrLibrary";
+import { trpc } from "@/lib/trpc/client";
 
 type DraftKeyResult = { label: string; actual: string; target: string; dueDate: string };
 
 const emptyKeyResult = (): DraftKeyResult => ({ label: "", actual: "", target: "", dueDate: "" });
+
+/** The subset of a generated OKR suggestion this modal knows how to apply. */
+type GeneratedOkrFields = {
+  keyResults: DraftKeyResult[];
+  /** The value AI wrote into the title field, or `null` if the title was
+   * already non-empty and so was left untouched. */
+  title: string | null;
+};
+
+type GeneratedOkr = {
+  objectiveNodeId: string;
+  keyResults: { titleEn: string; targetValue: number; unit: string }[];
+};
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "The operation could not be completed.";
+}
+
+function formatAiTarget(targetValue: number, unit: string): string {
+  const trimmedUnit = unit.trim();
+  return trimmedUnit ? `${targetValue} ${trimmedUnit}` : String(targetValue);
+}
+
+function keyResultsEqual(a: DraftKeyResult[], b: DraftKeyResult[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every(
+    (kr, i) =>
+      kr.label === b[i].label &&
+      kr.actual === b[i].actual &&
+      kr.target === b[i].target &&
+      kr.dueDate === b[i].dueDate,
+  );
+}
 
 export default function CreateOkrModal({
   onClose,
@@ -21,11 +57,108 @@ export default function CreateOkrModal({
   const [ownerName, setOwnerName] = useState("");
   const [keyResults, setKeyResults] = useState<DraftKeyResult[]>([emptyKeyResult()]);
 
+  const [themeNodeId, setThemeNodeId] = useState("");
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  /** Kept as internal state only — the objective this suggestion hangs from.
+   * Never rendered, never sent through `onCreate` (this modal's Create action
+   * only ever writes local mock state, same as before Task 4). */
+  const [aiObjectiveNodeId, setAiObjectiveNodeId] = useState<string | null>(null);
+  /** Values right before the current suggestion was applied — restored on discard. */
+  const [priorAiFields, setPriorAiFields] = useState<GeneratedOkrFields | null>(null);
+  /** Values the current suggestion actually set — used to detect edits. */
+  const [appliedAiFields, setAppliedAiFields] = useState<GeneratedOkrFields | null>(null);
+  const [confirmingRegenerate, setConfirmingRegenerate] = useState(false);
+
+  const nodes = trpc.strategy.nodes.useQuery();
+  const themes = useMemo(
+    () => (nodes.data ?? []).filter((node) => node.type === "theme" && node.state !== "retired"),
+    [nodes.data],
+  );
+  const generate = trpc.aiSuggestion.generate.useMutation();
+
+  const hasAiSuggestion = appliedAiFields !== null;
+  const editedSinceSuggestion =
+    appliedAiFields !== null &&
+    ((appliedAiFields.title !== null && title !== appliedAiFields.title) ||
+      !keyResultsEqual(keyResults, appliedAiFields.keyResults));
+
   const validKeyResults = keyResults.filter((kr) => kr.label.trim());
   const valid = title.trim().length > 0 && validKeyResults.length > 0;
 
   const updateKeyResult = (index: number, patch: Partial<DraftKeyResult>) => {
     setKeyResults((current) => current.map((kr, i) => (i === index ? { ...kr, ...patch } : kr)));
+  };
+
+  const applySuggestion = (okr: GeneratedOkr, titleEn: string) => {
+    const titleIsEmpty = title.trim().length === 0;
+    const nextKeyResults: DraftKeyResult[] = okr.keyResults.map((kr) => ({
+      label: kr.titleEn,
+      actual: "",
+      target: formatAiTarget(kr.targetValue, kr.unit),
+      dueDate: "",
+    }));
+    const prior: GeneratedOkrFields = {
+      keyResults,
+      title: titleIsEmpty ? title : null,
+    };
+    const applied: GeneratedOkrFields = {
+      keyResults: nextKeyResults,
+      title: titleIsEmpty ? titleEn : null,
+    };
+
+    setKeyResults(applied.keyResults);
+    if (applied.title !== null) setTitle(applied.title);
+    setAiObjectiveNodeId(okr.objectiveNodeId);
+
+    setPriorAiFields(prior);
+    setAppliedAiFields(applied);
+  };
+
+  const runGenerate = async () => {
+    setAiError(null);
+    setAiNotice(null);
+    try {
+      const result = await generate.mutateAsync({
+        themeNodeId,
+        kinds: ["okr"],
+        maxSuggestions: 1,
+        userIntent: title.trim() || undefined,
+      });
+      const suggestion = result.suggestions[0];
+      if (!suggestion || !suggestion.okr) {
+        setAiNotice("The AI didn't have a suggestion for this theme. You can continue filling the form manually.");
+        return;
+      }
+      applySuggestion(suggestion.okr, suggestion.titleEn);
+    } catch (cause) {
+      setAiError(errorMessage(cause));
+    }
+  };
+
+  const handleAiSuggestClick = () => {
+    if (!themeNodeId || generate.isPending) return;
+    if (hasAiSuggestion && editedSinceSuggestion) {
+      setConfirmingRegenerate(true);
+      return;
+    }
+    void runGenerate();
+  };
+
+  const confirmRegenerate = () => {
+    setConfirmingRegenerate(false);
+    void runGenerate();
+  };
+
+  const discardAiSuggestion = () => {
+    if (!priorAiFields) return;
+    setKeyResults(priorAiFields.keyResults);
+    if (priorAiFields.title !== null) setTitle(priorAiFields.title);
+    setAiObjectiveNodeId(null);
+    setPriorAiFields(null);
+    setAppliedAiFields(null);
+    setAiNotice(null);
+    setAiError(null);
   };
 
   const handleCreate = () => {
@@ -73,6 +206,80 @@ export default function CreateOkrModal({
               className={inputClass}
             />
           </Field>
+
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[160px]">
+                <select
+                  data-testid="okr-ai-theme-select"
+                  value={themeNodeId}
+                  onChange={(e) => setThemeNodeId(e.target.value)}
+                  className="w-full appearance-none rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-gray-700 outline-none focus:border-indigo-500"
+                >
+                  <option value="">Select a theme…</option>
+                  {themes.map((theme) => (
+                    <option key={theme.id} value={theme.id}>{theme.nameEn}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                data-testid="ai-suggest-okr"
+                onClick={handleAiSuggestClick}
+                disabled={!themeNodeId || generate.isPending}
+                className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-indigo-300"
+              >
+                {generate.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                AI Suggest
+              </button>
+              {hasAiSuggestion && (
+                <button
+                  type="button"
+                  data-testid="discard-ai-suggestion-okr"
+                  onClick={discardAiSuggestion}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  Discard suggestion
+                </button>
+              )}
+            </div>
+
+            {confirmingRegenerate && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                <span className="flex-1">You&apos;ve edited the current suggestion. Generating again will replace those edits.</span>
+                <button
+                  type="button"
+                  data-testid="confirm-regenerate-okr"
+                  onClick={confirmRegenerate}
+                  className="rounded-lg bg-amber-600 px-2.5 py-1 font-medium text-white hover:bg-amber-700"
+                >
+                  Replace
+                </button>
+                <button
+                  type="button"
+                  data-testid="cancel-regenerate-okr"
+                  onClick={() => setConfirmingRegenerate(false)}
+                  className="rounded-lg border border-amber-300 px-2.5 py-1 font-medium text-amber-800 hover:bg-amber-100"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {hasAiSuggestion && !confirmingRegenerate && (
+              <p className="mt-2 flex items-center gap-1 text-xs font-medium text-indigo-700">
+                <Sparkles className="h-3 w-3" /> AI Suggested — edit any field below, or discard.
+              </p>
+            )}
+            {aiNotice && <p className="mt-2 text-xs text-gray-500">{aiNotice}</p>}
+            {aiError && <p className="mt-2 text-xs text-red-600">{aiError}</p>}
+
+            {/* Internal only, per Task 4: the objective this suggestion hangs
+                from is tracked for a future real-creation wiring, but is never
+                a user-facing selector and never reaches `onCreate`. */}
+            <input type="hidden" data-testid="ai-objective-node-id" value={aiObjectiveNodeId ?? ""} readOnly />
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Department">

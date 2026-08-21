@@ -59,6 +59,7 @@ export const aiSuggestionRouter = router({
     themeNodeId: id,
     kinds: z.array(z.enum(["kpi", "okr"])).min(1).max(2),
     maxSuggestions: z.number().int().min(1).max(12),
+    userIntent: z.string().trim().min(1).max(500).optional(),
   }).strict()).mutation(({ ctx, input }) =>
     forward(() => backend(ctx).aiSuggestion.generate.mutate(input))),
 

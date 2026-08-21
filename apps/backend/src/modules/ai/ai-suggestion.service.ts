@@ -63,6 +63,13 @@ export interface GenerateSuggestionsInput {
   themeNodeId: string;
   kinds: readonly SuggestionKind[];
   maxSuggestions: number;
+  /**
+   * Free-text intent the caller already has in hand — typically whatever name
+   * or rough description a user typed before asking for a suggestion.
+   * Optional so every existing Task 3 caller (which never sends this) keeps
+   * working unchanged.
+   */
+  userIntent?: string;
 }
 
 export interface AcceptKeyResultInput {
@@ -152,6 +159,7 @@ export class AiSuggestionService {
       prompt: buildSuggestionPrompt(context, {
         kinds,
         maxSuggestions: Math.min(input.maxSuggestions, MAX_SUGGESTIONS),
+        userIntent: input.userIntent,
       }),
       maxOutputTokens: MAX_OUTPUT_TOKENS,
       temperature: GENERATION_TEMPERATURE,
@@ -279,6 +287,12 @@ export class AiSuggestionService {
               polarity: suggestion.polarity as
                 | "higher_is_better"
                 | "lower_is_better",
+              perspective: suggestion.perspective as
+                | "financial"
+                | "customer"
+                | "internal"
+                | "learning",
+              targetValue: suggestion.targetValue as number,
             }
           : null,
       okr:

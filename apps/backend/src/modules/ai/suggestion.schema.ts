@@ -15,6 +15,14 @@ export const MIN_SUGGESTIONS = 0;
 export const MAX_SUGGESTIONS = 12;
 export const MAX_KEY_RESULTS = 6;
 
+/** Matches the Balanced Scorecard quadrants the KPI library UI already uses. */
+export const KPI_PERSPECTIVES = [
+  "financial",
+  "customer",
+  "internal",
+  "learning",
+] as const;
+
 const shortText = z.string().trim().min(1).max(300);
 const longText = z.string().trim().max(2_000);
 
@@ -43,6 +51,13 @@ const baseSuggestionSchema = z.object({
   unit: z.string().trim().min(1).max(50).nullish(),
   frequency: z.enum(["monthly", "quarterly"]).nullish(),
   polarity: z.enum(["higher_is_better", "lower_is_better"]).nullish(),
+  /** Balanced Scorecard quadrant this KPI best fits. Advisory only — the
+   * registry domain does not persist it; it exists so a single-KPI creation
+   * form (which does track a perspective) can be pre-filled. */
+  perspective: z.enum(KPI_PERSPECTIVES).nullish(),
+  /** A single numeric target for this KPI. Advisory only, same reason as
+   * `perspective` — the registry has no target field on a KPI definition. */
+  targetValue: z.number().finite().nullish(),
 
   // OKR-only.
   objectiveNodeId: z.string().uuid().nullish(),
@@ -78,6 +93,20 @@ export const llmSuggestionSchema = baseSuggestionSchema.superRefine(
           code: "custom",
           path: ["polarity"],
           message: "A KPI suggestion requires a polarity",
+        });
+      }
+      if (!suggestion.perspective) {
+        context.addIssue({
+          code: "custom",
+          path: ["perspective"],
+          message: "A KPI suggestion requires a perspective",
+        });
+      }
+      if (suggestion.targetValue === null || suggestion.targetValue === undefined) {
+        context.addIssue({
+          code: "custom",
+          path: ["targetValue"],
+          message: "A KPI suggestion requires a target value",
         });
       }
       return;

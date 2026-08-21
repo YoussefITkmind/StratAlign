@@ -47,6 +47,8 @@ export interface ThemeSuggestionOutput {
     unit: string;
     frequency: "monthly" | "quarterly";
     polarity: "higher_is_better" | "lower_is_better";
+    perspective: "financial" | "customer" | "internal" | "learning";
+    targetValue: number;
   } | null;
   okr: {
     objectiveNodeId: string;
@@ -94,6 +96,9 @@ export interface AiSuggestionServiceContract {
     themeNodeId: string;
     kinds: readonly SuggestionKindOutput[];
     maxSuggestions: number;
+    /** Free-text intent already in hand, e.g. a name typed before asking for a
+     * suggestion. Optional so every existing caller keeps working unchanged. */
+    userIntent?: string;
   }): Promise<ThemeSuggestionBatchOutput>;
 
   accept(
@@ -258,6 +263,8 @@ const suggestionOutputSchema = z
         unit: z.string(),
         frequency: z.enum(["monthly", "quarterly"]),
         polarity: z.enum(["higher_is_better", "lower_is_better"]),
+        perspective: z.enum(["financial", "customer", "internal", "learning"]),
+        targetValue: z.number().finite(),
       })
       .strict()
       .nullable(),
@@ -374,6 +381,9 @@ export const aiSuggestionRouter = router({
           themeNodeId: id,
           kinds: z.array(z.enum(["kpi", "okr"])).min(1).max(2).default(["kpi", "okr"]),
           maxSuggestions: z.number().int().min(1).max(12).default(8),
+          // Optional and additive: existing Task 3 callers that never send this
+          // keep generating exactly as before.
+          userIntent: z.string().trim().min(1).max(500).optional(),
         })
         .strict(),
     )

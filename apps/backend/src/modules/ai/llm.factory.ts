@@ -4,10 +4,11 @@ import {
   AnthropicLlmProvider,
   UnconfiguredLlmProvider,
 } from "./anthropic.provider";
+import { OpenAILlmProvider } from "./openai.provider";
 import type { LlmProvider } from "./llm.provider";
 
 export interface LlmProviderConfig {
-  readonly provider: "anthropic" | "disabled";
+  readonly provider: "openai" | "anthropic" | "disabled";
   readonly apiKey?: string;
   readonly model: string;
   readonly baseUrl: string;
@@ -40,14 +41,17 @@ export function createLlmProvider(
     return new UnconfiguredLlmProvider();
   }
 
-  return new AnthropicLlmProvider(
-    {
-      apiKey: config.apiKey,
-      model: config.model,
-      baseUrl: config.baseUrl,
-      timeoutMs: config.timeoutMs,
-      maxRetries: config.maxRetries,
-    },
-    logger,
-  );
+  const options = {
+    apiKey: config.apiKey,
+    model: config.model,
+    baseUrl: config.baseUrl,
+    timeoutMs: config.timeoutMs,
+    maxRetries: config.maxRetries,
+  };
+
+  if (config.provider === "openai") {
+    return new OpenAILlmProvider(options, logger);
+  }
+
+  return new AnthropicLlmProvider(options, logger);
 }

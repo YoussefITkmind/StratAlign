@@ -103,6 +103,58 @@ describe("validateEnvironment", () => {
     );
   });
 
+  describe("AI provider configuration", () => {
+    it("defaults to a disabled AI provider so the platform boots without AI credentials", () => {
+      const environment = validateEnvironment(validEnvironment);
+
+      expect(environment.AI_PROVIDER).toBe("disabled");
+    });
+
+    it("defaults AI_MODEL and AI_BASE_URL for the openai provider", () => {
+      const environment = validateEnvironment({
+        ...validEnvironment,
+        AI_PROVIDER: "openai",
+        AI_API_KEY: "test-key",
+      });
+
+      expect(environment.AI_MODEL).toBe("gpt-4o-mini");
+      expect(environment.AI_BASE_URL).toBe("https://api.openai.com");
+    });
+
+    it("defaults AI_MODEL and AI_BASE_URL for the anthropic provider", () => {
+      const environment = validateEnvironment({
+        ...validEnvironment,
+        AI_PROVIDER: "anthropic",
+        AI_API_KEY: "test-key",
+      });
+
+      expect(environment.AI_MODEL).toBe("claude-sonnet-5");
+      expect(environment.AI_BASE_URL).toBe("https://api.anthropic.com");
+    });
+
+    it("respects an explicit AI_MODEL and AI_BASE_URL override", () => {
+      const environment = validateEnvironment({
+        ...validEnvironment,
+        AI_PROVIDER: "openai",
+        AI_API_KEY: "test-key",
+        AI_MODEL: "gpt-4o",
+        AI_BASE_URL: "https://my-proxy.example.test",
+      });
+
+      expect(environment.AI_MODEL).toBe("gpt-4o");
+      expect(environment.AI_BASE_URL).toBe("https://my-proxy.example.test");
+    });
+
+    it("rejects an AI provider outside openai, anthropic, and disabled", () => {
+      expect(() =>
+        validateEnvironment({
+          ...validEnvironment,
+          AI_PROVIDER: "gemini",
+        }),
+      ).toThrow("Environment validation failed");
+    });
+  });
+
   it.each([
     "AUTH_OIDC_ISSUER",
     "AUTH_OIDC_CLIENT_ID",

@@ -6,6 +6,28 @@ const LOOPBACK_HOSTNAMES = new Set([
   "[::1]",
 ]);
 
+const AI_PROVIDERS = ["openai", "anthropic", "disabled"] as const;
+type AiProvider = (typeof AI_PROVIDERS)[number];
+
+/**
+ * `AI_MODEL` / `AI_BASE_URL` have no single sane default across providers, so
+ * they stay unset in the schema until `validateEnvironment` fills them in based
+ * on whichever `AI_PROVIDER` was actually selected. This is what lets
+ * `AI_PROVIDER=openai` and `AI_PROVIDER=anthropic` each get their own correct
+ * default model and endpoint without either one having to restate the pairing.
+ */
+const AI_DEFAULT_MODEL: Record<AiProvider, string> = {
+  openai: "gpt-4o-mini",
+  anthropic: "claude-sonnet-5",
+  disabled: "gpt-4o-mini",
+};
+
+const AI_DEFAULT_BASE_URL: Record<AiProvider, string> = {
+  openai: "https://api.openai.com",
+  anthropic: "https://api.anthropic.com",
+  disabled: "https://api.openai.com",
+};
+
 const strictEnvironmentBoolean = z
   .enum(["true", "false"])
   .transform((value) => value === "true")
@@ -250,10 +272,12 @@ const environmentSchema = z.object({
    * Optional by design. The platform must boot and serve every non-AI route in
    * an environment with no AI credentials — local development and CI both run
    * that way — so an unset key downgrades the feature rather than failing
-   * startup. `AI_API_KEY` is server-only and never reaches a browser bundle.
+   * startup. `AI_API_KEY` is server-only and never reaches a browser bundle,
+   * and is the same variable regardless of which provider is selected — the
+   * provider abstraction is what makes that name provider-neutral.
    */
   AI_PROVIDER: z
-    .enum(["anthropic", "disabled"])
+    .enum(AI_PROVIDERS)
     .default("disabled"),
 
   AI_API_KEY: z
@@ -261,15 +285,18 @@ const environmentSchema = z.object({
     .min(1)
     .optional(),
 
+  /** Defaulted per-provider in `validateEnvironment`, not here — see
+   * `AI_DEFAULT_MODEL` above. */
   AI_MODEL: z
     .string()
     .min(1)
-    .default("claude-sonnet-5"),
+    .optional(),
 
+  /** Defaulted per-provider in `validateEnvironment` — see `AI_DEFAULT_BASE_URL`. */
   AI_BASE_URL: z
     .string()
     .url()
-    .default("https://api.anthropic.com"),
+    .optional(),
 
   AI_TIMEOUT_MS: z.coerce
     .number()
@@ -308,7 +335,19 @@ const environmentSchema = z.object({
   );
 });
 
-export type Environment = z.infer<typeof environmentSchema>;
+/**
+ * `AI_MODEL` and `AI_BASE_URL` are always populated by the time a caller sees
+ * an `Environment` — `validateEnvironment` fills them from `AI_DEFAULT_MODEL` /
+ * `AI_DEFAULT_BASE_URL` when unset — so callers see plain `string`, not the
+ * schema's `string | undefined`.
+ */
+export type Environment = Omit<
+  z.infer<typeof environmentSchema>,
+  "AI_MODEL" | "AI_BASE_URL"
+> & {
+  AI_MODEL: string;
+  AI_BASE_URL: string;
+};
 
 export function validateEnvironment(
   configuration: Record<string, unknown>,
@@ -323,5 +362,10 @@ export function validateEnvironment(
     throw new Error(`Environment validation failed: ${messages}`);
   }
 
-  return result.data;
+  return {
+    ...result.data,
+    AI_MODEL: result.data.AI_MODEL ?? AI_DEFAULT_MODEL[result.data.AI_PROVIDER],
+    AI_BASE_URL:
+      result.data.AI_BASE_URL ?? AI_DEFAULT_BASE_URL[result.data.AI_PROVIDER],
+  };
 }

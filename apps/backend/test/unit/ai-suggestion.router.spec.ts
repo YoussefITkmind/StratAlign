@@ -78,6 +78,8 @@ const kpiSuggestionOutput = {
     unit: "x",
     frequency: "quarterly" as const,
     polarity: "higher_is_better" as const,
+    perspective: "financial" as const,
+    targetValue: 3.5,
   },
   okr: null,
   duplicateMatches: [],
@@ -263,6 +265,32 @@ describe("AI suggestion tRPC surface", () => {
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
       expect(accept).not.toHaveBeenCalled();
+    });
+
+    it("accepts an optional userIntent and forwards it to the service", async () => {
+      await rootRouter
+        .createCaller(context() as never)
+        .aiSuggestion.generate({
+          themeNodeId,
+          kinds: ["kpi"],
+          maxSuggestions: 4,
+          userIntent: "Something about churn",
+        });
+
+      expect(generate).toHaveBeenCalledWith(
+        expect.objectContaining({ userIntent: "Something about churn" }),
+      );
+    });
+
+    it("remains valid for every existing Task 3 call that omits userIntent", async () => {
+      const batch = await rootRouter
+        .createCaller(context() as never)
+        .aiSuggestion.generate({ themeNodeId, kinds: ["kpi"], maxSuggestions: 4 });
+
+      expect(batch.generationId).toBe(generationId);
+      expect(generate).toHaveBeenCalledWith(
+        expect.not.objectContaining({ userIntent: expect.anything() }),
+      );
     });
 
     it("bounds an accept-all batch", async () => {

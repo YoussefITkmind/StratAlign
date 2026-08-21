@@ -98,6 +98,21 @@ describe("AI suggestion frontend proxy", () => {
     });
   });
 
+  it("forwards an optional userIntent to the backend when provided", async () => {
+    calls.generate.mockResolvedValue({ generationId: GENERATION_ID, suggestions: [] });
+
+    await caller().generate({
+      themeNodeId: THEME_ID,
+      kinds: ["kpi"],
+      maxSuggestions: 1,
+      userIntent: "Something about churn",
+    });
+
+    expect(calls.generate).toHaveBeenCalledWith(
+      expect.objectContaining({ userIntent: "Something about churn" }),
+    );
+  });
+
   it("forwards a single accept, edits included", async () => {
     calls.accept.mockResolvedValue({ subjectType: "kpi_definition", subjectId: "kpi-1" });
 

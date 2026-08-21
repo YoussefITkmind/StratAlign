@@ -65,6 +65,8 @@ const validKpi = {
   unit: "x",
   frequency: "quarterly",
   polarity: "higher_is_better",
+  perspective: "financial",
+  targetValue: 3.5,
 };
 
 const validOkr = {
@@ -148,6 +150,44 @@ describe("AI suggestion generation", () => {
         "do not propose any OKR",
       );
     });
+
+    it("includes the caller's userIntent in the prompt when provided", async () => {
+      const { service, complete } = makeService();
+
+      await service.generate({
+        themeNodeId: THEME_ID,
+        kinds: ["kpi"],
+        maxSuggestions: 1,
+        userIntent: "Something about customer churn",
+      });
+
+      expect(complete.mock.calls[0][0].prompt).toContain(
+        "Something about customer churn",
+      );
+    });
+
+    it("omits any user-intent section from the prompt when userIntent is not provided", async () => {
+      const { service, complete } = makeService();
+
+      // The exact shape of every existing Task 3 caller: no userIntent at all.
+      await service.generate({ themeNodeId: THEME_ID, kinds: ["kpi", "okr"], maxSuggestions: 8 });
+
+      expect(complete.mock.calls[0][0].prompt).not.toContain("specific intent in mind");
+    });
+
+    it("generates successfully without userIntent, exactly like every existing caller", async () => {
+      const { service } = makeService({
+        complete: vi.fn().mockResolvedValue(completion({ suggestions: [validKpi] })),
+      });
+
+      const batch = await service.generate({
+        themeNodeId: THEME_ID,
+        kinds: ["kpi"],
+        maxSuggestions: 8,
+      });
+
+      expect(batch.suggestions).toHaveLength(1);
+    });
   });
 
   describe("structured output", () => {
@@ -188,6 +228,8 @@ describe("AI suggestion generation", () => {
         unit: "x",
         frequency: "quarterly",
         polarity: "higher_is_better",
+        perspective: "financial",
+        targetValue: 3.5,
       });
       expect(suggestion.okr).toBeNull();
     });
@@ -281,7 +323,7 @@ describe("AI suggestion generation", () => {
     });
 
     it("rejects a KPI missing the fields the registry requires", async () => {
-      for (const missing of ["unit", "frequency", "polarity"] as const) {
+      for (const missing of ["unit", "frequency", "polarity", "perspective", "targetValue"] as const) {
         const broken = { ...validKpi, [missing]: undefined };
         const { service } = makeService({
           complete: vi.fn().mockResolvedValue(completion({ suggestions: [broken] })),
@@ -297,6 +339,34 @@ describe("AI suggestion generation", () => {
       const { service } = makeService({
         complete: vi.fn().mockResolvedValue(
           completion({ suggestions: [{ ...validKpi, frequency: "weekly" }] }),
+        ),
+      });
+
+      await expect(
+        service.generate({ themeNodeId: THEME_ID, kinds: ["kpi"], maxSuggestions: 8 }),
+      ).rejects.toBeInstanceOf(AiMalformedOutputError);
+    });
+
+    it("rejects a perspective outside the Balanced Scorecard enum", async () => {
+      const { service } = makeService({
+        complete: vi.fn().mockResolvedValue(
+          completion({ suggestions: [{ ...validKpi, perspective: "operational" }] }),
+        ),
+      });
+
+      await expect(
+        service.generate({ themeNodeId: THEME_ID, kinds: ["kpi"], maxSuggestions: 8 }),
+      ).rejects.toBeInstanceOf(AiMalformedOutputError);
+    });
+
+    it("rejects a non-finite KPI target value", async () => {
+      const { service } = makeService({
+        complete: vi.fn().mockResolvedValue(
+          completion(
+            '{"suggestions":[{"type":"kpi","titleEn":"x","titleAr":"س","confidence":0.5,' +
+              '"unit":"%","frequency":"monthly","polarity":"higher_is_better",' +
+              '"perspective":"financial","targetValue":"a lot"}]}',
+          ),
         ),
       });
 
