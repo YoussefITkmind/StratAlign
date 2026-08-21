@@ -79,7 +79,13 @@ export interface ExecutionServiceContract {
     actorUserId: string;
     actorIsSeoAdministrator: boolean;
   }): Promise<unknown>;
-  linkJira(input: { initiativeId: string; jiraProjectKey: string; jiraProjectUrl: string }): Promise<unknown>;
+  linkJira(input: {
+    initiativeId: string;
+    jiraProjectKey: string;
+    jiraProjectUrl: string;
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
+  }): Promise<unknown>;
   flagMilestone(input: {
     jiraLinkId: string;
     nameEn: string;
@@ -88,6 +94,8 @@ export interface ExecutionServiceContract {
     forecastDate?: Date | null;
     health: "on_time" | "at_risk" | "late";
     source: "manual" | "jira";
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
   }): Promise<unknown>;
   updateStatus(input: {
     initiativeId: string;
@@ -97,7 +105,8 @@ export interface ExecutionServiceContract {
     confidence: "high" | "medium" | "low";
     narrativeEn?: string | null;
     narrativeAr?: string | null;
-    submittedBy: string;
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
   }): Promise<unknown>;
   statusHistory(initiativeId: string): Promise<unknown[]>;
 }
@@ -119,7 +128,11 @@ function mapExecutionError(error: unknown): never {
   const code = typeof error === "object" && error !== null && "code" in error
     ? String((error as { code: unknown }).code)
     : "";
-  if (code === "EXECUTION_PLAY_OWNERSHIP_REQUIRED" || code === "EXECUTION_STAGE_OWNERSHIP_REQUIRED") {
+  if (
+    code === "EXECUTION_PLAY_OWNERSHIP_REQUIRED" ||
+    code === "EXECUTION_STAGE_OWNERSHIP_REQUIRED" ||
+    code === "EXECUTION_INITIATIVE_OWNERSHIP_REQUIRED"
+  ) {
     throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Execution ownership is required" });
   }
   if (
@@ -176,14 +189,26 @@ export const executionRouter = router({
     linkJira: requireRole("initiative_owner", "objective_play_owner", "seo_administrator")
       .input(jiraLinkInputSchema)
       .mutation(async ({ ctx, input }) => {
-        try { return await service(ctx).linkJira(input); } catch (error) { return mapExecutionError(error); }
+        try {
+          return await service(ctx).linkJira({
+            ...input,
+            actorUserId: ctx.session.user.id,
+            actorIsSeoAdministrator: ctx.authorizationState.roles.includes("seo_administrator"),
+          });
+        } catch (error) { return mapExecutionError(error); }
       }),
   }),
   milestone: router({
     flag: requireRole("initiative_owner", "objective_play_owner", "seo_administrator")
       .input(milestoneFlagInputSchema)
       .mutation(async ({ ctx, input }) => {
-        try { return await service(ctx).flagMilestone(input); } catch (error) { return mapExecutionError(error); }
+        try {
+          return await service(ctx).flagMilestone({
+            ...input,
+            actorUserId: ctx.session.user.id,
+            actorIsSeoAdministrator: ctx.authorizationState.roles.includes("seo_administrator"),
+          });
+        } catch (error) { return mapExecutionError(error); }
       }),
   }),
   status: router({
@@ -191,7 +216,11 @@ export const executionRouter = router({
       .input(statusUpdateInputSchema)
       .mutation(async ({ ctx, input }) => {
         try {
-          return await service(ctx).updateStatus({ ...input, submittedBy: ctx.session.user.id });
+          return await service(ctx).updateStatus({
+            ...input,
+            actorUserId: ctx.session.user.id,
+            actorIsSeoAdministrator: ctx.authorizationState.roles.includes("seo_administrator"),
+          });
         } catch (error) {
           return mapExecutionError(error);
         }

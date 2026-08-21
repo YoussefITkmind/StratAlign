@@ -194,8 +194,14 @@ export class ExecutionService {
     initiativeId: string;
     jiraProjectKey: string;
     jiraProjectUrl: string;
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
   }) {
-    await this.requireInitiative(input.initiativeId);
+    await this.authorizeInitiativeWrite(
+      input.initiativeId,
+      input.actorUserId,
+      input.actorIsSeoAdministrator,
+    );
     const [row] = await this.prisma.$queryRaw<Array<{
       id: string;
       initiative_id: string;
@@ -231,11 +237,19 @@ export class ExecutionService {
     forecastDate?: Date | null;
     health: "on_time" | "at_risk" | "late";
     source: "manual" | "jira";
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
   }) {
-    const link = await this.prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM "execution"."jira_links" WHERE id = ${input.jiraLinkId}::uuid
-    `;
-    if (!link[0]) throw executionErrors.jiraLinkNotFound();
+    const link = await this.prisma.jiraLink.findUnique({
+      where: { id: input.jiraLinkId },
+      select: { initiativeId: true },
+    });
+    if (!link) throw executionErrors.jiraLinkNotFound();
+    await this.authorizeInitiativeWrite(
+      link.initiativeId,
+      input.actorUserId,
+      input.actorIsSeoAdministrator,
+    );
 
     const [row] = await this.prisma.$queryRaw<Array<{
       id: string;
@@ -265,14 +279,19 @@ export class ExecutionService {
     confidence: ConfidenceLevel;
     narrativeEn?: string | null;
     narrativeAr?: string | null;
-    submittedBy: string;
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
   }): Promise<StatusUpdateView> {
-    await this.requireInitiative(input.initiativeId);
+    await this.authorizeInitiativeWrite(
+      input.initiativeId,
+      input.actorUserId,
+      input.actorIsSeoAdministrator,
+    );
     const [row] = await this.prisma.$queryRaw<StatusRow[]>`
       INSERT INTO "execution"."status_updates"
         ("initiative_id", "period", "stage", "status", "confidence", "narrative_en", "narrative_ar", "submitted_by")
       VALUES
-        (${input.initiativeId}::uuid, ${input.period}, ${input.stage}::"execution"."InitiativeStage", ${input.status}::"execution"."InitiativeStatus", ${input.confidence}::"execution"."ConfidenceLevel", ${input.narrativeEn ?? null}, ${input.narrativeAr ?? null}, ${input.submittedBy})
+        (${input.initiativeId}::uuid, ${input.period}, ${input.stage}::"execution"."InitiativeStage", ${input.status}::"execution"."InitiativeStatus", ${input.confidence}::"execution"."ConfidenceLevel", ${input.narrativeEn ?? null}, ${input.narrativeAr ?? null}, ${input.actorUserId})
       RETURNING id, initiative_id, period, stage, status, confidence, narrative_en, narrative_ar, submitted_by, created_at
     `;
     if (!row) throw executionErrors.invalidOperation();
@@ -349,5 +368,34 @@ export class ExecutionService {
       SELECT id FROM "execution"."initiatives" WHERE id = ${initiativeId}::uuid
     `;
     if (!rows[0]) throw executionErrors.initiativeNotFound();
+  }
+
+  private async authorizeInitiativeWrite(
+    initiativeId: string,
+    actorUserId: string,
+    actorIsSeoAdministrator: boolean,
+  ): Promise<void> {
+    if (actorIsSeoAdministrator) {
+      await this.requireInitiative(initiativeId);
+      return;
+    }
+
+    const initiative = await this.prisma.initiative.findUnique({
+      where: { id: initiativeId },
+      select: { ownerUserId: true, strategicPlayNodeId: true },
+    });
+    if (!initiative) throw executionErrors.initiativeNotFound();
+    if (initiative.ownerUserId === actorUserId) return;
+
+    const playOwnership = await this.prisma.ownerAssignment.findUnique({
+      where: {
+        nodeId_ownerUserId: {
+          nodeId: initiative.strategicPlayNodeId,
+          ownerUserId: actorUserId,
+        },
+      },
+      select: { id: true },
+    });
+    if (!playOwnership) throw executionErrors.initiativeOwnershipRequired();
   }
 }

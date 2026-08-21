@@ -20,6 +20,7 @@ describe.sequential("Execution module with PostgreSQL Testcontainers", () => {
   let prisma: PrismaService;
   let execution: ExecutionService;
   let ownerId: string;
+  let initiativeOwnerId: string;
   let otherUserId: string;
   let planVersionId: string;
   let activePlayId: string;
@@ -59,11 +60,13 @@ describe.sequential("Execution module with PostgreSQL Testcontainers", () => {
       "iam"."users"
       RESTART IDENTITY CASCADE`);
 
-    const [owner, other] = await Promise.all([
+    const [owner, initiativeOwner, other] = await Promise.all([
       prisma.user.create({ data: { email: "execution-owner@example.test", displayName: "Play Owner" } }),
+      prisma.user.create({ data: { email: "execution-initiative-owner@example.test", displayName: "Initiative Owner" } }),
       prisma.user.create({ data: { email: "execution-other@example.test", displayName: "Other User" } }),
     ]);
     ownerId = owner.id;
+    initiativeOwnerId = initiativeOwner.id;
     otherUserId = other.id;
 
     const plan = await prisma.planVersion.create({ data: { name: "Execution Plan", status: "ACTIVE" } });
@@ -103,7 +106,7 @@ describe.sequential("Execution module with PostgreSQL Testcontainers", () => {
       nameEn: "Customer Platform",
       nameAr: "منصة العملاء",
       strategicPlayNodeId: activePlayId,
-      ownerUserId: ownerId,
+      ownerUserId: initiativeOwnerId,
       stage: "execute",
       actorUserId: ownerId,
       actorIsSeoAdministrator: false,
@@ -189,7 +192,8 @@ describe.sequential("Execution module with PostgreSQL Testcontainers", () => {
       status: "at_risk",
       confidence: "medium",
       narrativeEn: "Pilot dependency risk",
-      submittedBy: ownerId,
+      actorUserId: initiativeOwnerId,
+      actorIsSeoAdministrator: false,
     });
     await execution.updateStatus({
       initiativeId: initiative.id,
@@ -198,7 +202,8 @@ describe.sequential("Execution module with PostgreSQL Testcontainers", () => {
       status: "on_track",
       confidence: "high",
       narrativeEn: "Execution recovered",
-      submittedBy: ownerId,
+      actorUserId: initiativeOwnerId,
+      actorIsSeoAdministrator: false,
     });
     await execution.updateStatus({
       initiativeId: initiative.id,
@@ -207,7 +212,8 @@ describe.sequential("Execution module with PostgreSQL Testcontainers", () => {
       status: "off_track",
       confidence: "high",
       narrativeEn: "Supplier delay",
-      submittedBy: ownerId,
+      actorUserId: initiativeOwnerId,
+      actorIsSeoAdministrator: false,
     });
 
     const history = await execution.statusHistory(initiative.id);
@@ -216,5 +222,81 @@ describe.sequential("Execution module with PostgreSQL Testcontainers", () => {
     await expect(prisma.$executeRawUnsafe(
       `UPDATE "execution"."status_updates" SET "period" = '2025-01' WHERE "id" = '${june.id}'`,
     )).rejects.toThrow(/append-only/);
+  });
+
+  it("authorizes initiative writes for the initiative owner, play owner, or SEO administrator", async () => {
+    const initiative = await registerActiveInitiative();
+
+    await expect(execution.updateStatus({
+      initiativeId: initiative.id,
+      period: "2026-05",
+      stage: "execute",
+      status: "on_track",
+      confidence: "high",
+      actorUserId: initiativeOwnerId,
+      actorIsSeoAdministrator: false,
+    })).resolves.toMatchObject({ submittedBy: initiativeOwnerId });
+
+    await expect(execution.updateStatus({
+      initiativeId: initiative.id,
+      period: "2026-06",
+      stage: "execute",
+      status: "at_risk",
+      confidence: "medium",
+      actorUserId: ownerId,
+      actorIsSeoAdministrator: false,
+    })).resolves.toMatchObject({ submittedBy: ownerId });
+
+    await expect(execution.updateStatus({
+      initiativeId: initiative.id,
+      period: "2026-07",
+      stage: "execute",
+      status: "off_track",
+      confidence: "low",
+      actorUserId: otherUserId,
+      actorIsSeoAdministrator: false,
+    })).rejects.toMatchObject({ code: "EXECUTION_INITIATIVE_OWNERSHIP_REQUIRED" });
+
+    await expect(execution.updateStatus({
+      initiativeId: initiative.id,
+      period: "2026-08",
+      stage: "execute",
+      status: "on_track",
+      confidence: "high",
+      actorUserId: otherUserId,
+      actorIsSeoAdministrator: true,
+    })).resolves.toMatchObject({ submittedBy: otherUserId });
+  });
+
+  it("rejects Jira and milestone writes by an unrelated actor", async () => {
+    const initiative = await registerActiveInitiative();
+    const jiraInput = {
+      initiativeId: initiative.id,
+      jiraProjectKey: "EXEC",
+      jiraProjectUrl: "https://jira.example.test/projects/EXEC",
+    };
+
+    await expect(execution.linkJira({
+      ...jiraInput,
+      actorUserId: otherUserId,
+      actorIsSeoAdministrator: false,
+    })).rejects.toMatchObject({ code: "EXECUTION_INITIATIVE_OWNERSHIP_REQUIRED" });
+
+    const jiraLink = await execution.linkJira({
+      ...jiraInput,
+      actorUserId: initiativeOwnerId,
+      actorIsSeoAdministrator: false,
+    });
+
+    await expect(execution.flagMilestone({
+      jiraLinkId: jiraLink.id,
+      nameEn: "Pilot complete",
+      nameAr: "Pilot complete",
+      dueDate: new Date("2026-09-01T00:00:00Z"),
+      health: "on_time",
+      source: "manual",
+      actorUserId: otherUserId,
+      actorIsSeoAdministrator: false,
+    })).rejects.toMatchObject({ code: "EXECUTION_INITIATIVE_OWNERSHIP_REQUIRED" });
   });
 });
