@@ -52,6 +52,7 @@ model User {
   governanceEscalationsAssigned     EscalationCase[]          @relation("EscalationParticipant")
   governanceEscalationsAcknowledged EscalationCase[]          @relation("EscalationAcknowledgedBy")
   governanceDecisionsMade           DecisionLogEntry[]        @relation("DecisionLogActor")
+  aiSuggestionsAccepted             AiSuggestionProvenance[]  @relation("AiSuggestionAcceptor")
 
   @@map("users")
   @@schema("iam")
@@ -495,6 +496,8 @@ model StrategyNode {
   registryOkrs       Okr[]             @relation("RegistryOkrObjective")
   registryAlignments Alignment[]       @relation("RegistryStrategyAlignment")
 
+  aiSuggestionProvenance AiSuggestionProvenance[] @relation("AiSuggestionTheme")
+
   performanceMeasurements    Measurement[]    @relation("PerformanceMeasurementScope")
   performanceTargets         TargetSeries[]   @relation("PerformanceTargetScope")
   performanceStatuses        StatusResult[]   @relation("PerformanceStatusScope")
@@ -926,6 +929,10 @@ enum AlignmentType {
   PLAY      @map("play")
   SECTOR    @map("sector")
   PROJECT   @map("project")
+  // Themes sit above objectives in the hierarchy. Theme-level alignment had no
+  // member until theme-scoped suggestions needed one; without it a KPI raised
+  // against a theme would have to be mislabelled as an objective alignment.
+  THEME     @map("theme")
 
   @@schema("registry")
 }
@@ -1013,6 +1020,11 @@ model KeyResult {
   id    String        @id @default(uuid())
   okrId String        @map("okr_id")
   type  KeyResultType
+  // Nullable because every key result written before this column existed has
+  // no title. New key results carry one so a result reads as a statement
+  // rather than a bare number.
+  titleEn     String? @map("title_en")
+  titleAr     String? @map("title_ar")
   targetValue Decimal @map("target_value") @db.Decimal(20, 6)
   unit        String
   currentValue      Decimal?  @map("current_value") @db.Decimal(20, 6)
@@ -1074,6 +1086,56 @@ model KpiThresholdRuleBinding {
   @@index([thresholdRuleId])
   @@index([createdById])
   @@map("kpi_threshold_rule_bindings")
+  @@schema("registry")
+}
+
+// ---------------------------------------------------------------------------
+// AI suggestion provenance
+//
+// KPI versions are append-only and guarded by a database trigger, and an OKR
+// carries no free-form metadata column. Rather than weaken either, provenance
+// lives beside them: one row per accepted AI proposal, pointing at whatever it
+// became. The row is also the idempotency ledger — `suggestion_id` is unique,
+// so replaying an accept finds the existing subject instead of creating a
+// second one.
+// ---------------------------------------------------------------------------
+
+enum AiSuggestionSubjectType {
+  KPI_DEFINITION @map("kpi_definition")
+  OKR            @map("okr")
+
+  @@schema("registry")
+}
+
+model AiSuggestionProvenance {
+  id           String                  @id @default(uuid())
+  suggestionId String                  @unique @map("suggestion_id")
+  generationId String                  @map("generation_id")
+  subjectType  AiSuggestionSubjectType @map("subject_type")
+  /// Null while an accept is in flight. The row is inserted BEFORE the domain
+  /// record is created, so the unique key on `suggestion_id` — not a prior
+  /// read — is what serialises two concurrent accepts of the same proposal.
+  /// It is filled in once the KPI or OKR exists.
+  subjectId    String?                 @map("subject_id")
+  themeNodeId  String                  @map("theme_node_id") @db.Uuid
+  provider     String
+  model        String
+  confidence   Decimal                 @db.Decimal(4, 3)
+  /// True when the accepted values differ from what the model proposed.
+  edited       Boolean                 @default(false)
+  /// The accepted proposal exactly as submitted, for later inspection.
+  payload      Json
+  acceptedById String                  @map("accepted_by")
+  acceptedAt   DateTime                @default(now()) @map("accepted_at")
+
+  themeNode  StrategyNode @relation("AiSuggestionTheme", fields: [themeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  acceptedBy User         @relation("AiSuggestionAcceptor", fields: [acceptedById], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([subjectType, subjectId])
+  @@index([themeNodeId])
+  @@index([acceptedById])
+  @@index([generationId])
+  @@map("ai_suggestion_provenance")
   @@schema("registry")
 }
 

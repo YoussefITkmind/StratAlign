@@ -13,7 +13,11 @@ import TreeRow from "./TreeRow";
 import AddNodeModal from "./AddNodeModal";
 import Topbar from "@/components/layout/Topbar";
 
-export default function StrategyHierarchyPage() {
+interface Props {
+  canManageStrategy: boolean;
+}
+
+export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
   const [tree, setTree] = useState<StrategyNode>(initialStrategyData);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(
     new Set(["plan-1", "pillar-revenue", "obj-drive-revenue", "init-enterprise-sales"])
@@ -41,6 +45,7 @@ export default function StrategyHierarchyPage() {
   const collapseAll = () => setExpandedIds(new Set());
 
   const handleAdd = (parentId: string, node: StrategyNode) => {
+    if (!canManageStrategy) return;
     setTree((prev) => addChild(prev, parentId, node));
     setExpandedIds((prev) => new Set(prev).add(parentId));
   };
@@ -87,12 +92,14 @@ export default function StrategyHierarchyPage() {
           <button className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-blue-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:opacity-90">
             <Sparkles className="h-4 w-4" /> Generate Strategy Brief
           </button>
-          <button
-            onClick={() => setModalParentId(tree.id)}
-            className="flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-          >
-            <Plus className="h-4 w-4" /> Add Node
-          </button>
+          {canManageStrategy && (
+            <button
+              onClick={() => setModalParentId(tree.id)}
+              className="flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            >
+              <Plus className="h-4 w-4" /> Add Node
+            </button>
+          )}
         </div>
       </div>
 
@@ -158,7 +165,7 @@ export default function StrategyHierarchyPage() {
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
           <span>Name</span>
-          <div className="flex items-center gap-6">
+          <div className="hidden items-center gap-6 md:flex">
             <span className="w-20">Own</span>
             <span className="w-36">Progress</span>
           </div>
@@ -177,6 +184,7 @@ export default function StrategyHierarchyPage() {
             expandedIds={expandedIds}
             forceExpanded={filtering}
             onToggle={toggle}
+            canAddChild={canManageStrategy}
             onAddChild={(id) => setModalParentId(id)}
           />
         )}
@@ -187,7 +195,7 @@ export default function StrategyHierarchyPage() {
             const statusCfg = STATUS_CONFIG[node.status];
             const Icon = typeCfg.icon;
             return (
-              <div key={node.id} className="flex h-[52px] items-center justify-between border-b border-gray-100 px-4 hover:bg-gray-50">
+              <div key={node.id} className="flex min-h-[52px] flex-col justify-center gap-1.5 border-b border-gray-100 px-4 py-2.5 hover:bg-gray-50 md:h-[52px] md:flex-row md:items-center md:justify-between md:py-0">
                 <div className="flex min-w-0 items-center gap-2.5">
                   <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${typeCfg.bg}`}>
                     <Icon className={`h-3.5 w-3.5 ${typeCfg.text}`} />
@@ -195,18 +203,18 @@ export default function StrategyHierarchyPage() {
                   <span className="truncate text-[15px] text-gray-900">{node.name}</span>
                   <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">{typeCfg.label}</span>
                 </div>
-                <div className="flex shrink-0 items-center gap-6">
-                  <div className="flex w-20 items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${statusCfg.dot}`} />
-                    <span className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white ${node.owner.color}`}>
+                <div className="flex items-center gap-3 pl-[38px] md:shrink-0 md:gap-6 md:pl-0">
+                  <div className="flex shrink-0 items-center gap-2 md:w-20">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${statusCfg.dot}`} />
+                    <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${node.owner.color}`}>
                       {node.owner.initials}
                     </span>
                   </div>
-                  <div className="flex w-36 items-center gap-2">
-                    <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-100">
+                  <div className="flex min-w-0 flex-1 items-center gap-2 md:w-36 md:flex-none">
+                    <div className="h-1.5 min-w-[40px] flex-1 overflow-hidden rounded-full bg-gray-100 md:w-24 md:flex-none">
                       <div className={`h-full rounded-full ${statusCfg.bar}`} style={{ width: `${node.progress}%` }} />
                     </div>
-                    <span className="w-9 text-right text-sm text-gray-600">{node.progress}%</span>
+                    <span className="w-9 shrink-0 text-right text-sm text-gray-600">{node.progress}%</span>
                   </div>
                 </div>
               </div>
@@ -215,7 +223,7 @@ export default function StrategyHierarchyPage() {
       </div>
       </div>
 
-      {modalParentId && (
+      {canManageStrategy && modalParentId && (
         <AddNodeModal
           tree={tree}
           defaultParentId={modalParentId}

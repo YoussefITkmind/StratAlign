@@ -244,6 +244,52 @@ const environmentSchema = z.object({
     .min(1)
     .default(50),
 
+  /**
+   * AI suggestion provider.
+   *
+   * Optional by design. The platform must boot and serve every non-AI route in
+   * an environment with no AI credentials — local development and CI both run
+   * that way — so an unset key downgrades the feature rather than failing
+   * startup. `AI_API_KEY` is server-only and never reaches a browser bundle.
+   */
+  AI_PROVIDER: z
+    .enum(["anthropic", "openai", "disabled"])
+    .default("disabled"),
+
+  AI_API_KEY: z
+    .string()
+    .min(1)
+    .optional(),
+
+  /**
+   * Left unset by default rather than defaulting to a vendor-specific value:
+   * the right default depends on which `AI_PROVIDER` is chosen, and that
+   * choice is only known at the call site in `llm.factory.ts`.
+   */
+  AI_MODEL: z
+    .string()
+    .min(1)
+    .optional(),
+
+  AI_BASE_URL: z
+    .string()
+    .url()
+    .optional(),
+
+  AI_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(120_000)
+    .default(45_000),
+
+  AI_MAX_RETRIES: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(5)
+    .default(2),
+
   AUTH_SECRET: z
     .string()
     .min(32, "AUTH_SECRET must be at least 32 characters"),

@@ -8,6 +8,10 @@ async function backend() {
   return createBackendRegistryClient(store.toString());
 }
 
+export async function createScorecard(input: { nameEn: string; planVersionId: string }) {
+  return (await backend()).scorecard.create.mutate({ nameEn: input.nameEn, nameAr: input.nameEn, planVersionId: input.planVersionId });
+}
+
 export async function placeObjective(input: { perspectiveId: string; objectiveNodeId: string }) {
   return (await backend()).scorecard.map.placeObjective.mutate(input);
 }

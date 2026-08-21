@@ -15,7 +15,8 @@ export type AlignmentTypeView =
   | "objective"
   | "play"
   | "sector"
-  | "project";
+  | "project"
+  | "theme";
 
 export interface KpiVersionView {
   id: string;
@@ -127,6 +128,8 @@ export interface KeyResultView {
   id: string;
   okrId: string;
   type: KeyResultTypeView;
+  titleEn: string | null;
+  titleAr: string | null;
   targetValue: number;
   unit: string;
   currentValue: number | null;

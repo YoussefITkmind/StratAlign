@@ -19,7 +19,10 @@ import {
   Settings,
   LogOut,
   CalendarDays,
+  Sparkles,
 } from 'lucide-react';
+import { LogoutButton } from '@/components/auth/logout-button';
+import { getInitials } from '@/lib/user';
 
 // ---------------------------------------------------------------------------
 // Nav config — edit this array to add/rename/reorder pages. Every href below
@@ -53,6 +56,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Strategy Hierarchy', href: '/strategy-hierarchy', icon: Layers },
       { label: 'Balanced Scorecards', href: '/balanced-scorecards', icon: BookOpen },
       { label: 'Strategy Maps', href: '/strategy-maps', icon: Map },
+      { label: 'Strategy Map', href: '/strategy-maps/demo', icon: Sparkles },
     ],
   },
   {
@@ -89,18 +93,16 @@ export const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-const CURRENT_USER = {
-  initials: 'AM',
-  name: 'Alex Morgan',
-  role: 'Chief Strategy Officer',
-};
-
 export default function Sidebar({
   open = false,
   onClose,
+  name = 'Alex Morgan',
+  role = 'Chief Strategy Officer',
 }: {
   open?: boolean;
   onClose?: () => void;
+  name?: string;
+  role?: string;
 }) {
   const pathname = usePathname();
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
@@ -209,15 +211,18 @@ export default function Sidebar({
       {/* Footer / current user */}
       <div className="flex items-center gap-3 border-t border-white/10 px-4 py-4">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-sm font-semibold text-white">
-          {CURRENT_USER.initials}
+          {getInitials(name)}
         </div>
         <div className="min-w-0 flex-1 leading-tight">
-          <div className="truncate text-sm font-semibold text-white">{CURRENT_USER.name}</div>
-          <div className="truncate text-xs text-slate-400">{CURRENT_USER.role}</div>
+          <div className="truncate text-sm font-semibold text-white">{name}</div>
+          <div className="truncate text-xs text-slate-400">{role}</div>
         </div>
-        <button type="button" aria-label="Sign out" className="shrink-0 text-slate-500 hover:text-slate-300">
+        <LogoutButton
+          className="shrink-0 text-slate-500 hover:text-slate-300"
+          aria-label="Sign out"
+        >
           <LogOut className="h-4 w-4" />
-        </button>
+        </LogoutButton>
       </div>
       </aside>
     </>

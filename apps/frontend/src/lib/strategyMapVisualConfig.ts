@@ -1,3 +1,5 @@
+import { Activity, Layers, Target, TrendingUp, Users, Zap, type LucideIcon } from "lucide-react";
+
 export type PlacementStatus = "on_track" | "watch" | "off_track";
 export type LinkStrength = "weak" | "strong";
 
@@ -19,8 +21,16 @@ const PERSPECTIVE_PALETTE: PerspectiveColors[] = [
   { accent: "#14b8a6", bandBg: "#ecfaf8", barColor: "#14b8a6", textColor: "#0d9488" },
 ];
 
+// Same dynamic-by-lane-index cycling as the color palette above, not a fixed
+// per-perspective-name mapping — this is generic BSC iconography, not data.
+const PERSPECTIVE_ICONS: LucideIcon[] = [TrendingUp, Users, Activity, Zap, Target, Layers];
+
 export function perspectiveColors(laneIndex: number): PerspectiveColors {
   return PERSPECTIVE_PALETTE[laneIndex % PERSPECTIVE_PALETTE.length];
+}
+
+export function perspectiveIcon(laneIndex: number): LucideIcon {
+  return PERSPECTIVE_ICONS[laneIndex % PERSPECTIVE_ICONS.length];
 }
 
 export const STATUS_DOT: Record<PlacementStatus, string> = {
@@ -31,8 +41,14 @@ export const STATUS_DOT: Record<PlacementStatus, string> = {
 
 export const STATUS_LABEL: Record<PlacementStatus, string> = {
   on_track: "On Track",
-  watch: "Watch",
+  watch: "At Risk",
   off_track: "Off Track",
+};
+
+export const STATUS_PILL: Record<PlacementStatus, { bg: string; text: string }> = {
+  on_track: { bg: "#eaf7f1", text: "#059669" },
+  watch: { bg: "#fdf3e7", text: "#d97706" },
+  off_track: { bg: "#fdecec", text: "#dc2626" },
 };
 
 export const LINK_CONFIG: Record<LinkStrength, { color: string; width: number }> = {
