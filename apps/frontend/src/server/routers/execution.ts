@@ -17,9 +17,11 @@ export const executionRouter = router({
     list: authenticatedProcedure
       .input(z.object({
         status: status.optional(),
-        scope: z.enum(["all", "mine"]),
+        scope: z.enum(["all", "mine", "my_plays"]),
       }).strict())
       .query(({ ctx, input }) => forward(() => backend(ctx).execution.initiative.list.query(input))),
+    get: authenticatedProcedure.input(z.object({ initiativeId: id }).strict())
+      .query(({ ctx, input }) => forward(() => backend(ctx).execution.initiative.get.query(input))),
     register: authenticatedProcedure.input(z.object({
       nameEn: z.string().trim().min(1).max(300),
       nameAr: z.string().trim().min(1).max(300),

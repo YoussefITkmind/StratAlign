@@ -299,4 +299,142 @@ describe.sequential("Execution module with PostgreSQL Testcontainers", () => {
       actorIsSeoAdministrator: false,
     })).rejects.toMatchObject({ code: "EXECUTION_INITIATIVE_OWNERSHIP_REQUIRED" });
   });
+
+  it("returns persisted initiative detail with all authoritative objectives, Jira milestones, and latest status", async () => {
+    const initiative = await registerActiveInitiative();
+    const [objectiveZ, objectiveA, alignsOnly] = await Promise.all([
+      prisma.strategyNode.create({
+        data: { type: "OBJECTIVE", nameEn: "Zeta objective", nameAr: "Zeta objective", planVersionId, state: "ACTIVE", createdBy: ownerId },
+      }),
+      prisma.strategyNode.create({
+        data: { type: "OBJECTIVE", nameEn: "Alpha objective", nameAr: "Alpha objective", planVersionId, state: "ACTIVE", createdBy: ownerId },
+      }),
+      prisma.strategyNode.create({
+        data: { type: "OBJECTIVE", nameEn: "Aligned only", nameAr: "Aligned only", planVersionId, state: "ACTIVE", createdBy: ownerId },
+      }),
+    ]);
+    await prisma.relationshipRule.create({
+      data: {
+        fromType: "OBJECTIVE",
+        toType: "STRATEGIC_PLAY",
+        edgeType: "ALIGNS_TO",
+      },
+    });
+    await prisma.strategyEdge.createMany({
+      data: [
+        { fromNodeId: objectiveZ.id, toNodeId: activePlayId, edgeType: "EXECUTED_BY", planVersionId },
+        { fromNodeId: objectiveA.id, toNodeId: activePlayId, edgeType: "EXECUTED_BY", planVersionId },
+        { fromNodeId: alignsOnly.id, toNodeId: activePlayId, edgeType: "ALIGNS_TO", planVersionId },
+      ],
+    });
+
+    const jira = await execution.linkJira({
+      initiativeId: initiative.id,
+      jiraProjectKey: "DETAIL",
+      jiraProjectUrl: "https://jira.example.test/projects/DETAIL",
+      actorUserId: initiativeOwnerId,
+      actorIsSeoAdministrator: false,
+    });
+    await execution.flagMilestone({
+      jiraLinkId: jira.id,
+      nameEn: "Later milestone",
+      nameAr: "Later milestone",
+      dueDate: new Date("2026-10-01T00:00:00Z"),
+      health: "at_risk",
+      source: "jira",
+      actorUserId: initiativeOwnerId,
+      actorIsSeoAdministrator: false,
+    });
+    await execution.flagMilestone({
+      jiraLinkId: jira.id,
+      nameEn: "Earlier milestone",
+      nameAr: "Earlier milestone",
+      dueDate: new Date("2026-09-01T00:00:00Z"),
+      forecastDate: new Date("2026-09-03T00:00:00Z"),
+      health: "late",
+      source: "manual",
+      actorUserId: initiativeOwnerId,
+      actorIsSeoAdministrator: false,
+    });
+    await execution.updateStatus({
+      initiativeId: initiative.id,
+      period: "2026-07",
+      stage: "pilot",
+      status: "at_risk",
+      confidence: "medium",
+      actorUserId: initiativeOwnerId,
+      actorIsSeoAdministrator: false,
+    });
+    await execution.updateStatus({
+      initiativeId: initiative.id,
+      period: "2026-08",
+      stage: "execute",
+      status: "on_track",
+      confidence: "high",
+      narrativeEn: "Recovered",
+      actorUserId: initiativeOwnerId,
+      actorIsSeoAdministrator: false,
+    });
+
+    const detail = await execution.getInitiative(initiative.id);
+    expect(detail).toMatchObject({
+      id: initiative.id,
+      owner: { id: initiativeOwnerId, displayName: "Initiative Owner" },
+      strategicPlay: { id: activePlayId, nameEn: "Digital Growth", planVersionId },
+      jiraLink: { id: jira.id, jiraProjectKey: "DETAIL" },
+      latestStatus: {
+        period: "2026-08",
+        status: "on_track",
+        submittedBy: initiativeOwnerId,
+      },
+    });
+    expect(detail.objectives.map((objective) => objective.id)).toEqual([objectiveA.id, objectiveZ.id]);
+    expect(detail.objectives.some((objective) => objective.id === alignsOnly.id)).toBe(false);
+    expect(detail.milestones.map((milestone) => milestone.nameEn)).toEqual(["Earlier milestone", "Later milestone"]);
+  });
+
+  it("returns null Jira and no milestones, and retains unknown-initiative semantics", async () => {
+    const initiative = await registerActiveInitiative();
+    const detail = await execution.getInitiative(initiative.id);
+    expect(detail.jiraLink).toBeNull();
+    expect(detail.milestones).toEqual([]);
+    expect(detail.latestStatus).toBeNull();
+
+    await expect(execution.getInitiative("00000000-0000-4000-8000-000000000001"))
+      .rejects.toMatchObject({ code: "EXECUTION_INITIATIVE_NOT_FOUND" });
+  });
+
+  it("keeps mine as direct ownership and adds distinct my_plays ownership with enriched list fields", async () => {
+    const initiative = await registerActiveInitiative();
+    const jira = await execution.linkJira({
+      initiativeId: initiative.id,
+      jiraProjectKey: "LIST",
+      jiraProjectUrl: "https://jira.example.test/projects/LIST",
+      actorUserId: initiativeOwnerId,
+      actorIsSeoAdministrator: false,
+    });
+    expect(jira.id).toEqual(expect.any(String));
+
+    const directMine = await execution.list({ scope: "mine", actorUserId: initiativeOwnerId });
+    const playMine = await execution.list({ scope: "my_plays", actorUserId: ownerId });
+    const playOwnerDirectMine = await execution.list({ scope: "mine", actorUserId: ownerId });
+    const unrelatedPlayMine = await execution.list({ scope: "my_plays", actorUserId: otherUserId });
+
+    expect(directMine.map((row) => row.id)).toContain(initiative.id);
+    expect(playMine.map((row) => row.id)).toContain(initiative.id);
+    expect(playOwnerDirectMine.map((row) => row.id)).not.toContain(initiative.id);
+    expect(unrelatedPlayMine.map((row) => row.id)).not.toContain(initiative.id);
+    expect(playMine.find((row) => row.id === initiative.id)).toMatchObject({
+      ownerDisplayName: "Initiative Owner",
+      hasJiraLink: true,
+      linkedProjectCount: 1,
+    });
+
+    await prisma.jiraLink.delete({ where: { id: jira.id } });
+    const withoutLink = await execution.list({ scope: "all", actorUserId: otherUserId });
+    expect(withoutLink.find((row) => row.id === initiative.id)).toMatchObject({
+      hasJiraLink: false,
+      linkedProjectCount: 0,
+    });
+  });
 });
