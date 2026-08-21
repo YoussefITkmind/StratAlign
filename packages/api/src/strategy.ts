@@ -37,6 +37,8 @@ export interface StrategyServiceContract {
     type: "corporate_strategy" | "theme" | "objective" | "strategic_play" | "portfolio" | "area_of_focus";
     nameEn: string;
     nameAr: string;
+    descriptionEn?: string;
+    descriptionAr?: string;
     planVersionId: string;
     actorUserId: string;
     approvalCaseId?: string;
@@ -209,10 +211,12 @@ export const strategyRouter = router({
     create: admin().input(z.object({
       type: z.enum(["corporate_strategy","theme","objective","strategic_play","portfolio","area_of_focus"]),
       nameEn: z.string().trim().min(1).max(300), nameAr: z.string().trim().min(1).max(300), planVersionId: id,
+      descriptionEn: z.string().trim().max(4000).nullish(),
+      descriptionAr: z.string().trim().max(4000).nullish(),
       approvalCaseId: id.optional(),
       stagedChangeId: id.optional(),
     }).strict()).mutation(async ({ ctx, input }) => {
-      try { return await service(ctx).createNode({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); }
+      try { return await service(ctx).createNode({ ...input, descriptionEn: input.descriptionEn ?? undefined, descriptionAr: input.descriptionAr ?? undefined, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); }
     }),
     update: admin().input(z.object({ nodeId: id, nameEn: z.string().trim().min(1).max(300).optional(), nameAr: z.string().trim().min(1).max(300).optional(), approvalCaseId: id.optional() }).strict())
       .mutation(async ({ ctx, input }) => { try { return await service(ctx).updateNode({ ...input, actorUserId: ctx.session!.user.id }); } catch (e) { return fail(e); } }),

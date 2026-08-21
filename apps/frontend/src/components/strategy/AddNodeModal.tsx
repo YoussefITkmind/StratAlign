@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, Sparkles, RefreshCw, Trash2 } from "lucide-react";
 import { StrategyNode, NodeType, NodeStatus } from "@/types/strategy";
 import { TYPE_CONFIG, STATUS_CONFIG, colorForInitials } from "@/lib/strategyConfig";
 import { flatten } from "@/lib/treeUtils";
@@ -20,14 +20,44 @@ export default function AddNodeModal({ tree, defaultParentId, onClose, onAdd }: 
   const [progress, setProgress] = useState(0);
   const [owner, setOwner] = useState("");
   const [parentId, setParentId] = useState(defaultParentId);
+  const [description, setDescription] = useState("");
+  const [isDrafting, setIsDrafting] = useState(false);
+  const [isGenerated, setIsGenerated] = useState(false);
 
   const allNodes = flatten(tree);
+
+  const handleDraftDescription = async () => {
+    if (!name.trim()) return;
+    setIsDrafting(true);
+    try {
+      const parentNode = allNodes.find(n => n.node.id === parentId)?.node;
+      const res = await fetch("/api/ai/draft-description", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          type,
+          context: { parentName: parentNode?.name }
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDescription(data.draft);
+        setIsGenerated(true);
+      }
+    } catch (e) {
+      console.error("Failed to generate description", e);
+    } finally {
+      setIsDrafting(false);
+    }
+  };
 
   const submit = () => {
     if (!name.trim() || !owner.trim()) return;
     const newNode: StrategyNode = {
       id: `node-${Date.now()}`,
       name: name.trim(),
+      description: description.trim() || undefined,
       type,
       status,
       progress: Math.min(100, Math.max(0, progress)),
@@ -39,7 +69,7 @@ export default function AddNodeModal({ tree, defaultParentId, onClose, onAdd }: 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl overflow-y-auto max-h-[90vh]">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Add Node</h2>
           <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
@@ -85,6 +115,50 @@ export default function AddNodeModal({ tree, defaultParentId, onClose, onAdd }: 
                 ))}
               </select>
             </div>
+          </div>
+
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="block text-sm font-medium text-gray-700">Description</label>
+              {!isGenerated ? (
+                <button
+                  type="button"
+                  onClick={handleDraftDescription}
+                  disabled={!name.trim() || isDrafting}
+                  className="flex items-center gap-1.5 rounded bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  {isDrafting ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                  {isDrafting ? "Drafting..." : "Draft with AI"}
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDraftDescription}
+                    disabled={isDrafting}
+                    className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${isDrafting ? 'animate-spin' : ''}`} />
+                    Regenerate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setDescription(""); setIsGenerated(false); }}
+                    className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Reject
+                  </button>
+                </div>
+              )}
+            </div>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Enter a description..."
+              rows={3}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">

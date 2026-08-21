@@ -484,6 +484,8 @@ model StrategyNode {
   type               StrategyNodeType
   nameEn             String            @map("name_en")
   nameAr             String            @map("name_ar")
+  descriptionEn      String?           @map("description_en")
+  descriptionAr      String?           @map("description_ar")
   planVersionId      String            @map("plan_version_id") @db.Uuid
   state              StrategyNodeState @default(DRAFT)
   createdBy          String            @map("created_by")

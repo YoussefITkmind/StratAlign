@@ -10,6 +10,7 @@ export interface StrategyNodeOwner {
 export interface StrategyNode {
   id: string;
   name: string;
+  description?: string;
   type: NodeType;
   status: NodeStatus;
   progress: number;

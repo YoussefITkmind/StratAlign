@@ -36,6 +36,8 @@ export interface StrategyNode {
   type: StrategyNodeType;
   nameEn: string;
   nameAr: string;
+  descriptionEn?: string | null;
+  descriptionAr?: string | null;
   planVersionId: string;
   state: StrategyNodeState;
   createdBy: string;
