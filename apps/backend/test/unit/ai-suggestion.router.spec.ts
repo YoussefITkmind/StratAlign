@@ -149,7 +149,7 @@ describe("AI suggestion tRPC surface", () => {
       expect(acceptMany).not.toHaveBeenCalled();
     });
 
-    it("allows a signed-in reader who holds none of the registry-authoring roles", async () => {
+    it("allows a signed-in reader to generate, but not to accept", async () => {
       resolve.mockResolvedValue(authorization(["executive_viewer"]));
       const caller = rootRouter.createCaller(context() as never);
 
@@ -157,12 +157,14 @@ describe("AI suggestion tRPC surface", () => {
         caller.aiSuggestion.generate({ themeNodeId, kinds: ["kpi"], maxSuggestions: 4 }),
       ).resolves.toMatchObject({ generationId });
 
-      await expect(caller.aiSuggestion.accept(acceptInput)).resolves.toMatchObject({
-        subjectId: acceptedOutput.subjectId,
+      await expect(caller.aiSuggestion.accept(acceptInput)).rejects.toMatchObject({
+        code: "FORBIDDEN",
       });
+
+      expect(accept).not.toHaveBeenCalled();
     });
 
-    it("allows every role, not just the registry-authoring set", async () => {
+    it("allows every role to generate, registry-authoring roles included", async () => {
       for (const role of [
         "kpi_owner",
         "data_steward",
@@ -180,6 +182,18 @@ describe("AI suggestion tRPC surface", () => {
       }
 
       expect(generate).toHaveBeenCalledTimes(5);
+    });
+
+    it("allows every registry-authoring role to accept", async () => {
+      for (const role of ["kpi_owner", "data_steward", "strategy_analyst", "seo_administrator"]) {
+        resolve.mockResolvedValueOnce(authorization([role]));
+
+        await expect(
+          rootRouter.createCaller(context() as never).aiSuggestion.accept(acceptInput),
+        ).resolves.toMatchObject({ subjectId: acceptedOutput.subjectId });
+      }
+
+      expect(accept).toHaveBeenCalledTimes(4);
     });
 
     it("stamps the session user as the acceptor, never a client value", async () => {
