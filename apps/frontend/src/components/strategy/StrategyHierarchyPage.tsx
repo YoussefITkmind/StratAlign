@@ -11,7 +11,6 @@ import { initialStrategyData } from "@/data/mockStrategyData";
 import { addChild, collectIds, filterTree, flatten, isFiltering, Filters } from "@/lib/treeUtils";
 import TreeRow from "./TreeRow";
 import AddNodeModal from "./AddNodeModal";
-import Topbar from "@/components/layout/Topbar";
 
 interface Props {
   canManageStrategy: boolean;
@@ -64,8 +63,6 @@ export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
 
   return (
     <div className="w-full">
-      <Topbar />
-
       <div className="p-6">
       {/* breadcrumb */}
       <div className="mb-4 flex items-center gap-1.5 text-sm text-gray-500">
