@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
-import { requireRole, router } from "./index";
+import { protectedProcedure, router } from "./index";
 
 /**
  * Theme-level AI suggestion surface.
@@ -141,18 +141,11 @@ declare module "./index" {
 const id = z.string().uuid();
 
 /**
- * Both operations need the ability to author registry content, because both
- * ultimately create it — accepting a proposal is a KPI or OKR creation with an
- * extra provenance row, so it cannot be reachable to anyone who could not
- * create the same thing by hand.
+ * Open to any authenticated user by design — AI-suggest generation and
+ * acceptance are demo-facing features that every signed-in user should be
+ * able to reach, not gated behind the registry-authoring roles.
  */
-const suggestionAuthor = () =>
-  requireRole(
-    "kpi_owner",
-    "data_steward",
-    "strategy_analyst",
-    "seo_administrator",
-  );
+const suggestionAuthor = () => protectedProcedure;
 
 const service = (ctx: {
   aiSuggestion?: AiSuggestionServiceContract;
