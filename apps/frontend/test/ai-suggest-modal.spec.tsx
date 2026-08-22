@@ -11,6 +11,11 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
  * guard stays meaningful is if this component never sends
  * `acknowledgeDuplicate: true` on the reviewer's behalf.
  *
+ * Global mode auto-generates the moment the modal opens (fanning out one
+ * generate call per active theme), so most of these tests render, then await
+ * that automatic fan-out settling before asserting on the result — there is
+ * no idle "not yet generated" state to seed directly anymore in that mode.
+ *
  * tRPC is mocked at the client module so the hooks behave like real mutation
  * hooks — including `isPending`, which is what disables the buttons.
  */
@@ -152,15 +157,30 @@ function batch(suggestions: unknown[]) {
 }
 
 /**
- * Renders with a generation already returned, as after a successful Generate.
+ * Renders global mode (the component's default) with the given suggestions
+ * showing, as after its automatic on-open fan-out has settled.
  *
- * `initialTypeFilter="all"` because the component's own default is "kpi"
- * (origin/main's call-site contract) and most of these cases assert across both
- * kinds. Tests that care about the default set it explicitly.
+ * Only THEME_ID's generate call carries the suggestions under test; the
+ * other active theme (Customer Experience) resolves empty so it never
+ * duplicates them in the merged list. `initialTypeFilter="all"` because the
+ * component's own default is "kpi" and most of these cases assert across
+ * both kinds — tests that care about the real default pass their own.
  */
-function renderWithBatch(suggestions: unknown[], props: Record<string, unknown> = {}) {
-  hooks.state.generateData = batch(suggestions);
-  return render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" {...props} />);
+async function renderWithBatch(suggestions: unknown[], props: Record<string, unknown> = {}) {
+  if (props.initialMode === "one-by-one") {
+    // One By One never auto-generates — it still requires a chosen theme —
+    // so the direct-seed shortcut is safe here.
+    hooks.state.generateData = batch(suggestions);
+    return render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" {...props} />);
+  }
+
+  hooks.generate.mockImplementation(async ({ themeNodeId }: { themeNodeId: string }) =>
+    themeNodeId === THEME_ID ? batch(suggestions) : { ...batch([]), themeNodeId },
+  );
+  const utils = render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" {...props} />);
+  await waitFor(() => expect(hooks.generate).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByText(/Generating suggestions/)).toBeNull());
+  return utils;
 }
 
 function isDisabled(element: HTMLElement): boolean {
@@ -219,14 +239,8 @@ describe("AiSuggestModal — theme selection and generation", () => {
     expect(hooks.generate).not.toHaveBeenCalled();
   });
 
-  it("in global mode, Generate is enabled without choosing a theme", () => {
-    render(<AiSuggestModal onClose={() => {}} />);
-    expect(isDisabled(screen.getByTestId("generate"))).toBe(false);
-  });
-
-  it("in global mode with no theme chosen, fans out one generate call per active theme", async () => {
+  it("in global mode, opening the modal automatically fans out one generate call per active theme", async () => {
     render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
-    fireEvent.click(screen.getByTestId("generate"));
 
     await waitFor(() => expect(hooks.generate).toHaveBeenCalledTimes(2));
     const calls = hooks.generate.mock.calls.map((call) => call[0]).sort(
@@ -238,6 +252,13 @@ describe("AiSuggestModal — theme selection and generation", () => {
         { themeNodeId: THEME_ID, kinds: ["kpi", "okr"], maxSuggestions: 8 },
       ].sort((a, b) => a.themeNodeId.localeCompare(b.themeNodeId)),
     );
+  });
+
+  it("in global mode, Generate re-enables as \"Regenerate\" once the automatic fan-out completes", async () => {
+    render(<AiSuggestModal onClose={() => {}} />);
+
+    await waitFor(() => expect(screen.getByTestId("generate").textContent).toContain("Regenerate"));
+    expect(isDisabled(screen.getByTestId("generate"))).toBe(false);
   });
 
   it("in global mode, merges suggestions generated for every theme so each theme badge is represented", async () => {
@@ -252,7 +273,6 @@ describe("AiSuggestModal — theme selection and generation", () => {
       };
     });
     render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
-    fireEvent.click(screen.getByTestId("generate"));
 
     await waitFor(() => expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy());
     expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
@@ -277,7 +297,6 @@ describe("AiSuggestModal — theme selection and generation", () => {
       };
     });
     render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
-    fireEvent.click(screen.getByTestId("generate"));
     await waitFor(() => expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy());
     expect(hooks.generate).toHaveBeenCalledTimes(2);
 
@@ -295,7 +314,6 @@ describe("AiSuggestModal — theme selection and generation", () => {
       throw new Error("Theme context unavailable");
     });
     render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
-    fireEvent.click(screen.getByTestId("generate"));
 
     await waitFor(() => expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy());
     expect(screen.getByText(/Customer Experience.*Theme context unavailable/)).toBeTruthy();
@@ -309,7 +327,6 @@ describe("AiSuggestModal — theme selection and generation", () => {
       return { ...batch([]), themeNodeId: OTHER_THEME_ID, provider: "other-provider", model: "other-model" };
     });
     render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
-    fireEvent.click(screen.getByTestId("generate"));
     await waitFor(() => expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy());
 
     fireEvent.click(screen.getByTestId(`accept-${CLEAN_ID}`));
@@ -319,6 +336,11 @@ describe("AiSuggestModal — theme selection and generation", () => {
 
   it("generates for the selected theme with the active kind filter", async () => {
     render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
+    // Let the automatic on-open fan-out finish, then judge only what happens next.
+    await waitFor(() => expect(hooks.generate).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText(/Generating suggestions/)).toBeNull());
+    hooks.generate.mockClear();
+
     fireEvent.change(screen.getByTestId("theme-select"), { target: { value: THEME_ID } });
     fireEvent.click(screen.getByRole("button", { name: "KPI" }));
     fireEvent.click(screen.getByTestId("generate"));
@@ -332,8 +354,10 @@ describe("AiSuggestModal — theme selection and generation", () => {
   });
 
   it("shows a loading state and blocks a second generate while in flight", () => {
+    // One By One, so there is a single in-flight generate to observe rather
+    // than the global auto-fan-out's own copy.
     hooks.state.generatePending = true;
-    render(<AiSuggestModal onClose={() => {}} />);
+    render(<AiSuggestModal onClose={() => {}} initialMode="one-by-one" />);
     fireEvent.change(screen.getByTestId("theme-select"), { target: { value: THEME_ID } });
 
     expect(screen.getByText(/Generating suggestions for this theme/i)).toBeTruthy();
@@ -342,7 +366,7 @@ describe("AiSuggestModal — theme selection and generation", () => {
 
   it("surfaces a generation failure without leaving a stale loading state", async () => {
     hooks.generate.mockRejectedValue(new Error("AI suggestions are unavailable right now."));
-    render(<AiSuggestModal onClose={() => {}} />);
+    render(<AiSuggestModal onClose={() => {}} initialMode="one-by-one" />);
     fireEvent.change(screen.getByTestId("theme-select"), { target: { value: THEME_ID } });
     fireEvent.click(screen.getByTestId("generate"));
 
@@ -351,15 +375,15 @@ describe("AiSuggestModal — theme selection and generation", () => {
     );
   });
 
-  it("reports an empty generation distinctly from an exhausted list", () => {
-    renderWithBatch([]);
-    expect(screen.getByText(/nothing new to propose for this theme/i)).toBeTruthy();
+  it("reports an empty generation distinctly from an exhausted list", async () => {
+    await renderWithBatch([]);
+    expect(screen.getByText(/nothing new to propose across your strategy themes/i)).toBeTruthy();
   });
 });
 
 describe("AiSuggestModal — rendering suggestions", () => {
-  it("renders each suggestion with its kind, confidence, and AI provenance badge", () => {
-    renderWithBatch([kpiSuggestion(), okrSuggestion()]);
+  it("renders each suggestion with its kind, confidence, and AI provenance badge", async () => {
+    await renderWithBatch([kpiSuggestion(), okrSuggestion()]);
 
     expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy();
     expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
@@ -379,14 +403,14 @@ describe("AiSuggestModal — rendering suggestions", () => {
     expect(screen.getAllByText("AI Suggested")).toHaveLength(2);
   });
 
-  it("labels confidence as an AI estimate rather than a guarantee", () => {
-    renderWithBatch([kpiSuggestion()]);
+  it("labels confidence as an AI estimate rather than a guarantee", async () => {
+    await renderWithBatch([kpiSuggestion()]);
     const label = screen.getByTitle(/estimate produced by the model, not a guarantee/i);
     expect(label.textContent).toContain("AI confidence");
   });
 
-  it("shows key results with their targets for an OKR suggestion", () => {
-    renderWithBatch([okrSuggestion()]);
+  it("shows key results with their targets for an OKR suggestion", async () => {
+    await renderWithBatch([okrSuggestion()]);
     expect(screen.getByText(/Sign 20 enterprise logos/)).toBeTruthy();
     expect(screen.getByText(/20 logos/)).toBeTruthy();
   });
@@ -394,7 +418,7 @@ describe("AiSuggestModal — rendering suggestions", () => {
 
 describe("AiSuggestModal — accept", () => {
   it("sends the generated values and marks the item resolved", async () => {
-    renderWithBatch([kpiSuggestion()]);
+    await renderWithBatch([kpiSuggestion()]);
     fireEvent.click(screen.getByTestId(`accept-${CLEAN_ID}`));
 
     await waitFor(() => expect(hooks.accept).toHaveBeenCalledOnce());
@@ -421,7 +445,7 @@ describe("AiSuggestModal — accept", () => {
       alreadyAccepted: true,
       edited: false,
     });
-    renderWithBatch([kpiSuggestion()]);
+    await renderWithBatch([kpiSuggestion()]);
     fireEvent.click(screen.getByTestId(`accept-${CLEAN_ID}`));
 
     await waitFor(() =>
@@ -429,9 +453,9 @@ describe("AiSuggestModal — accept", () => {
     );
   });
 
-  it("disables every action while an accept is in flight", () => {
+  it("disables every action while an accept is in flight", async () => {
     hooks.state.acceptPending = true;
-    renderWithBatch([kpiSuggestion()]);
+    await renderWithBatch([kpiSuggestion()]);
 
     expect(isDisabled(screen.getByTestId(`accept-${CLEAN_ID}`))).toBe(true);
     expect(isDisabled(screen.getByTestId(`edit-${CLEAN_ID}`))).toBe(true);
@@ -439,12 +463,12 @@ describe("AiSuggestModal — accept", () => {
     expect(isDisabled(screen.getByTestId("accept-all"))).toBe(true);
   });
 
-  it("does not issue a mutation from repeated clicks while one is in flight", () => {
+  it("does not issue a mutation from repeated clicks while one is in flight", async () => {
     // `busy` is what protects against double submission. With a mutation
     // pending, every action control carries the disabled attribute, and a
     // click on a disabled button never reaches the handler.
     hooks.state.acceptPending = true;
-    renderWithBatch([kpiSuggestion()]);
+    await renderWithBatch([kpiSuggestion()]);
     const button = screen.getByTestId(`accept-${CLEAN_ID}`);
 
     fireEvent.click(button);
@@ -455,7 +479,7 @@ describe("AiSuggestModal — accept", () => {
   });
 
   it("issues exactly one mutation for a single accept", async () => {
-    renderWithBatch([kpiSuggestion()]);
+    await renderWithBatch([kpiSuggestion()]);
     fireEvent.click(screen.getByTestId(`accept-${CLEAN_ID}`));
 
     await waitFor(() => expect(hooks.accept).toHaveBeenCalledOnce());
@@ -468,7 +492,7 @@ describe("AiSuggestModal — accept", () => {
 
   it("surfaces an acceptance failure and leaves the suggestion listed", async () => {
     hooks.accept.mockRejectedValue(new Error("Unable to accept this suggestion"));
-    renderWithBatch([kpiSuggestion()]);
+    await renderWithBatch([kpiSuggestion()]);
     fireEvent.click(screen.getByTestId(`accept-${CLEAN_ID}`));
 
     await waitFor(() =>
@@ -480,7 +504,7 @@ describe("AiSuggestModal — accept", () => {
 
 describe("AiSuggestModal — edit", () => {
   it("sends the edited values and keeps the item flagged as AI-originated", async () => {
-    renderWithBatch([kpiSuggestion()]);
+    await renderWithBatch([kpiSuggestion()]);
     fireEvent.click(screen.getByTestId(`edit-${CLEAN_ID}`));
 
     fireEvent.change(screen.getByLabelText("Title (English)"), {
@@ -506,7 +530,7 @@ describe("AiSuggestModal — edit", () => {
   });
 
   it("sends edited key-result targets for an OKR", async () => {
-    renderWithBatch([okrSuggestion()]);
+    await renderWithBatch([okrSuggestion()]);
     fireEvent.click(screen.getByTestId(`edit-${OKR_ID}`));
 
     fireEvent.change(screen.getByLabelText("Target for Sign 20 enterprise logos"), {
@@ -522,8 +546,8 @@ describe("AiSuggestModal — edit", () => {
     expect(payload.edited).toBe(true);
   });
 
-  it("discards an edit that is cancelled", () => {
-    renderWithBatch([kpiSuggestion()]);
+  it("discards an edit that is cancelled", async () => {
+    await renderWithBatch([kpiSuggestion()]);
     fireEvent.click(screen.getByTestId(`edit-${CLEAN_ID}`));
     fireEvent.change(screen.getByLabelText("Title (English)"), {
       target: { value: "Never saved" },
@@ -537,8 +561,8 @@ describe("AiSuggestModal — edit", () => {
 });
 
 describe("AiSuggestModal — reject", () => {
-  it("removes the item locally and never calls the backend", () => {
-    renderWithBatch([kpiSuggestion(), okrSuggestion()]);
+  it("removes the item locally and never calls the backend", async () => {
+    await renderWithBatch([kpiSuggestion(), okrSuggestion()]);
     fireEvent.click(screen.getByTestId(`reject-${CLEAN_ID}`));
 
     expect(screen.queryByText("LTV to CAC Ratio")).toBeNull();
@@ -547,8 +571,8 @@ describe("AiSuggestModal — reject", () => {
     expect(hooks.acceptMany).not.toHaveBeenCalled();
   });
 
-  it("excludes a rejected item from a later Accept all", async () => {
-    renderWithBatch([kpiSuggestion(), okrSuggestion()]);
+  it("excludes a rejected item from a later Add all", async () => {
+    await renderWithBatch([kpiSuggestion(), okrSuggestion()]);
     fireEvent.click(screen.getByTestId(`reject-${CLEAN_ID}`));
     fireEvent.click(screen.getByTestId("accept-all"));
 
@@ -560,7 +584,7 @@ describe("AiSuggestModal — reject", () => {
 
 describe("AiSuggestModal — duplicate confirmation", () => {
   it("sends acknowledgeDuplicate=false for a clean suggestion", async () => {
-    renderWithBatch([kpiSuggestion()]);
+    await renderWithBatch([kpiSuggestion()]);
     fireEvent.click(screen.getByTestId(`accept-${CLEAN_ID}`));
 
     await waitFor(() => expect(hooks.accept).toHaveBeenCalledOnce());
@@ -568,7 +592,7 @@ describe("AiSuggestModal — duplicate confirmation", () => {
   });
 
   it("shows the warning but still accepts a weak match without confirmation", async () => {
-    renderWithBatch([weakDuplicate]);
+    await renderWithBatch([weakDuplicate]);
 
     expect(screen.getByTestId(`duplicate-warning-${WEAK_DUP_ID}`)).toBeTruthy();
     expect(screen.getByText(/Possible existing item/)).toBeTruthy();
@@ -581,8 +605,8 @@ describe("AiSuggestModal — duplicate confirmation", () => {
     expect(payloadOf(hooks.accept).acknowledgeDuplicate).toBe(false);
   });
 
-  it("does NOT accept a strong duplicate on the first click", () => {
-    renderWithBatch([strongDuplicate]);
+  it("does NOT accept a strong duplicate on the first click", async () => {
+    await renderWithBatch([strongDuplicate]);
 
     expect(screen.getByText(/Highly similar to an existing item/)).toBeTruthy();
     expect(screen.getByText(/similarity: 95%/)).toBeTruthy();
@@ -596,7 +620,7 @@ describe("AiSuggestModal — duplicate confirmation", () => {
   });
 
   it("sends acknowledgeDuplicate=true only after explicit confirmation", async () => {
-    renderWithBatch([strongDuplicate]);
+    await renderWithBatch([strongDuplicate]);
 
     fireEvent.click(screen.getByTestId(`accept-${STRONG_DUP_ID}`));
     expect(hooks.accept).not.toHaveBeenCalled();
@@ -612,8 +636,8 @@ describe("AiSuggestModal — duplicate confirmation", () => {
     expect(payloadOf(hooks.accept).acknowledgeDuplicate).toBe(true);
   });
 
-  it("lets the reviewer back out of the confirmation without accepting", () => {
-    renderWithBatch([strongDuplicate]);
+  it("lets the reviewer back out of the confirmation without accepting", async () => {
+    await renderWithBatch([strongDuplicate]);
 
     fireEvent.click(screen.getByTestId(`accept-${STRONG_DUP_ID}`));
     fireEvent.click(screen.getByRole("button", { name: "Keep reviewing" }));
@@ -623,8 +647,8 @@ describe("AiSuggestModal — duplicate confirmation", () => {
     expect(screen.queryByText(/Duplicate confirmed/)).toBeNull();
   });
 
-  it("distinguishes normal, flagged, and confirmed states visually", () => {
-    renderWithBatch([kpiSuggestion(), strongDuplicate]);
+  it("distinguishes normal, flagged, and confirmed states visually", async () => {
+    await renderWithBatch([kpiSuggestion(), strongDuplicate]);
 
     // Normal: no warning region at all.
     expect(screen.queryByTestId(`duplicate-warning-${CLEAN_ID}`)).toBeNull();
@@ -637,18 +661,19 @@ describe("AiSuggestModal — duplicate confirmation", () => {
     fireEvent.click(screen.getByTestId(`accept-${STRONG_DUP_ID}`));
     fireEvent.click(screen.getByTestId(`confirm-duplicate-${STRONG_DUP_ID}`));
 
-    // Confirmed: emerald, and the action becomes an ordinary Accept.
+    // Confirmed: emerald, and the action becomes an ordinary Add.
     const confirmed = screen.getByTestId(`duplicate-warning-${STRONG_DUP_ID}`);
     expect(confirmed.className).toContain("emerald");
-    expect(screen.getByTestId(`accept-${STRONG_DUP_ID}`).textContent).toContain("Accept");
+    expect(screen.getByTestId(`accept-${STRONG_DUP_ID}`).textContent).toContain("Add");
   });
 
   it("clears confirmations when a new batch is generated", async () => {
-    const { rerender } = renderWithBatch([strongDuplicate]);
+    const { rerender } = await renderWithBatch([strongDuplicate]);
     fireEvent.click(screen.getByTestId(`accept-${STRONG_DUP_ID}`));
     fireEvent.click(screen.getByTestId(`confirm-duplicate-${STRONG_DUP_ID}`));
     expect(screen.getByText(/Duplicate confirmed/)).toBeTruthy();
 
+    hooks.generate.mockClear();
     fireEvent.change(screen.getByTestId("theme-select"), { target: { value: THEME_ID } });
     fireEvent.click(screen.getByTestId("generate"));
     await waitFor(() => expect(hooks.generate).toHaveBeenCalledOnce());
@@ -660,7 +685,7 @@ describe("AiSuggestModal — duplicate confirmation", () => {
 
 describe("AiSuggestModal — accept all", () => {
   it("submits safe suggestions in one batched call", async () => {
-    renderWithBatch([kpiSuggestion(), okrSuggestion()]);
+    await renderWithBatch([kpiSuggestion(), okrSuggestion()]);
     fireEvent.click(screen.getByTestId("accept-all"));
 
     await waitFor(() => expect(hooks.acceptMany).toHaveBeenCalledOnce());
@@ -671,9 +696,9 @@ describe("AiSuggestModal — accept all", () => {
   });
 
   it("NEVER silently sweeps up an unconfirmed strong duplicate", async () => {
-    renderWithBatch([kpiSuggestion(), strongDuplicate]);
+    await renderWithBatch([kpiSuggestion(), strongDuplicate]);
 
-    expect(screen.getByTestId("accept-all").textContent).toContain("Accept all (1)");
+    expect(screen.getByTestId("accept-all").textContent).toContain("Add all (1)");
 
     fireEvent.click(screen.getByTestId("accept-all"));
 
@@ -696,7 +721,7 @@ describe("AiSuggestModal — accept all", () => {
       ],
       failed: [],
     });
-    renderWithBatch([kpiSuggestion(), strongDuplicate]);
+    await renderWithBatch([kpiSuggestion(), strongDuplicate]);
     fireEvent.click(screen.getByTestId("accept-all"));
 
     await waitFor(() =>
@@ -707,8 +732,8 @@ describe("AiSuggestModal — accept all", () => {
   });
 
   it("creates nothing when every remaining suggestion is an unconfirmed duplicate", async () => {
-    renderWithBatch([strongDuplicate]);
-    expect(screen.getByTestId("accept-all").textContent).toContain("Accept all (0)");
+    await renderWithBatch([strongDuplicate]);
+    expect(screen.getByTestId("accept-all").textContent).toContain("Add all (0)");
 
     fireEvent.click(screen.getByTestId("accept-all"));
 
@@ -720,11 +745,11 @@ describe("AiSuggestModal — accept all", () => {
   });
 
   it("includes a duplicate once the reviewer has confirmed it", async () => {
-    renderWithBatch([kpiSuggestion(), strongDuplicate]);
+    await renderWithBatch([kpiSuggestion(), strongDuplicate]);
     fireEvent.click(screen.getByTestId(`accept-${STRONG_DUP_ID}`));
     fireEvent.click(screen.getByTestId(`confirm-duplicate-${STRONG_DUP_ID}`));
 
-    expect(screen.getByTestId("accept-all").textContent).toContain("Accept all (2)");
+    expect(screen.getByTestId("accept-all").textContent).toContain("Add all (2)");
     fireEvent.click(screen.getByTestId("accept-all"));
 
     await waitFor(() => expect(hooks.acceptMany).toHaveBeenCalledOnce());
@@ -750,7 +775,7 @@ describe("AiSuggestModal — accept all", () => {
         { suggestionId: OKR_ID, reason: "creation_failed", message: "Unable to create OKR" },
       ],
     });
-    renderWithBatch([kpiSuggestion(), okrSuggestion()]);
+    await renderWithBatch([kpiSuggestion(), okrSuggestion()]);
     fireEvent.click(screen.getByTestId("accept-all"));
 
     await waitFor(() =>
@@ -763,7 +788,7 @@ describe("AiSuggestModal — accept all", () => {
 
   it("surfaces a whole-batch failure", async () => {
     hooks.acceptMany.mockRejectedValue(new Error("Unable to accept these suggestions"));
-    renderWithBatch([kpiSuggestion()]);
+    await renderWithBatch([kpiSuggestion()]);
     fireEvent.click(screen.getByTestId("accept-all"));
 
     await waitFor(() =>
@@ -774,25 +799,33 @@ describe("AiSuggestModal — accept all", () => {
 });
 
 describe("AiSuggestModal — origin/main component API", () => {
-  it("defaults to the KPI filter, as its call-site contract promises", () => {
-    hooks.state.generateData = batch([kpiSuggestion(), okrSuggestion()]);
+  it("defaults to the KPI filter, as its call-site contract promises", async () => {
+    hooks.generate.mockImplementation(async ({ themeNodeId }: { themeNodeId: string }) =>
+      themeNodeId === THEME_ID ? batch([kpiSuggestion(), okrSuggestion()]) : { ...batch([]), themeNodeId },
+    );
     render(<AiSuggestModal onClose={() => {}} />);
 
     // Default initialTypeFilter="kpi" — the OKR is filtered out.
-    expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy());
     expect(screen.queryByText("Expand into enterprise accounts")).toBeNull();
   });
 
-  it("honours initialTypeFilter from the OKR library call site", () => {
-    hooks.state.generateData = batch([kpiSuggestion(), okrSuggestion()]);
+  it("honours initialTypeFilter from the OKR library call site", async () => {
+    hooks.generate.mockImplementation(async ({ themeNodeId }: { themeNodeId: string }) =>
+      themeNodeId === THEME_ID ? batch([kpiSuggestion(), okrSuggestion()]) : { ...batch([]), themeNodeId },
+    );
     render(<AiSuggestModal onClose={() => {}} initialTypeFilter="okr" />);
 
-    expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy());
     expect(screen.queryByText("LTV to CAC Ratio")).toBeNull();
   });
 
   it("generates only the pre-selected kind without the reviewer touching a tab", async () => {
     render(<AiSuggestModal onClose={() => {}} initialTypeFilter="okr" />);
+    await waitFor(() => expect(hooks.generate).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText(/Generating suggestions/)).toBeNull());
+    hooks.generate.mockClear();
+
     fireEvent.change(screen.getByTestId("theme-select"), { target: { value: THEME_ID } });
     fireEvent.click(screen.getByTestId("generate"));
 
@@ -800,22 +833,22 @@ describe("AiSuggestModal — origin/main component API", () => {
     expect(payloadOf(hooks.generate).kinds).toEqual(["okr"]);
   });
 
-  it("defaults to global mode, showing the whole batch", () => {
-    renderWithBatch([kpiSuggestion(), okrSuggestion()]);
+  it("defaults to global mode, showing the whole batch", async () => {
+    await renderWithBatch([kpiSuggestion(), okrSuggestion()]);
 
     expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy();
     expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
   });
 
-  it("honours initialMode=\"one-by-one\" and shows a single card", () => {
-    renderWithBatch([kpiSuggestion(), okrSuggestion()], { initialMode: "one-by-one" });
+  it("honours initialMode=\"one-by-one\" and shows a single card", async () => {
+    await renderWithBatch([kpiSuggestion(), okrSuggestion()], { initialMode: "one-by-one" });
 
     expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy();
     expect(screen.queryByText("Expand into enterprise accounts")).toBeNull();
   });
 
-  it("advances to the next card as each one is resolved in one-by-one mode", () => {
-    renderWithBatch([kpiSuggestion(), okrSuggestion()], { initialMode: "one-by-one" });
+  it("advances to the next card as each one is resolved in one-by-one mode", async () => {
+    await renderWithBatch([kpiSuggestion(), okrSuggestion()], { initialMode: "one-by-one" });
 
     fireEvent.click(screen.getByTestId(`reject-${CLEAN_ID}`));
 
@@ -823,8 +856,8 @@ describe("AiSuggestModal — origin/main component API", () => {
     expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
   });
 
-  it("lets the reviewer switch presentation mode after generating", () => {
-    renderWithBatch([kpiSuggestion(), okrSuggestion()]);
+  it("lets the reviewer switch presentation mode after generating", async () => {
+    await renderWithBatch([kpiSuggestion(), okrSuggestion()]);
 
     fireEvent.click(screen.getByTestId("mode-one-by-one"));
     expect(screen.queryByText("Expand into enterprise accounts")).toBeNull();
@@ -833,12 +866,12 @@ describe("AiSuggestModal — origin/main component API", () => {
     expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
   });
 
-  it("Accept all still covers the whole remaining batch in one-by-one mode", async () => {
-    // Only one card is on screen, but "Accept all" means all of them — a batch
+  it("Add all still covers the whole remaining batch in one-by-one mode", async () => {
+    // Only one card is on screen, but "Add all" means all of them — a batch
     // action must not silently shrink to whatever the cursor happens to show.
-    renderWithBatch([kpiSuggestion(), okrSuggestion()], { initialMode: "one-by-one" });
+    await renderWithBatch([kpiSuggestion(), okrSuggestion()], { initialMode: "one-by-one" });
 
-    expect(screen.getByTestId("accept-all").textContent).toContain("Accept all (2)");
+    expect(screen.getByTestId("accept-all").textContent).toContain("Add all (2)");
     fireEvent.click(screen.getByTestId("accept-all"));
 
     await waitFor(() => expect(hooks.acceptMany).toHaveBeenCalledOnce());
@@ -858,5 +891,32 @@ describe("AiSuggestModal — origin/main component API", () => {
     expect(source).not.toContain("mockKpiSuggestions");
     expect(source).not.toContain("kpiSuggestions");
     expect(source).toContain("trpc.aiSuggestion.generate.useMutation");
+  });
+});
+
+describe("AiSuggestModal — auto-generate on open", () => {
+  it("does not auto-generate in one-by-one mode, which has no theme to run for yet", async () => {
+    render(<AiSuggestModal onClose={() => {}} initialMode="one-by-one" />);
+
+    await waitFor(() => expect(screen.getByTestId("theme-select")).toBeTruthy());
+    expect(hooks.generate).not.toHaveBeenCalled();
+  });
+
+  it("only auto-generates once per mount, even if the theme list changes afterwards", async () => {
+    const { rerender } = render(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
+    await waitFor(() => expect(hooks.generate).toHaveBeenCalledTimes(2));
+
+    hooks.nodes.mockReturnValue({
+      data: [
+        { id: THEME_ID, type: "theme", state: "active", nameEn: "Revenue & Growth" },
+        { id: OTHER_THEME_ID, type: "theme", state: "active", nameEn: "Customer Experience" },
+        { id: "new-theme", type: "theme", state: "active", nameEn: "New Theme" },
+      ],
+    });
+    rerender(<AiSuggestModal onClose={() => {}} initialTypeFilter="all" />);
+
+    // Give any (incorrect) re-fire a chance to happen, then confirm it didn't.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(hooks.generate).toHaveBeenCalledTimes(2);
   });
 });
