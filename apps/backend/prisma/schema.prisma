@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance", "scorecard", "execution", "value"]
+  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance", "scorecard", "execution", "value", "integration"]
 }
 
 model SystemSetting {
@@ -1182,6 +1182,70 @@ model Measurement {
   @@index([submittedById])
   @@map("measurements")
   @@schema("performance")
+}
+
+model LineageRecord {
+  id               String   @id @default(uuid()) @db.Uuid
+  figureRef        String   @map("figure_ref")
+  sourceSystem     String   @map("source_system")
+  sourceObject     String   @map("source_object")
+  sourceField      String   @map("source_field")
+  extractionTs     DateTime @map("extraction_ts")
+  transformationId String   @map("transformation_id")
+  runId            String   @map("run_id") @db.Uuid
+  checksum         String
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([figureRef])
+  @@index([runId])
+  @@index([transformationId])
+  @@map("lineage_records")
+  @@schema("integration")
+}
+
+model ReconciliationResult {
+  id            String   @id @default(uuid()) @db.Uuid
+  runId         String   @map("run_id") @db.Uuid
+  controlType   String   @map("control_type")
+  sourceValue   String   @map("source_value")
+  platformValue String   @map("platform_value")
+  delta         Decimal  @db.Decimal(30, 10)
+  passed        Boolean
+  checkedAt     DateTime @default(now()) @map("checked_at")
+  detail        String?
+  @@index([runId])
+  @@map("reconciliation_results")
+  @@schema("integration")
+}
+
+model QualityFlag {
+  id            String   @id @default(uuid()) @db.Uuid
+  subjectType   String   @map("subject_type")
+  subjectRef    String   @map("subject_ref")
+  rule          String
+  severity      String
+  detail        String
+  state         String
+  raisedByRunId String   @map("raised_by_run_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+  remediationItems RemediationItem[]
+  @@index([raisedByRunId])
+  @@map("quality_flags")
+  @@schema("integration")
+}
+
+model RemediationItem {
+  id            String   @id @default(uuid()) @db.Uuid
+  qualityFlagId String   @map("quality_flag_id") @db.Uuid
+  description   String
+  assignedTo    String   @map("assigned_to")
+  dueDate       DateTime @map("due_date")
+  state         String
+  createdAt     DateTime @default(now()) @map("created_at")
+  qualityFlag QualityFlag @relation(fields: [qualityFlagId], references: [id], onDelete: Cascade)
+  @@index([assignedTo, state])
+  @@map("remediation_items")
+  @@schema("integration")
 }
 
 model TargetSeries {

@@ -9,12 +9,12 @@ import {
 } from "../src";
 
 describe("IAM domain", () => {
-  it("defines the exact twelve canonical roles", () => {
+  it("defines the exact canonical roles", () => {
     expect(PLATFORM_ROLES).toEqual([
       "executive_viewer", "sector_leadership", "objective_play_owner",
-      "initiative_owner", "kpi_owner", "data_steward", "vmo_lead",
-      "benefit_owner", "strategy_analyst", "governance_committee",
-      "seo_administrator", "platform_administrator",
+      "initiative_owner", "kpi_owner", "data_steward", "bi_data_lead",
+      "vmo_lead", "benefit_owner", "strategy_analyst",
+      "governance_committee", "seo_administrator", "platform_administrator",
     ]);
   });
 

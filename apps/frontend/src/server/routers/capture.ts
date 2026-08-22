@@ -13,6 +13,6 @@ export const captureRouter=router({
   submit:authenticatedProcedure.input(z.object({sessionId:id,value:z.number(),evidenceRef:z.string().optional()}).strict()).mutation(({ctx,input})=>f(()=>backend(ctx).performance.capture.submit.mutate(input))),
   recall:authenticatedProcedure.input(z.object({sessionId:id}).strict()).mutation(({ctx,input})=>f(()=>backend(ctx).performance.capture.recall.mutate(input))),
   template:authenticatedProcedure.input(z.object({format:z.enum(["csv","xlsx"]),period:z.string(),priorValue:z.number().nullable()}).strict()).query(({ctx,input})=>f(()=>backend(ctx).performance.capture.template.query(input))),
-  validate:authenticatedProcedure.input(z.object({base64:z.string(),format:z.enum(["csv","xlsx"]),expectedPeriod:z.string(),history:z.array(z.number())}).strict()).mutation(({ctx,input})=>f(()=>backend(ctx).performance.capture.validateTemplate.mutate(input))),
+  validate:authenticatedProcedure.input(z.object({base64:z.string(),format:z.enum(["csv","xlsx"]),expectedPeriod:z.string(),history:z.array(z.number()),sessionId:id.optional()}).strict()).mutation(({ctx,input})=>f(()=>backend(ctx).performance.capture.validateTemplate.mutate(input))),
   uploadEvidence:authenticatedProcedure.input(z.object({sessionId:id,fileName:z.string(),contentType:z.string(),base64:z.string()}).strict()).mutation(({ctx,input})=>f(()=>backend(ctx).performance.capture.uploadEvidence.mutate(input))),
 });

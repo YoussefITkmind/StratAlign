@@ -7,6 +7,7 @@ export const PLATFORM_ROLES = [
   "initiative_owner",
   "kpi_owner",
   "data_steward",
+  "bi_data_lead",
   "vmo_lead",
   "benefit_owner",
   "strategy_analyst",

@@ -1,0 +1,1 @@
+{"version":"1.0.0","description":"Reshape a wide manual KPI template into long-form Measurement rows","expectedOutputColumns":["kpi_version_id","scope_node_id","submitted_by","sector","period","value"]}

@@ -1,0 +1,2 @@
+kpi_version_id,scope_node_id,period,value,submitted_by,source_object,source_field
+kpi-v1,00000000-0000-0000-0000-000000000101,2026-07,42.5,00000000-0000-0000-0000-000000000201,generic-kpi-actuals.csv,value

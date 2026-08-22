@@ -17,4 +17,12 @@ describe("Capture Workspace server processing", () => {
     expect(source).toContain("submission remains allowed");
     expect(source).not.toMatch(/disabled=\{warning\}/);
   });
+
+  it("binds the unchanged validation report to server reconciliation results", () => {
+    const source = readFileSync(new URL("../src/components/capture/CaptureSessionView.tsx", import.meta.url), "utf8");
+    expect(source).toContain("onSuccess:setRows");
+    expect(source).toContain("{r.outcome} {r.reason}");
+    expect(source).not.toContain("sheet_to_json");
+    expect(source).not.toContain("Expected period ${task.period}");
+  });
 });

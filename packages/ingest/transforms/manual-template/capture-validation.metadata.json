@@ -1,0 +1,1 @@
+{"version":"1.0.0","description":"Validate Prompt 2.8 manual capture templates through the shared ingestion framework","expectedOutputColumns":["row_number","period","value","outcome","reason","passed"]}

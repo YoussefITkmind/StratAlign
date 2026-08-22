@@ -50,9 +50,9 @@ describe.sequential("IAM with real migrations and PostgreSQL Testcontainers", ()
     await postgres?.stop();
   }, 60_000);
 
-  it("applies migrations and seeds exactly twelve roles idempotently", async () => {
+  it("applies migrations and seeds all platform roles idempotently", async () => {
     const roles = await prisma.role.findMany({ orderBy: { name: "asc" } });
-    expect(roles).toHaveLength(12);
+    expect(roles).toHaveLength(PLATFORM_ROLES.length);
     expect(new Set(roles.map((role) => role.name))).toEqual(new Set(PLATFORM_ROLES));
     expect(await prisma.groupRoleMapping.count({
       where: { groupClaim: "stratalign-admins", isCurrent: true },
