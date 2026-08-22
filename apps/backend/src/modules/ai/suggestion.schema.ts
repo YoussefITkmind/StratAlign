@@ -44,8 +44,13 @@ const baseSuggestionSchema = z.object({
   frequency: z.enum(["monthly", "quarterly"]).nullish(),
   polarity: z.enum(["higher_is_better", "lower_is_better"]).nullish(),
 
-  // OKR-only.
-  objectiveNodeId: z.string().uuid().nullish(),
+  // OKR-only. Structural check only — whether this id actually names a real
+  // objective in scope is `isApplicable`'s job downstream, which drops just
+  // that one suggestion on a mismatch. Requiring exact UUID format here
+  // instead would fail the model's *entire* response (every KPI in the same
+  // batch included) the moment one OKR's id isn't shaped exactly right,
+  // which is a much larger loss than dropping the one bad item.
+  objectiveNodeId: z.string().trim().min(1).max(200).nullish(),
   keyResults: z.array(keyResultSchema).max(MAX_KEY_RESULTS).nullish(),
 });
 
