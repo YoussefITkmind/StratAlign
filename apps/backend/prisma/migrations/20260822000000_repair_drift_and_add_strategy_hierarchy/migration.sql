@@ -1,7 +1,12 @@
--- This migration is the remainder of a two-step repair. A prior interrupted
--- attempt already committed (verified): the 32 restored FK constraints, the
--- 9 restored indexes, the "strategy_hierarchy" schema, and both of its enum
--- types. What's left is just the new tables themselves.
+-- New Strategy Hierarchy schema/tables (see prisma/schema.prisma). This is
+-- purely additive: a new schema, two new enum types, and two new tables with
+-- their indexes and foreign keys.
+
+CREATE SCHEMA IF NOT EXISTS "strategy_hierarchy";
+
+CREATE TYPE "strategy_hierarchy"."StrategyHierarchyNodeType" AS ENUM ('plan', 'perspective', 'objective', 'initiative', 'project');
+
+CREATE TYPE "strategy_hierarchy"."StrategyHierarchyNodeStatus" AS ENUM ('on-track', 'at-risk', 'off-track', 'not-started');
 
 CREATE TABLE "strategy_hierarchy"."strategy_hierarchy_nodes" (
     "id" UUID NOT NULL,

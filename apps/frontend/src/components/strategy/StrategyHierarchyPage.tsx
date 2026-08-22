@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ChevronRight, Search, Download, Share2, Sparkles, Plus,
   Maximize2, Minimize2, LayoutList, Network, Loader2, AlertTriangle,
@@ -35,12 +35,10 @@ export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
   const [modal, setModal] = useState<ModalState>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (tree && !hasAutoExpanded) {
-      setHasAutoExpanded(true);
-      setExpandedIds(new Set(collectIds(tree)));
-    }
-  }, [tree, hasAutoExpanded]);
+  if (tree && !hasAutoExpanded) {
+    setHasAutoExpanded(true);
+    setExpandedIds(new Set(collectIds(tree)));
+  }
 
   const totalNodes = useMemo(() => (tree ? collectIds(tree).length : 0), [tree]);
   const filteredTree = useMemo(() => (tree ? filterTree(tree, filters) : null), [tree, filters]);
