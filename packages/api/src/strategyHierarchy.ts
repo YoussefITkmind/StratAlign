@@ -74,6 +74,9 @@ export interface StrategyHierarchyServiceContract {
   }): Promise<StrategyHierarchyNodeOutput>;
 
   deleteNode(input: { id: string; actorUserId: string; actorName: string }): Promise<{ deleted: true }>;
+
+  /** One-time sync of pre-existing nodes into the AI-suggestion/registry graph. */
+  backfillBridge?(): Promise<{ perspectives: number; objectives: number }>;
 }
 
 declare module "./index" {
@@ -181,4 +184,22 @@ export const strategyHierarchyRouter = router({
         return fail(e);
       }
     }),
+
+  /**
+   * One-time, idempotent sync of every existing perspective/objective into
+   * the AI-suggestion/registry graph, for nodes created before the bridge
+   * shipped. Safe to call more than once.
+   */
+  backfillBridge: admin().mutation(async ({ ctx }) => {
+    try {
+      const svc = service(ctx);
+      if (!svc.backfillBridge) {
+        throw new TRPCError({ code: "NOT_IMPLEMENTED", message: "Backfill is unavailable" });
+      }
+      return await svc.backfillBridge();
+    } catch (e) {
+      if (e instanceof TRPCError) throw e;
+      return fail(e);
+    }
+  }),
 });

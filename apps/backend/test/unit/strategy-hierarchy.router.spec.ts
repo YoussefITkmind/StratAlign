@@ -26,6 +26,7 @@ const getTree = vi.fn();
 const createNode = vi.fn();
 const updateNode = vi.fn();
 const deleteNode = vi.fn();
+const backfillBridge = vi.fn();
 
 function context(sessionOverride: typeof session | null = session) {
   return {
@@ -42,7 +43,7 @@ function context(sessionOverride: typeof session | null = session) {
     rules: {},
     audit: {},
     registry: {},
-    strategyHierarchy: { getTree, createNode, updateNode, deleteNode },
+    strategyHierarchy: { getTree, createNode, updateNode, deleteNode, backfillBridge },
   };
 }
 
@@ -85,6 +86,7 @@ describe("strategyHierarchy tRPC surface", () => {
     createNode.mockResolvedValue(nodeOutput);
     updateNode.mockResolvedValue(nodeOutput);
     deleteNode.mockResolvedValue({ deleted: true });
+    backfillBridge.mockResolvedValue({ perspectives: 2, objectives: 5 });
   });
 
   describe("authentication", () => {
@@ -95,6 +97,7 @@ describe("strategyHierarchy tRPC surface", () => {
       await expect(caller.strategyHierarchy.create(validCreateInput)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
       await expect(caller.strategyHierarchy.update({ id: nodeId, progress: 10 })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
       await expect(caller.strategyHierarchy.delete({ id: nodeId })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+      await expect(caller.strategyHierarchy.backfillBridge()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     });
   });
 
@@ -113,18 +116,21 @@ describe("strategyHierarchy tRPC surface", () => {
       await expect(caller.strategyHierarchy.create(validCreateInput)).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(caller.strategyHierarchy.update({ id: nodeId, progress: 10 })).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(caller.strategyHierarchy.delete({ id: nodeId })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.strategyHierarchy.backfillBridge()).rejects.toMatchObject({ code: "FORBIDDEN" });
 
       expect(createNode).not.toHaveBeenCalled();
       expect(updateNode).not.toHaveBeenCalled();
       expect(deleteNode).not.toHaveBeenCalled();
+      expect(backfillBridge).not.toHaveBeenCalled();
     });
 
-    it("allows create/update/delete for seo_administrator", async () => {
+    it("allows create/update/delete/backfillBridge for seo_administrator", async () => {
       const caller = rootRouter.createCaller(context() as never);
 
       await expect(caller.strategyHierarchy.create(validCreateInput)).resolves.toEqual(nodeOutput);
       await expect(caller.strategyHierarchy.update({ id: nodeId, progress: 10 })).resolves.toEqual(nodeOutput);
       await expect(caller.strategyHierarchy.delete({ id: nodeId })).resolves.toEqual({ deleted: true });
+      await expect(caller.strategyHierarchy.backfillBridge()).resolves.toEqual({ perspectives: 2, objectives: 5 });
     });
   });
 

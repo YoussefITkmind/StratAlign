@@ -54,4 +54,7 @@ export const strategyHierarchyRouter = router({
   deleteNode: authenticatedProcedure
     .input(z.object({ id }).strict())
     .mutation(({ ctx, input }) => forward(() => backend(ctx).strategyHierarchy.delete.mutate(input))),
+
+  backfillBridge: authenticatedProcedure
+    .mutation(({ ctx }) => forward(() => backend(ctx).strategyHierarchy.backfillBridge.mutate())),
 });
