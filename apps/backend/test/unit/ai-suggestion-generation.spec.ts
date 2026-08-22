@@ -372,6 +372,34 @@ describe("AI suggestion generation", () => {
       expect(batch.suggestions[0].kind).toBe("kpi");
     });
 
+    it("drops an OKR whose objectiveNodeId isn't shaped like a real id, without failing the whole batch", async () => {
+      // Regression: a smaller model sometimes names the objective by its
+      // title rather than its id. That id will never match a real objective
+      // (isApplicable drops it), but it must not fail schema validation for
+      // the entire response — that would also throw away the valid KPI in
+      // the same completion, which is what was actually happening in
+      // production.
+      const { service } = makeService({
+        complete: vi.fn().mockResolvedValue(
+          completion({
+            suggestions: [
+              { ...validOkr, objectiveNodeId: "Drive Revenue Growth 40% YoY" },
+              validKpi,
+            ],
+          }),
+        ),
+      });
+
+      const batch = await service.generate({
+        themeNodeId: THEME_ID,
+        kinds: ["kpi", "okr"],
+        maxSuggestions: 8,
+      });
+
+      expect(batch.suggestions).toHaveLength(1);
+      expect(batch.suggestions[0].kind).toBe("kpi");
+    });
+
     it("drops a kind the caller did not ask for", async () => {
       const { service } = makeService({
         complete: vi.fn().mockResolvedValue(
