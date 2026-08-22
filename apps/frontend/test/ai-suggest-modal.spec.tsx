@@ -254,6 +254,34 @@ describe("AiSuggestModal — theme selection and generation", () => {
     );
   });
 
+  it("in global mode, the automatic fan-out always requests both kinds, even when the active tab is KPI-only", async () => {
+    // Regression: the KPI Library call site opens with initialTypeFilter="kpi".
+    // If auto-generate only asked for that tab's kind, switching to the OKR
+    // tab afterward would show nothing until a manual Regenerate — the same
+    // batch just wouldn't contain any OKRs to filter into view.
+    render(<AiSuggestModal onClose={() => {}} initialTypeFilter="kpi" />);
+
+    await waitFor(() => expect(hooks.generate).toHaveBeenCalledTimes(2));
+    for (const call of hooks.generate.mock.calls) {
+      expect((call[0] as { kinds: string[] }).kinds).toEqual(["kpi", "okr"]);
+    }
+  });
+
+  it("in global mode, switching to the OKR tab after auto-generate shows OKRs without a manual Regenerate", async () => {
+    hooks.generate.mockImplementation(async ({ themeNodeId }: { themeNodeId: string }) =>
+      themeNodeId === THEME_ID ? batch([kpiSuggestion(), okrSuggestion()]) : { ...batch([]), themeNodeId },
+    );
+    render(<AiSuggestModal onClose={() => {}} initialTypeFilter="kpi" />);
+    await waitFor(() => expect(screen.getByText("LTV to CAC Ratio")).toBeTruthy());
+    expect(screen.queryByText("Expand into enterprise accounts")).toBeNull();
+    hooks.generate.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "OKR" }));
+
+    expect(screen.getByText("Expand into enterprise accounts")).toBeTruthy();
+    expect(hooks.generate).not.toHaveBeenCalled();
+  });
+
   it("in global mode, Generate re-enables as \"Regenerate\" once the automatic fan-out completes", async () => {
     render(<AiSuggestModal onClose={() => {}} />);
 

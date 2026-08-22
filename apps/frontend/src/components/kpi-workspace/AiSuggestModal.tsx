@@ -221,7 +221,7 @@ export default function AiSuggestModal({
     setWasFanOut(false);
     setIsGenerating(true);
 
-    const kinds: SuggestionKind[] = typeFilter === "all" ? ["kpi", "okr"] : [typeFilter];
+    const filteredKinds: SuggestionKind[] = typeFilter === "all" ? ["kpi", "okr"] : [typeFilter];
 
     try {
       if (mode === "global" && !themeNodeId) {
@@ -229,12 +229,17 @@ export default function AiSuggestModal({
         // generate call per active theme (each still scoped to just that
         // theme, matching the prompt's "stay inside that theme's scope" rule)
         // and merge the results so every real theme from the hierarchy is
-        // represented at once, the way the design shows.
+        // represented at once, the way the design shows. Always ask for both
+        // kinds here regardless of the current tab — ALL/OKR/KPI need to stay
+        // pure display filters over one fetch, the same way the theme
+        // dropdown already filters without re-generating. Fetching only the
+        // active tab's kind would leave the other tab looking empty until a
+        // manual Regenerate, which reads as broken rather than filtered.
         setWasFanOut(true);
         const targets = themes;
         const settled = await Promise.allSettled(
           targets.map((theme) =>
-            generate.mutateAsync({ themeNodeId: theme.id, kinds, maxSuggestions: 8 }),
+            generate.mutateAsync({ themeNodeId: theme.id, kinds: ["kpi", "okr"], maxSuggestions: 8 }),
           ),
         );
 
@@ -253,7 +258,11 @@ export default function AiSuggestModal({
         setManualSuggestions(merged);
         if (failures.length > 0) setError(failures.join(" · "));
       } else {
-        await generate.mutateAsync({ themeNodeId, kinds, maxSuggestions: 8 });
+        // One theme, deliberately picked (One By One, or Global with a
+        // theme chosen): honour the active tab as the actual request, not
+        // just a display filter — a reviewer scoping to one theme is asking
+        // for that kind specifically, not browsing everything.
+        await generate.mutateAsync({ themeNodeId, kinds: filteredKinds, maxSuggestions: 8 });
       }
     } catch (cause) {
       setError(message(cause));
