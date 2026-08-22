@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "registry", "performance", "scorecard", "execution", "value"]
+  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "strategy_hierarchy", "registry", "performance", "scorecard", "execution", "value"]
 }
 
 model SystemSetting {
@@ -39,6 +39,7 @@ model User {
   notificationDeliveries            NotificationDelivery[]    @relation("NotificationDeliveryRecipient")
   notificationDigests               NotificationDigest[]      @relation("NotificationDigestRecipient")
   strategyNodesCreated              StrategyNode[]            @relation("StrategyNodeCreator")
+  strategyHierarchyNodesCreated     StrategyHierarchyNode[]   @relation("StrategyHierarchyNodeCreator")
   strategyOwnerAssignments          OwnerAssignment[]         @relation("StrategyOwner")
   strategyOwnerAssignmentsAssigned  OwnerAssignment[]         @relation("StrategyAssigner")
   strategyStagedChangesRequested    StagedChange[]            @relation("StrategyStagedChangeRequester")
@@ -576,6 +577,77 @@ model StagedChange {
   @@index([planVersionId, status])
   @@map("staged_changes")
   @@schema("strategy")
+}
+
+// ---------------------------------------------------------------------------
+// Strategy Hierarchy
+//
+// A separate, simpler tree of strategy nodes (plan/perspective/objective/
+// initiative/project with a RAG status + progress %) that backs the
+// "Strategy Hierarchy" page. Distinct from `strategy.StrategyNode` above,
+// which models a different, bilingual, plan-versioned strategy *map* with
+// its own graph-edge ontology — the two are intentionally not conflated.
+// ---------------------------------------------------------------------------
+
+enum StrategyHierarchyNodeType {
+  PLAN        @map("plan")
+  PERSPECTIVE @map("perspective")
+  OBJECTIVE   @map("objective")
+  INITIATIVE  @map("initiative")
+  PROJECT     @map("project")
+
+  @@schema("strategy_hierarchy")
+}
+
+enum StrategyHierarchyNodeStatus {
+  ON_TRACK    @map("on-track")
+  AT_RISK     @map("at-risk")
+  OFF_TRACK   @map("off-track")
+  NOT_STARTED @map("not-started")
+
+  @@schema("strategy_hierarchy")
+}
+
+model StrategyHierarchyNode {
+  id            String                      @id @default(uuid()) @db.Uuid
+  parentId      String?                     @map("parent_id") @db.Uuid
+  name          String
+  type          StrategyHierarchyNodeType
+  status        StrategyHierarchyNodeStatus @default(NOT_STARTED)
+  progress      Int                         @default(0)
+  ownerName     String                      @map("owner_name")
+  ownerInitials String                      @map("owner_initials")
+  ownerColor    String                      @map("owner_color")
+  budget        String?
+  startDate     DateTime?                   @map("start_date") @db.Date
+  endDate       DateTime?                   @map("end_date") @db.Date
+  description   String?                     @db.Text
+  linkedKpis    String[]                    @default([]) @map("linked_kpis")
+  createdBy     String                      @map("created_by")
+  createdAt     DateTime                    @default(now()) @map("created_at")
+  updatedAt     DateTime                    @updatedAt @map("updated_at")
+
+  parent   StrategyHierarchyNode?      @relation("StrategyHierarchyNodeChildren", fields: [parentId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  children StrategyHierarchyNode[]     @relation("StrategyHierarchyNodeChildren")
+  creator  User                        @relation("StrategyHierarchyNodeCreator", fields: [createdBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  activity StrategyHierarchyActivity[]
+
+  @@index([parentId])
+  @@map("strategy_hierarchy_nodes")
+  @@schema("strategy_hierarchy")
+}
+
+model StrategyHierarchyActivity {
+  id        String                @id @default(uuid()) @db.Uuid
+  nodeId    String                @map("node_id") @db.Uuid
+  message   String
+  actorName String                @map("actor_name")
+  createdAt DateTime              @default(now()) @map("created_at")
+  node      StrategyHierarchyNode @relation(fields: [nodeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([nodeId, createdAt])
+  @@map("strategy_hierarchy_activity")
+  @@schema("strategy_hierarchy")
 }
 
 // ---------------------------------------------------------------------------

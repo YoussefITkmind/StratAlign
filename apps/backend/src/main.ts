@@ -24,6 +24,7 @@ import { SnapshotService } from "./modules/audit/snapshot.service";
 import { ApiAuditTapService } from "./modules/audit/api-audit-tap.service";
 import { StrategyService } from "./modules/strategy/strategy.service";
 import { StrategyTraversalService } from "./modules/strategy/strategy-traversal.service";
+import { StrategyHierarchyService } from "./modules/strategy-hierarchy/strategy-hierarchy.service";
 import { KpiRegistryService } from "./modules/registry/kpi-registry.service";
 import { OkrService } from "./modules/registry/okr.service";
 import { AlignmentService } from "./modules/registry/alignment.service";
@@ -72,6 +73,7 @@ async function bootstrap(): Promise<void> {
   const governanceEscalation = new GovernanceEscalationService(prisma, eventBus);
   const strategy = new StrategyService(prisma);
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
+  const strategyHierarchy = new StrategyHierarchyService(prisma);
   const approvalGateway = new GovernanceApprovalGateway(governance);
   const strategyNodeGateway = new PrismaStrategyNodeGateway(prisma);
   const registry = {
@@ -139,6 +141,7 @@ async function bootstrap(): Promise<void> {
         health, credentials, loginRateLimiter, clientIp: req.socket.remoteAddress ?? "unknown",
         session: await sessions.getSession({ headers }), oidcIdentities, authenticationFreshness,
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal,
+        strategyHierarchy,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
         aiSuggestion,
       };

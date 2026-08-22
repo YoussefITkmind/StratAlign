@@ -18,6 +18,15 @@ export function flatten(node: StrategyNode, depth = 0): { node: StrategyNode; de
   return [{ node, depth }, ...(node.children ?? []).flatMap((child) => flatten(child, depth + 1))];
 }
 
+export function findNode(node: StrategyNode, id: string): StrategyNode | null {
+  if (node.id === id) return node;
+  for (const child of node.children ?? []) {
+    const found = findNode(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
 function matches(node: StrategyNode, filters: Filters): boolean {
   const query = filters.search.trim().toLowerCase();
   if (query && !node.name.toLowerCase().includes(query)) return false;
