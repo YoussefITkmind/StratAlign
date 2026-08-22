@@ -4,6 +4,7 @@ import {
   StrategyHierarchyNodeType as PrismaNodeType,
   StrategyHierarchyNodeStatus as PrismaNodeStatus,
 } from "../../generated/prisma/enums";
+import type { StrategyNodeBridgeService } from "./strategy-node-bridge.service";
 
 export type NodeType = "plan" | "perspective" | "objective" | "initiative" | "project";
 export type NodeStatus = "on-track" | "at-risk" | "off-track" | "not-started";
@@ -206,7 +207,10 @@ function buildTree(rows: Omit<StrategyHierarchyNodeRecord, "children">[]): Strat
 }
 
 export class StrategyHierarchyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly bridge: StrategyNodeBridgeService,
+  ) {}
 
   async getTree(): Promise<StrategyHierarchyNodeRecord | null> {
     const rows = await this.prisma.strategyHierarchyNode.findMany({
@@ -253,6 +257,12 @@ export class StrategyHierarchyService {
       include: { activity: true },
     });
 
+    // Best-effort: Add Node must succeed even if the AI-suggestion/registry
+    // mirror sync hits an edge case (e.g. a transient DB error).
+    await this.bridge
+      .syncNode({ id: created.id, parentId: created.parentId, name: created.name, type: input.type, createdBy: input.actorUserId })
+      .catch(() => {});
+
     return { ...mapRow(created), children: [] };
   }
 
@@ -298,6 +308,10 @@ export class StrategyHierarchyService {
       include: { activity: true },
     });
 
+    if (patch.name !== undefined) {
+      await this.bridge.renameNode(updated.id, updated.name).catch(() => {});
+    }
+
     return { ...mapRow(updated), children: [] };
   }
 
@@ -306,7 +320,33 @@ export class StrategyHierarchyService {
     if (node.parentId === null) {
       throw new Error("Cannot delete the root node");
     }
+
+    // Deleting cascades to every descendant on the hierarchy side, so their
+    // mirrors (if any) need retiring too, before the rows they describe
+    // disappear from this tree.
+    const idsToRetire = await this.collectDescendantIds(input.id);
     await this.prisma.strategyHierarchyNode.delete({ where: { id: input.id } });
+    await Promise.all(idsToRetire.map((id) => this.bridge.retireNode(id)));
+
     return { deleted: true };
+  }
+
+  private async collectDescendantIds(rootId: string): Promise<string[]> {
+    const ids = [rootId];
+    let frontier = [rootId];
+    while (frontier.length > 0) {
+      const children = await this.prisma.strategyHierarchyNode.findMany({
+        where: { parentId: { in: frontier } },
+        select: { id: true },
+      });
+      frontier = children.map((c) => c.id);
+      ids.push(...frontier);
+    }
+    return ids;
+  }
+
+  /** One-time sync for hierarchy nodes created before this bridge shipped. */
+  async backfillBridge(): Promise<{ perspectives: number; objectives: number }> {
+    return this.bridge.backfillAll();
   }
 }

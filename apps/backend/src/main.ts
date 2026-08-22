@@ -25,6 +25,7 @@ import { ApiAuditTapService } from "./modules/audit/api-audit-tap.service";
 import { StrategyService } from "./modules/strategy/strategy.service";
 import { StrategyTraversalService } from "./modules/strategy/strategy-traversal.service";
 import { StrategyHierarchyService } from "./modules/strategy-hierarchy/strategy-hierarchy.service";
+import { StrategyNodeBridgeService } from "./modules/strategy-hierarchy/strategy-node-bridge.service";
 import { KpiRegistryService } from "./modules/registry/kpi-registry.service";
 import { OkrService } from "./modules/registry/okr.service";
 import { AlignmentService } from "./modules/registry/alignment.service";
@@ -73,7 +74,8 @@ async function bootstrap(): Promise<void> {
   const governanceEscalation = new GovernanceEscalationService(prisma, eventBus);
   const strategy = new StrategyService(prisma);
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
-  const strategyHierarchy = new StrategyHierarchyService(prisma);
+  const strategyNodeBridge = new StrategyNodeBridgeService(prisma);
+  const strategyHierarchy = new StrategyHierarchyService(prisma, strategyNodeBridge);
   const approvalGateway = new GovernanceApprovalGateway(governance);
   const strategyNodeGateway = new PrismaStrategyNodeGateway(prisma);
   const registry = {
