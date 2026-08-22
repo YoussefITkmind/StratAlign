@@ -144,10 +144,12 @@ export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
           <button className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-blue-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:opacity-90">
             <Sparkles className="h-4 w-4" /> Generate Strategy Brief
           </button>
-          {canManageStrategy && tree && (
+          {canManageStrategy && (
             <button
-              onClick={() => setModal({ mode: "add", parentId: tree.id })}
-              className="flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+              onClick={() => tree && setModal({ mode: "add", parentId: tree.id })}
+              disabled={!tree}
+              title={tree ? undefined : "Strategy data hasn't loaded yet"}
+              className="flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Plus className="h-4 w-4" /> Add Node
             </button>
