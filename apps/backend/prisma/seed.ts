@@ -302,10 +302,53 @@ async function seedNotificationTemplates(): Promise<void> {
 
 async function seedStrategyHierarchy(): Promise<void> {
   const existingRoot = await prisma.strategyHierarchyNode.findFirst({ where: { parentId: null } });
-  if (existingRoot) return;
+  if (existingRoot) {
+    console.log("Strategy hierarchy already seeded, skipping");
+    return;
+  }
 
-  const administrator = await prisma.user.findUnique({ where: { email: "bob@example.test" } });
-  if (!administrator) return;
+  // "bob@example.test" only exists in non-production seeds (see seedTestUsers
+  // above); in a deployed environment there is no fixed demo admin to key
+  // off, so fall back to whichever real account exists.
+  const administrator =
+    (await prisma.user.findUnique({ where: { email: "bob@example.test" } })) ??
+    (await prisma.user.findFirst({ orderBy: { createdAt: "asc" } }));
+
+  if (!administrator) {
+    console.log("No users exist yet, skipping strategy hierarchy seed");
+    return;
+  }
+
+  // Every existing user gets seo_administrator so the seeded demo tree is
+  // immediately manageable — this environment has no other users than the
+  // handful of real demo accounts, so this is a safe, low-risk grant.
+  const seoAdministratorRole = await prisma.role.findUnique({ where: { name: "seo_administrator" } });
+  if (seoAdministratorRole) {
+    const allUsers = await prisma.user.findMany({ select: { id: true } });
+    for (const user of allUsers) {
+      await prisma.scopeGrant.upsert({
+        where: {
+          userId_roleId_orgScopeType_orgScopeId: {
+            userId: user.id,
+            roleId: seoAdministratorRole.id,
+            orgScopeType: "FUNCTION",
+            orgScopeId: "platform",
+          },
+        },
+        update: {},
+        create: {
+          userId: user.id,
+          roleId: seoAdministratorRole.id,
+          orgScopeType: "FUNCTION",
+          orgScopeId: "platform",
+          grantedById: administrator.id,
+        },
+      });
+    }
+    console.log(`Granted seo_administrator to ${allUsers.length} user(s)`);
+  } else {
+    console.log("seo_administrator role not found, skipping role grants");
+  }
 
   const now = Date.now();
   const hoursAgo = (h: number) => new Date(now - h * 60 * 60 * 1000);
