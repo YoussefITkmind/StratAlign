@@ -48,7 +48,16 @@ const FLAG_SIMILARITY_THRESHOLD = 0.45;
  * explicitly acknowledges the collision. */
 const BLOCK_SIMILARITY_THRESHOLD = 0.9;
 
-const MAX_OUTPUT_TOKENS = 4_096;
+/**
+ * Global mode's fan-out always asks for both kinds together (kpi + okr) so
+ * the ALL/OKR/KPI tabs can filter one fetch instead of re-generating — and a
+ * theme with real objectives can return up to `maxSuggestions` OKRs, each
+ * with several bilingual key results, which is far more verbose than a KPI.
+ * 4,096 was tight enough to truncate that combined output mid-JSON on a
+ * theme with real objective context, which the parser then rejects as
+ * malformed rather than as a length problem. Doubled for headroom.
+ */
+const MAX_OUTPUT_TOKENS = 8_192;
 const GENERATION_TEMPERATURE = 0.4;
 
 /**

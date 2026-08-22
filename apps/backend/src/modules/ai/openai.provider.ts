@@ -135,6 +135,11 @@ export class OpenAiLlmProvider implements LlmProvider {
             model: this.options.model,
             max_tokens: request.maxOutputTokens,
             temperature: request.temperature,
+            // The prompt already demands JSON-only output; this makes that a
+            // guarantee at the API level instead of a convention the model can
+            // drift from (a markdown fence or a leading sentence otherwise
+            // reaches the parser as malformed output, not as a wrong answer).
+            response_format: { type: "json_object" },
             messages: [
               { role: "system", content: request.system },
               { role: "user", content: request.prompt },
