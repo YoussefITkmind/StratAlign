@@ -71,6 +71,12 @@ export const pixelRagRouter = router({
       forward(() => backend(ctx).pixelrag.selectDocument.mutate(input)),
     ),
 
+  removeDocument: authenticatedProcedure
+    .input(z.object({ documentId }).strict())
+    .mutation(({ ctx, input }) =>
+      forward(() => backend(ctx).pixelragDocuments.removeDocument.mutate(input)),
+    ),
+
   reindexDocument: authenticatedProcedure
     .input(z.object({ documentId }).strict())
     .mutation(({ ctx, input }) =>
