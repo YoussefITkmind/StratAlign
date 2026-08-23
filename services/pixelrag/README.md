@@ -15,7 +15,26 @@ The Python POC keeps its own local JSON/filesystem state for documents, proposal
 - If `EMBED_API_URL` is set, rendering/chunking and FAISS stay local to this service while image/text embedding inference is delegated to the remote GPU endpoint.
 - If `EMBED_API_URL` is unset, the original local PixelRAG embedding/search runtime is used.
 
-Office uploads use LibreOffice/`soffice` for layout-preserving PDF conversion when it is installed. The existing text-based DOCX/PPTX/XLSX conversion remains the fallback.
+### Office rendering requirement
+
+PixelRAG is a visual retrieval system. DOCX, PPTX and XLSX uploads must therefore be rendered to a real PDF before indexing so evidence tiles preserve the source page, slide or worksheet layout.
+
+LibreOffice/`soffice` is required on the PixelRAG service host for Office uploads. PixelRAG intentionally does **not** fall back to reconstructed text pages, because those are not faithful visual evidence.
+
+On Ubuntu/WSL:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y libreoffice
+```
+
+Verify with:
+
+```bash
+which soffice || which libreoffice
+```
+
+PDF, PNG and JPG uploads do not require LibreOffice.
 
 ## Setup
 
