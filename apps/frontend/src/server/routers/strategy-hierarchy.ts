@@ -12,8 +12,34 @@ const nodeType = z.enum(["plan", "perspective", "objective", "initiative", "proj
 const nodeStatus = z.enum(["on-track", "at-risk", "off-track", "not-started"]);
 const linkedKpis = z.array(z.string().trim().min(1).max(80)).max(20);
 
+// Deterministic placeholder copy per node type — stands in until this is
+// wired to a real model, so callers get type-appropriate text either way.
+const DRAFT_TEMPLATES: Record<z.infer<typeof nodeType>, (name: string) => string> = {
+  plan: (name) => `The "${name}" plan sets the overall direction and priorities the organization will pursue.`,
+  perspective: (name) => `The "${name}" perspective groups related objectives that share a common strategic lens.`,
+  objective: (name) => `To achieve the strategic objective of "${name}", we will focus on key measurable outcomes that align with our overall corporate strategy.`,
+  initiative: (name) => `This initiative, "${name}", is designed to implement actionable steps toward our broader goals, requiring cross-functional collaboration.`,
+  project: (name) => `The "${name}" project delivers a defined scope of work in support of its parent initiative.`,
+};
+
 export const strategyHierarchyRouter = router({
   tree: authenticatedProcedure.query(({ ctx }) => forward(() => backend(ctx).strategyHierarchy.tree.query())),
+
+  draftDescription: authenticatedProcedure
+    .input(
+      z.object({
+        name: z.string().trim().min(1).max(200),
+        type: nodeType,
+        parentName: z.string().trim().max(200).optional(),
+      }).strict(),
+    )
+    .mutation(({ input }) => {
+      let draft = DRAFT_TEMPLATES[input.type](input.name);
+      if (input.parentName) {
+        draft += ` This directly supports the parent goal of "${input.parentName}".`;
+      }
+      return { draft };
+    }),
 
   createNode: authenticatedProcedure
     .input(

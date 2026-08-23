@@ -13,6 +13,7 @@ const hooks = vi.hoisted(() => ({
   createNode: vi.fn(),
   updateNode: vi.fn(),
   deleteNode: vi.fn(),
+  draftDescription: vi.fn(),
   invalidate: vi.fn(),
   treeData: undefined as unknown,
   treeLoading: false,
@@ -26,6 +27,7 @@ vi.mock("@/lib/trpc/client", () => ({
       createNode: { useMutation: () => ({ mutateAsync: hooks.createNode }) },
       updateNode: { useMutation: () => ({ mutateAsync: hooks.updateNode }) },
       deleteNode: { useMutation: () => ({ mutateAsync: hooks.deleteNode }) },
+      draftDescription: { useMutation: () => ({ mutateAsync: hooks.draftDescription, isPending: false }) },
     },
   },
 }));
