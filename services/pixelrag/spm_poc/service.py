@@ -33,8 +33,10 @@ class DocumentService:
         result is then cached by the web runtime so repeat previews are stable.
         """
         queries = [
-            "all strategic objectives goals objective owners strategic priorities objective status",
+            "all strategic objectives goals objective owners strategic priorities objective status objective health",
             "all KPIs performance measures metrics targets actuals results RAG status financial operational people measures",
+            "Digital Growth Operational Excellence measures Q1 Q2 Q3 target status digital adoption journey completion conversion cost to serve cases per FTE automation straight-through",
+            "People Capability Financial View measures actual target budget variance employee capability learning vacancy attrition transformation spend benefits operating cost savings",
             "all initiatives projects programmes transformation initiatives owners milestones status completion dates",
             "reporting period quarter fiscal year performance period executive summary",
         ]
@@ -107,5 +109,5 @@ class DocumentService:
             objectives=list(objective_map.values()),
             kpis=list(kpi_map.values()),
             initiatives=list(initiative_map.values()),
-            extraction_version="comprehensive-v1",
+            extraction_version="comprehensive-v2",
         )
