@@ -216,14 +216,18 @@ class ForecastService:
             value = self._number(item.actual)
             if value is not None:
                 points.append(ForecastPoint(period=item.period, actual=value))
-        if len(points) < 2:
+
+        # Two values define a line but do not provide enough evidence to present
+        # a trend as management intelligence. Require at least three periods.
+        if len(points) < 3:
             return ForecastResult(
                 kpi_name=kpi_name,
                 history=points,
                 forecast_period="next period",
                 forecast_value=None,
-                note="At least two period measurements are required for a trend forecast.",
+                note="At least three period measurements are required before a trend forecast is shown.",
             )
+
         xs = list(range(len(points)))
         mean_x = sum(xs) / len(xs)
         mean_y = sum(point.actual for point in points) / len(points)
