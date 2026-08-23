@@ -14,13 +14,47 @@ from pathlib import Path
 
 import fitz
 
-from .documents import DocumentLibrary
+from .documents import DocumentLibrary, DocumentRecord
 
 
 class VisualDocumentLibrary(DocumentLibrary):
     """Require true Office-to-PDF rendering for DOCX, PPTX and XLSX uploads."""
 
     OFFICE_EXTENSIONS = {".docx", ".pptx", ".xlsx"}
+
+    def delete(self, document_id: str) -> tuple[DocumentRecord, str | None]:
+        """Remove one non-legacy document and its PixelRAG-local artifacts.
+
+        This never touches StratAlign business persistence. If the deleted
+        document is currently selected, the first remaining ready document is
+        selected so the workspace stays usable.
+        """
+        if document_id == self.LEGACY_ID:
+            raise ValueError("The built-in PixelRAG demo source cannot be deleted")
+
+        state = self._load()
+        record = next((item for item in state.documents if item.id == document_id), None)
+        if record is None:
+            raise KeyError(document_id)
+
+        # Stop any local PixelRAG process that could still be holding files from
+        # this document before removing its index/storage directories.
+        self._before_index()
+
+        state.documents = [item for item in state.documents if item.id != document_id]
+        if state.selected_document_id == document_id:
+            replacement = next(
+                (item for item in state.documents if item.status == "ready"),
+                None,
+            )
+            state.selected_document_id = replacement.id if replacement else None
+        self._save(state)
+
+        shutil.rmtree(self.storage_root / document_id, ignore_errors=True)
+        shutil.rmtree(self.index_root / document_id, ignore_errors=True)
+        shutil.rmtree(self.root / "mock-data" / "proposals" / document_id, ignore_errors=True)
+
+        return record, state.selected_document_id
 
     def _normalize_to_pdf(self, original: Path, normalized: Path, extension: str) -> int:
         if extension not in self.OFFICE_EXTENSIONS:
