@@ -7,7 +7,9 @@ import {
   Loader2,
   RefreshCw,
   RotateCcw,
+  Trash2,
   Upload,
+  X,
 } from "lucide-react";
 
 import { trpc } from "@/lib/trpc/client";
@@ -64,12 +66,14 @@ export default function PixelRagDocumentsPanel({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [operationId, setOperationId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<DocumentRecord | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const utils = trpc.useUtils();
 
   const upload = trpc.pixelrag.uploadDocument.useMutation();
   const select = trpc.pixelrag.selectDocument.useMutation();
   const reindex = trpc.pixelrag.reindexDocument.useMutation();
+  const remove = trpc.pixelrag.removeDocument.useMutation();
 
   const refreshRelated = async () => {
     await Promise.all([
@@ -122,6 +126,22 @@ export default function PixelRagDocumentsPanel({
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : "Could not re-index the document");
       await utils.pixelrag.documents.invalidate();
+    } finally {
+      setOperationId(null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    const documentId = confirmDelete.id;
+    setOperationId(documentId);
+    setLocalError(null);
+    try {
+      await remove.mutateAsync({ documentId });
+      setConfirmDelete(null);
+      await refreshRelated();
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "Could not delete the document");
     } finally {
       setOperationId(null);
     }
@@ -207,15 +227,26 @@ export default function PixelRagDocumentsPanel({
                       {selected ? "Selected" : "Use document"}
                     </button>
                     {!document.legacy && (
-                      <button
-                        type="button"
-                        onClick={() => void handleReindex(document.id)}
-                        disabled={busy || reindex.isPending}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
-                        Re-index
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void handleReindex(document.id)}
+                          disabled={busy || reindex.isPending || remove.isPending}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {busy && reindex.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                          Re-index
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setLocalError(null); setConfirmDelete(document); }}
+                          disabled={busy || reindex.isPending || remove.isPending}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {busy && remove.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          Delete
+                        </button>
+                      </>
                     )}
                   </div>
                 </article>
@@ -234,6 +265,51 @@ export default function PixelRagDocumentsPanel({
           <RefreshCw className="h-3.5 w-3.5" /> Refresh library
         </button>
       </div>
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="pixelrag-delete-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="pixelrag-delete-title" className="text-lg font-semibold text-gray-900">Delete document?</h2>
+                <p className="mt-2 text-sm leading-6 text-gray-600">
+                  This will remove <span className="font-medium text-gray-900">{confirmDelete.name}</span> from PixelRAG and delete its local source, index, cached analysis and proposals.
+                </p>
+                <p className="mt-2 text-sm leading-6 text-gray-500">StratAlign business data is not changed.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                disabled={remove.isPending}
+                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-50"
+                aria-label="Close delete confirmation"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                disabled={remove.isPending}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={remove.isPending}
+                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {remove.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                {remove.isPending ? "Deleting…" : "Delete document"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
