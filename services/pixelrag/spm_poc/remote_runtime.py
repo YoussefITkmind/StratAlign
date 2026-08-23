@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .documents import DocumentLibrary, DocumentRecord
+from .documents import DocumentRecord
 from .remote_index import build_remote_index
 from .remote_search import RemotePixelRAGClient
 from .service import DocumentService
 from .tiles import TileResolver
+from .visual_documents import VisualDocumentLibrary
 from .vlm import OpenAICompatibleVLMReader
 from .web import WebRuntime
 
@@ -22,12 +23,11 @@ class RemoteEmbeddingWebRuntime(WebRuntime):
 
     def __init__(self, root: Path | str | None = None) -> None:
         resolved_root = Path(root or Path(__file__).resolve().parents[1]).resolve()
-        documents = DocumentLibrary(
+        documents = VisualDocumentLibrary(
             resolved_root,
             index_builder=_remote_index_builder,
         )
         super().__init__(resolved_root, document_library=documents)
-        # Preserve the same one-at-a-time indexing safety used by WebRuntime.
         self.documents._before_index = self.process_manager.stop
 
     def document_service_for(self, document_id: str) -> DocumentService:
