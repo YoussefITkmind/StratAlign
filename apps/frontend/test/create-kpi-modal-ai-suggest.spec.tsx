@@ -94,7 +94,7 @@ describe("CreateKpiModal AI Suggest", () => {
     fireEvent.click(screen.getByTestId("kpi-ai-suggest"));
 
     await waitFor(() => expect(hooks.generate).toHaveBeenCalledTimes(1));
-    expect(hooks.generate).toHaveBeenCalledWith({ themeNodeId: THEME_ID, kinds: ["kpi"], maxSuggestions: 1 });
+    expect(hooks.generate).toHaveBeenCalledWith({ themeNodeId: THEME_ID, kinds: ["kpi"], maxSuggestions: 5 });
 
     expect(await screen.findByDisplayValue("LTV to CAC Ratio")).toBeTruthy();
     expect(screen.getByDisplayValue("Acquisition efficiency.")).toBeTruthy();
