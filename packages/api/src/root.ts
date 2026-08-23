@@ -8,6 +8,7 @@ import { schedulerRouter } from "./scheduler";
 import { valueRouter } from "./value";
 import { aiSuggestionRouter } from "./ai-suggestion";
 import { pixelRagRouter } from "./pixelrag";
+import { pixelRagDocumentManagementRouter } from "./pixelrag-document-management";
 
 export const rootRouter = mergeRouters(
   appRouter,
@@ -21,6 +22,7 @@ export const rootRouter = mergeRouters(
     value: valueRouter,
     aiSuggestion: aiSuggestionRouter,
     pixelrag: pixelRagRouter,
+    pixelragDocuments: pixelRagDocumentManagementRouter,
   }),
 );
 
