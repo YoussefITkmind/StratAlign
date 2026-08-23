@@ -1,0 +1,51 @@
+"use client";
+
+import { ImageIcon, Loader2 } from "lucide-react";
+
+import { trpc } from "@/lib/trpc/client";
+
+export default function PixelRagEvidenceImage({
+  documentId,
+  articleId,
+  tileIndex,
+  chunkIndex,
+  score,
+}: {
+  documentId: string;
+  articleId: number;
+  tileIndex: number;
+  chunkIndex: number;
+  score: number;
+}) {
+  const evidence = trpc.pixelrag.evidenceImage.useQuery({
+    documentId,
+    articleId,
+    tileIndex,
+    chunkIndex,
+  });
+
+  return (
+    <figure className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <div className="flex min-h-40 items-center justify-center bg-gray-50">
+        {evidence.isLoading && <Loader2 className="h-5 w-5 animate-spin text-gray-400" />}
+        {evidence.isError && (
+          <div className="flex flex-col items-center gap-2 px-4 py-8 text-center text-xs text-gray-500">
+            <ImageIcon className="h-5 w-5 text-gray-300" />
+            Visual evidence could not be loaded.
+          </div>
+        )}
+        {evidence.data && (
+          <img
+            src={`data:${evidence.data.mediaType};base64,${evidence.data.dataBase64}`}
+            alt={`Evidence tile ${tileIndex + 1}`}
+            className="max-h-80 w-full object-contain"
+          />
+        )}
+      </div>
+      <figcaption className="flex items-center justify-between gap-3 border-t border-gray-100 px-3 py-2 text-[11px] text-gray-500">
+        <span>Tile {tileIndex + 1} · chunk {chunkIndex + 1}</span>
+        <span>score {score.toFixed(3)}</span>
+      </figcaption>
+    </figure>
+  );
+}
