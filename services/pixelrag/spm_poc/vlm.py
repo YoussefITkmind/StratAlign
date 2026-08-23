@@ -18,7 +18,10 @@ from .models import ExtractedSPMDocument, VLMAnswer
 
 GROUNDING_PROMPT = (
     "Answer only from the supplied visual evidence. Do not invent information. "
-    "If the answer is not visible in the supplied evidence, say so. Return JSON "
+    "If the answer is not visible in the supplied evidence, say so. "
+    "Do not claim a comparison, increase, decrease, or cross-document trend unless that relationship is explicitly visible in the supplied evidence. "
+    "If a question asks about multiple reports but only one report is visible, state only the facts and any historical movement visible in that report; "
+    "do not infer how it compares with an unseen report. Return JSON "
     'with an \"answer\" string and an \"evidence\" array of short visible facts.'
 )
 
@@ -150,6 +153,19 @@ class OpenAICompatibleVLMReader:
             except (json.JSONDecodeError, ValidationError) as error:
                 raise VLMError(error_message) from error
 
+    @staticmethod
+    def _clean_synthesis_evidence(evidence: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for item in evidence:
+            value = item.strip()
+            value = re.sub(r"^(?:SOURCE|ANSWER|EVIDENCE)\s*:\s*", "", value, flags=re.I)
+            value = " ".join(value.split())
+            if len(value) > 280:
+                value = value[:277].rstrip() + "..."
+            if value and value not in cleaned:
+                cleaned.append(value)
+        return cleaned
+
     def synthesize_text(self, question: str, evidence_blocks: list[str]) -> VLMAnswer:
         instruction = (
             "Synthesize an answer only from the supplied source summaries. Do not invent facts. "
@@ -159,13 +175,20 @@ class OpenAICompatibleVLMReader:
             "For example, if one source reports a current value of 86 and another source reports a current value of 85 while also saying it rose from 82 to 85 internally, "
             "the cross-report change is 86 to 85 (down 1), while 82 to 85 is only the later report's internal historical trend. "
             "Keep those two timelines explicitly separate. When sources conflict, state the conflict and identify the source labels. "
+            "The evidence array is for concise user-facing citations, not for repeating source blocks. Include only short factual statements that directly support the synthesis. "
+            "Attribute each fact naturally to its report name when useful, but never include the literal prefixes SOURCE:, ANSWER:, or EVIDENCE:. "
+            "Do not copy an entire source summary into one evidence item. Prefer one or two concise facts per source. "
             'Return JSON with an "answer" string and an "evidence" array.\n\n'
             "Question: " + question + "\n\nSources:\n" + "\n\n".join(evidence_blocks)
         )
         raw = self._complete_text(instruction)
-        return self._grounded_answer_with_repair(
+        result = self._grounded_answer_with_repair(
             raw,
             "VLM synthesis was not valid grounded-answer JSON after automatic recovery",
+        )
+        return VLMAnswer(
+            answer=result.answer,
+            evidence=self._clean_synthesis_evidence(result.evidence),
         )
 
     def answer(self, question: str, image_paths: list[Path]) -> VLMAnswer:
