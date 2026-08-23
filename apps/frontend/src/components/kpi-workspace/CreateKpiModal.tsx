@@ -1,11 +1,16 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
+import { Loader2, Sparkles, X } from "lucide-react";
 import { PERSPECTIVE_META } from "./KpiLibraryTable";
 import type { KpiLibraryRow, KpiPerspective } from "@/data/mockKpiLibrary";
+import { trpc } from "@/lib/trpc/client";
 
 const PERSPECTIVES: KpiPerspective[] = ["financial", "customer", "internal", "learning"];
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Could not generate a suggestion.";
+}
 
 const OWNER_COLOR_CYCLE = ["bg-blue-600", "bg-emerald-600", "bg-amber-600", "bg-rose-600", "bg-cyan-600", "bg-violet-600"];
 
@@ -43,7 +48,83 @@ export default function CreateKpiModal({
   const [ownerName, setOwnerName] = useState("");
   const [description, setDescription] = useState("");
 
+  const [themeNodeId, setThemeNodeId] = useState("");
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  type AiFields = { name: string; description: string; freq: typeof freq };
+  /** Snapshot of the AI-touched fields right before the last suggestion was applied. */
+  const [priorSnapshot, setPriorSnapshot] = useState<AiFields | null>(null);
+  /** Snapshot of the AI-touched fields exactly as applied — used to detect hand-edits. */
+  const [appliedSnapshot, setAppliedSnapshot] = useState<AiFields | null>(null);
+  const [confirmingRegenerate, setConfirmingRegenerate] = useState(false);
+
+  const nodes = trpc.strategy.nodes.useQuery();
+  const themes = useMemo(
+    () => (nodes.data ?? []).filter((node) => node.type === "theme" && node.state !== "retired"),
+    [nodes.data],
+  );
+  const generate = trpc.aiSuggestion.generate.useMutation();
+
+  const hasHandEdited =
+    appliedSnapshot !== null &&
+    (name !== appliedSnapshot.name || description !== appliedSnapshot.description || freq !== appliedSnapshot.freq);
+
   const valid = name.trim().length > 0;
+
+  const applySuggestion = (suggestion: {
+    titleEn: string;
+    descriptionEn: string | null;
+    kpi: { frequency: "monthly" | "quarterly" } | null;
+  }) => {
+    setPriorSnapshot({ name, description, freq });
+    const nextName = name.trim().length > 0 ? name : suggestion.titleEn;
+    const nextDescription = suggestion.descriptionEn ?? description;
+    const nextFreq: typeof freq =
+      suggestion.kpi?.frequency === "quarterly" ? "Quarterly" : suggestion.kpi?.frequency === "monthly" ? "Monthly" : freq;
+    setName(nextName);
+    setDescription(nextDescription);
+    setFreq(nextFreq);
+    setAppliedSnapshot({ name: nextName, description: nextDescription, freq: nextFreq });
+  };
+
+  const runAiSuggest = async (force = false, isRetry = false) => {
+    if (!themeNodeId || generate.isPending) return;
+    if (hasHandEdited && !force) {
+      setConfirmingRegenerate(true);
+      return;
+    }
+    setConfirmingRegenerate(false);
+    setAiError(null);
+    setAiNotice(null);
+    try {
+      const result = await generate.mutateAsync({ themeNodeId, kinds: ["kpi"], maxSuggestions: 1 });
+      const suggestion = result.suggestions[0];
+      if (!suggestion) {
+        setAiNotice("No suggestion available for this theme — continue manually.");
+        return;
+      }
+      applySuggestion(suggestion);
+    } catch (cause) {
+      // AI generation is non-deterministic — a malformed response is usually
+      // fixed by asking again, so retry once, silently, before bothering the user.
+      if (!isRetry) {
+        await runAiSuggest(force, true);
+        return;
+      }
+      setAiError(errorMessage(cause));
+    }
+  };
+
+  const discardSuggestion = () => {
+    if (!priorSnapshot) return;
+    setName(priorSnapshot.name);
+    setDescription(priorSnapshot.description);
+    setFreq(priorSnapshot.freq);
+    setPriorSnapshot(null);
+    setAppliedSnapshot(null);
+    setAiNotice(null);
+    setAiError(null);
+  };
 
   const handleCreate = () => {
     if (!valid) return;
@@ -82,6 +163,68 @@ export default function CreateKpiModal({
         </div>
 
         <div className="app-scroll flex-1 space-y-4 overflow-y-auto p-5">
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                data-testid="kpi-ai-theme-select"
+                value={themeNodeId}
+                onChange={(e) => setThemeNodeId(e.target.value)}
+                disabled={nodes.isLoading || nodes.isError}
+                className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-600 outline-none focus:border-indigo-500"
+              >
+                <option value="">
+                  {nodes.isLoading ? "Loading themes…" : themes.length === 0 ? "No themes yet" : "Select a theme…"}
+                </option>
+                {themes.map((theme) => (
+                  <option key={theme.id} value={theme.id}>
+                    {theme.nameEn}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                data-testid="kpi-ai-suggest"
+                onClick={() => void runAiSuggest()}
+                disabled={!themeNodeId || generate.isPending}
+                className="flex items-center gap-1.5 rounded-full bg-indigo-600 px-3.5 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-indigo-300"
+              >
+                {generate.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                AI Suggest
+              </button>
+              {priorSnapshot && (
+                <button
+                  type="button"
+                  data-testid="kpi-ai-discard"
+                  onClick={discardSuggestion}
+                  className="text-sm font-medium text-gray-500 hover:text-gray-700"
+                >
+                  Discard suggestion
+                </button>
+              )}
+            </div>
+            {confirmingRegenerate && (
+              <div data-testid="kpi-ai-confirm" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-amber-700">
+                You&apos;ve edited the AI-filled fields. Replace them with a new suggestion?
+                <button type="button" onClick={() => void runAiSuggest(true)} className="font-medium underline">
+                  Replace
+                </button>
+                <button type="button" onClick={() => setConfirmingRegenerate(false)} className="font-medium underline">
+                  Cancel
+                </button>
+              </div>
+            )}
+            {aiError && (
+              <p data-testid="kpi-ai-error" className="mt-2 text-sm text-red-600">
+                {aiError}
+              </p>
+            )}
+            {aiNotice && (
+              <p data-testid="kpi-ai-notice" className="mt-2 text-sm text-gray-500">
+                {aiNotice}
+              </p>
+            )}
+          </div>
+
           <Field label="KPI Name" required>
             <input
               value={name}
