@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 
 import { trpc } from "@/lib/trpc/client";
+import PixelRagComparePanel from "@/components/pixelrag/PixelRagComparePanel";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -187,6 +188,8 @@ export default function PixelRagWorkspace() {
           </div>
         </section>
       </div>
+
+      <PixelRagComparePanel documents={library} />
     </div>
   );
 }
