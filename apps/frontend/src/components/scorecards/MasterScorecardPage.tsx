@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronDown, ChevronRight, LayoutGrid, Map as MapIcon, Layers, Presentation, Download, Plus } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { useI18n } from "@/lib/i18n/locale-context";
+import { usePublishAssistantContext } from "@/lib/assistant/assistant-context";
 import { RAG_STATUS_ORDER, RAG_STATUS_TOKENS, ragStatusTokens, worstRagStatus, type RagStatus } from "@/lib/theme/ragStatus";
 import ReadOnlyMapView from "@/components/strategy-map/ReadOnlyMapView";
 import NewScorecardModal from "./NewScorecardModal";
@@ -236,6 +237,32 @@ export default function MasterScorecardPage({ scorecardId }: { scorecardId: stri
     }
     return counts;
   }, [placements]);
+
+  // Only real backend data grounds the assistant — the demo-fixture path
+  // (mockAdapted) must never be presented to it as genuine business data.
+  const assistantEntity = useMemo(
+    () => (isUuid && scorecard ? { type: "scorecard", id: scorecardId, name: scorecard.nameEn } : null),
+    [isUuid, scorecard, scorecardId],
+  );
+  const assistantData = useMemo(() => {
+    if (!isUuid || !scorecard) return null;
+    return {
+      overallStatus: overallStatus ?? null,
+      onTrack: statusCounts.on_track,
+      watch: statusCounts.watch,
+      offTrack: statusCounts.off_track,
+      perspectives: scorecard.perspectives.map((perspective) => ({
+        name: perspective.nameEn,
+        status: perspectiveStatusById.get(perspective.id) ?? null,
+      })),
+      kpis: placements.slice(0, 30).map((placement) => ({
+        objective: placement.objectiveNameEn,
+        kpi: placement.kpiNameEn,
+        status: placement.status,
+      })),
+    };
+  }, [isUuid, scorecard, overallStatus, statusCounts, perspectiveStatusById, placements]);
+  usePublishAssistantContext("balanced_scorecards", assistantEntity, assistantData);
 
   if (!isUuid && !mockSource) {
     return (

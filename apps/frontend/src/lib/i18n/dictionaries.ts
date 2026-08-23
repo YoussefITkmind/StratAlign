@@ -267,6 +267,24 @@ export const dictionaries = {
       escalated: "Escalated",
       noEscalations: "No pending approvals.",
     },
+    assistant: {
+      title: "StratAlign AI",
+      openLabel: "Open StratAlign AI assistant",
+      closeLabel: "Close assistant",
+      contextLabel: "Context: {module}",
+      contextSwitched: "Switched to {module}",
+      welcomeMessage:
+        "Hi! I'm your StratAlign AI assistant. Ask me about what's on this page, and I'll answer from the data currently shown here.",
+      notAvailableMessage:
+        "Context-aware assistance for this module isn't available yet, so I won't have specific data about this page.",
+      inputPlaceholder: "Ask anything about your strategy…",
+      send: "Send",
+      loading: "Thinking…",
+      errorMessage: "The assistant couldn't answer that.",
+      retry: "Retry",
+      insufficientContextBadge: "Limited context",
+      disclaimer: "AI-generated response. Verify important information against the source data.",
+    },
   },
   ar: {
     common: {
@@ -527,6 +545,24 @@ export const dictionaries = {
       submittedBy: "Submitted by",
       escalated: "Escalated",
       noEscalations: "No pending approvals.",
+    },
+    assistant: {
+      title: "ستراتالاين AI",
+      openLabel: "فتح مساعد ستراتالاين الذكي",
+      closeLabel: "إغلاق المساعد",
+      contextLabel: "السياق: {module}",
+      contextSwitched: "تم التبديل إلى {module}",
+      welcomeMessage:
+        "مرحبًا! أنا مساعد ستراتالاين الذكي. اسألني عمّا يظهر في هذه الصفحة، وسأجيب استنادًا إلى البيانات المعروضة حاليًا.",
+      notAvailableMessage:
+        "المساعدة السياقية لهذه الوحدة غير متاحة بعد، لذا لن تتوفر لدي بيانات محددة عن هذه الصفحة.",
+      inputPlaceholder: "اسأل عن أي شيء يخص استراتيجيتك…",
+      send: "إرسال",
+      loading: "جارٍ التفكير…",
+      errorMessage: "تعذّر على المساعد الإجابة عن ذلك.",
+      retry: "إعادة المحاولة",
+      insufficientContextBadge: "سياق محدود",
+      disclaimer: "رد مُولَّد بالذكاء الاصطناعي. يُرجى التحقق من المعلومات المهمة من مصدر البيانات.",
     },
   },
 } satisfies Record<Locale, Record<string, Record<string, string>>>;

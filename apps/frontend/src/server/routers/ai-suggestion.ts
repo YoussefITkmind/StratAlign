@@ -23,7 +23,9 @@ const forward = async <T>(operation: () => Promise<T>): Promise<T> => {
 
 const keyResultInput = z.object({
   titleEn: z.string().trim().min(1).max(300),
-  titleAr: z.string().trim().min(1).max(300),
+  // Optional: matches the backend accept schema — the domain layer never
+  // required a bilingual key-result title, only the KPI/OKR name below.
+  titleAr: z.string().trim().min(1).max(300).nullish(),
   type: z.enum(["quantitative", "milestone"]),
   targetValue: z.number().finite(),
   unit: z.string().trim().min(1).max(50),
@@ -35,6 +37,10 @@ const acceptInput = z.object({
   themeNodeId: id,
   kind: z.enum(["kpi", "okr"]),
   titleEn: z.string().trim().min(1).max(300),
+  // Required: AI generation is English-only, so the reviewer supplies this
+  // before accepting. The domain layer (KpiRegistryService/OkrService)
+  // genuinely refuses to persist a KPI/OKR without it — unchanged from
+  // before this migration.
   titleAr: z.string().trim().min(1).max(300),
   descriptionEn: z.string().trim().max(2000).nullish(),
   descriptionAr: z.string().trim().max(2000).nullish(),

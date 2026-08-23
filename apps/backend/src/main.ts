@@ -49,6 +49,7 @@ import { ValueManagementService } from "./modules/value/value-management.service
 import { createLlmProvider } from "./modules/ai/llm.factory";
 import { ThemeContextBuilder } from "./modules/ai/theme-context.builder";
 import { AiSuggestionService } from "./modules/ai/ai-suggestion.service";
+import { ContextAwareAssistantService } from "./modules/ai/assistant.service";
 import { TraceabilityReadService } from "./modules/traceability/traceability-read.service";
 
 async function bootstrap(): Promise<void> {
@@ -135,6 +136,7 @@ async function bootstrap(): Promise<void> {
     eventBus,
     logger.child("ai-suggestion"),
   );
+  const assistant = new ContextAwareAssistantService(llm, logger.child("assistant"));
 
   const server = createHTTPServer({
     router: rootRouter,
@@ -149,7 +151,7 @@ async function bootstrap(): Promise<void> {
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
         strategyHierarchy,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
-        aiSuggestion,
+        aiSuggestion, assistant,
       };
     },
     middleware(request, response, next) {

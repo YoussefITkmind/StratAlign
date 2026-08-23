@@ -322,9 +322,19 @@ async function seedStrategyHierarchy(): Promise<void> {
   // Every existing user gets seo_administrator so the seeded demo tree is
   // immediately manageable — this environment has no other users than the
   // handful of real demo accounts, so this is a safe, low-risk grant.
+  // Exception: dana@example.test and erin@example.test are seeded in
+  // seedTestUsers above specifically to hold a single PlatformRole each
+  // (executive_viewer / kpi_owner — see the comment in e2e/utils.ts), so
+  // real-role-driven UI like the Home widget composition can be exercised
+  // against an unambiguous role. Adding seo_administrator to them would
+  // outrank their intended role in HOME_ROLE_PRIORITY and defeat that.
   const seoAdministratorRole = await prisma.role.findUnique({ where: { name: "seo_administrator" } });
   if (seoAdministratorRole) {
-    const allUsers = await prisma.user.findMany({ select: { id: true } });
+    const singleRoleFixtureEmails = new Set(["dana@example.test", "erin@example.test"]);
+    const allUsers = await prisma.user.findMany({
+      where: { email: { notIn: Array.from(singleRoleFixtureEmails) } },
+      select: { id: true },
+    });
     for (const user of allUsers) {
       await prisma.scopeGrant.upsert({
         where: {

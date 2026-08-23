@@ -16,11 +16,14 @@ import {
 } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { MOCK_INITIATIVES, type InitiativePriority, type MockInitiative } from "@/data/mockInitiativesBoard";
+import { usePublishAssistantContext } from "@/lib/assistant/assistant-context";
 import { CardsView } from "@/components/initiatives/CardsView";
 import { KanbanView } from "@/components/initiatives/KanbanView";
 import { GanttView } from "@/components/initiatives/GanttView";
 import { RegisterView } from "@/components/initiatives/RegisterView";
 import { CreateInitiativeModal } from "@/components/initiatives/CreateInitiativeModal";
+
+const MAX_ASSISTANT_CONTEXT_INITIATIVES = 30;
 
 type ViewKey = "cards" | "kanban" | "gantt" | "register";
 
@@ -43,6 +46,27 @@ export function InitiativesBoardPage() {
   const [budgetLocked, setBudgetLocked] = useState(true);
   const [creating, setCreating] = useState(false);
   const utils = trpc.useUtils();
+
+  // Real execution data, fetched independently of the (still mock-backed)
+  // board below — this is what grounds the assistant.
+  const initiativeListQuery = trpc.execution.initiative.list.useQuery({ scope: "all" });
+  const assistantData = useMemo(() => {
+    const rows = initiativeListQuery.data ?? [];
+    if (!initiativeListQuery.data) return null;
+    return {
+      totalInitiatives: rows.length,
+      onTrack: rows.filter((row) => row.latestStatus === "on_track").length,
+      atRisk: rows.filter((row) => row.latestStatus === "at_risk").length,
+      offTrack: rows.filter((row) => row.latestStatus === "off_track").length,
+      initiatives: rows.slice(0, MAX_ASSISTANT_CONTEXT_INITIATIVES).map((row) => ({
+        name: row.nameEn,
+        stage: row.stage,
+        status: row.latestStatus,
+        confidence: row.latestConfidence,
+      })),
+    };
+  }, [initiativeListQuery.data]);
+  usePublishAssistantContext("initiatives_projects", null, assistantData);
 
   const filtered: MockInitiative[] = useMemo(() => {
     return MOCK_INITIATIVES.filter((item) => {

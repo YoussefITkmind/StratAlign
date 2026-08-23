@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ComponentType } from "react";
+import { useMemo, useState, type ComponentType } from "react";
 import { Activity, CheckCircle2, FileText, Shield, TriangleAlert, Users } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
+import { usePublishAssistantContext } from "@/lib/assistant/assistant-context";
 import ApprovalsTab from "./tabs/ApprovalsTab";
 import DecisionLogTab, { type RealDecisionLogEntry } from "./tabs/DecisionLogTab";
 import UnsupportedTab from "./tabs/UnsupportedTab";
@@ -12,6 +13,7 @@ import type { ApprovalDecision, RealApprovalCase } from "./ApprovalCard";
 type TabKey = "approvals" | "decision-log" | "committees" | "risk-register" | "compliance" | "audit-trail";
 const EMPTY_APPROVALS: RealApprovalCase[] = [];
 const EMPTY_DECISIONS: RealDecisionLogEntry[] = [];
+const MAX_ASSISTANT_CONTEXT_ITEMS = 25;
 
 const tabs: { key: TabKey; label: string; icon: ComponentType<{ className?: string }> }[] = [
   { key: "approvals", label: "Approvals", icon: CheckCircle2 },
@@ -36,6 +38,28 @@ export default function GovernancePage() {
 
   const pendingApprovals = approvals.length;
   const escalated = approvals.filter((a) => a.escalated).length;
+
+  const assistantData = useMemo(() => {
+    if (!approvalsQuery.data) return null;
+    return {
+      pendingApprovals,
+      escalated,
+      approvals: approvals.slice(0, MAX_ASSISTANT_CONTEXT_ITEMS).map((approval) => ({
+        entityType: approval.entityType,
+        status: approval.status,
+        escalated: approval.escalated,
+        submittedBy: approval.submittedBy,
+      })),
+      decisions: decisionsQuery.data
+        ? decisions.slice(0, MAX_ASSISTANT_CONTEXT_ITEMS).map((entry) => ({
+            entityType: entry.entityType,
+            decision: entry.decision,
+            decidedBy: entry.decidedBy,
+          }))
+        : null,
+    };
+  }, [approvalsQuery.data, pendingApprovals, escalated, approvals, decisionsQuery.data, decisions]);
+  usePublishAssistantContext("governance", null, assistantData);
 
   const handleDecide = async (id: string, decision: ApprovalDecision, reason: string) => {
     setDecidingId(id);

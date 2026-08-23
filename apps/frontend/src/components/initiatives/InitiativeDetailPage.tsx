@@ -9,6 +9,7 @@ import {
   MOCK_INITIATIVES,
   type InitiativeColor,
 } from "@/data/mockInitiativesBoard";
+import { usePublishAssistantContext } from "@/lib/assistant/assistant-context";
 
 const STAGES = ["design", "pilot", "execute", "scale", "done"] as const;
 const STAGE_LABEL: Record<(typeof STAGES)[number], string> = {
@@ -61,6 +62,25 @@ export function InitiativeDetailPage({ id }: { id: string }) {
 
   const real = list.data?.find((item) => item.id === id);
   const mock = MOCK_INITIATIVES.find((item) => item.id === id);
+
+  // Only real backend data grounds the assistant. Called before any early
+  // return so it stays unconditional regardless of load state.
+  const assistantEntity = useMemo(
+    () => (real ? { type: "initiative", id: real.id, name: real.nameEn } : null),
+    [real],
+  );
+  const assistantData = useMemo(() => {
+    if (!real) return null;
+    const play = nodes.data?.find((node) => node.id === real.strategicPlayNodeId);
+    return {
+      stage: real.stage,
+      status: real.latestStatus,
+      confidence: real.latestConfidence,
+      hasJiraLink: real.hasJiraLink,
+      strategicPlay: play?.nameEn ?? null,
+    };
+  }, [real, nodes.data]);
+  usePublishAssistantContext("initiatives_projects", assistantEntity, assistantData);
 
   if (list.isLoading) {
     return <p className="p-8 text-center text-[13px] text-slate-400">Loading initiative…</p>;

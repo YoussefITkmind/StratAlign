@@ -9,9 +9,13 @@ import { StrategyNode, NodeType, NodeStatus } from "@/types/strategy";
 import { TYPE_CONFIG, STATUS_CONFIG } from "@/lib/strategyConfig";
 import { collectIds, filterTree, flatten, isFiltering, findNode, Filters } from "@/lib/treeUtils";
 import { trpc } from "@/lib/trpc/client";
+import { usePublishAssistantContext } from "@/lib/assistant/assistant-context";
 import TreeRow from "./TreeRow";
 import AddNodeModal, { NodeFormValues } from "./AddNodeModal";
 import NodeDetailPanel from "./NodeDetailPanel";
+
+/** Bounded so a large hierarchy cannot blow the assistant's prompt budget. */
+const MAX_ASSISTANT_CONTEXT_NODES = 30;
 
 interface Props {
   canManageStrategy: boolean;
@@ -44,6 +48,31 @@ export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
   const filteredTree = useMemo(() => (tree ? filterTree(tree, filters) : null), [tree, filters]);
   const filtering = isFiltering(filters);
   const selectedNode = tree && selectedId ? findNode(tree, selectedId) : null;
+
+  const assistantEntity = useMemo(
+    () =>
+      selectedNode
+        ? { type: selectedNode.type, id: selectedNode.id, name: selectedNode.name }
+        : null,
+    [selectedNode],
+  );
+  const assistantData = useMemo(() => {
+    if (!tree) return null;
+    return {
+      rootName: tree.name,
+      totalNodes,
+      nodes: flatten(tree)
+        .slice(0, MAX_ASSISTANT_CONTEXT_NODES)
+        .map(({ node, depth }) => ({
+          name: node.name,
+          type: node.type,
+          status: node.status,
+          progress: node.progress,
+          depth,
+        })),
+    };
+  }, [tree, totalNodes]);
+  usePublishAssistantContext("strategy_hierarchy", assistantEntity, assistantData);
 
   const toggle = (id: string) =>
     setExpandedIds((prev) => {
