@@ -308,6 +308,11 @@ const environmentSchema = z.object({
     .max(600_000)
     .default(300_000),
 
+  PIXELRAG_SERVICE_TOKEN: z
+    .string()
+    .min(1)
+    .optional(),
+
   AUTH_SECRET: z
     .string()
     .min(32, "AUTH_SECRET must be at least 32 characters"),
