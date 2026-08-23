@@ -99,7 +99,7 @@ async function bootstrap(): Promise<void> {
   );
   const scorecard = new ScorecardService(prisma, governance, rules, measurements);
   const execution = new StageAwareExecutionService(prisma, prisma, eventBus);
-  const portfolio = new PortfolioService(prisma, rules);
+  const portfolio = new PortfolioService(prisma, rules, governance, strategy);
   const schedulerRead = new SchedulerReadService(prisma);
   const scheduler = new SchedulerService(
     prisma,

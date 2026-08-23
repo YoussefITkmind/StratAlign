@@ -16,7 +16,7 @@ export interface StagedChangeOutput {
   id: string;
   approvalCaseId: string;
   planVersionId: string;
-  kind: "node_create" | "node_update" | "node_retire" | "edge_link" | "edge_unlink";
+  kind: "node_create" | "node_update" | "node_retire" | "edge_link" | "edge_unlink" | "hierarchy_import";
   targetId: string | null;
   payload: Record<string, unknown>;
   status: "pending" | "applied" | "cancelled";
