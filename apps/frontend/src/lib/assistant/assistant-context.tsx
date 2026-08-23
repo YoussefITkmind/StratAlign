@@ -120,6 +120,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       entity: belongsToActiveModule ? published!.entity : null,
       data: belongsToActiveModule ? published!.data : null,
       capabilities: activeModule.capabilities,
+      helpContent: activeModule.helpContent,
       hasProvider: activeModule.hasProvider,
     };
   }, [activeModule, pathname, published]);
@@ -174,6 +175,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
             entity: moduleContext.entity,
             data: moduleContext.data,
             capabilities: moduleContext.capabilities,
+            helpContent: moduleContext.helpContent,
           },
           history,
         });

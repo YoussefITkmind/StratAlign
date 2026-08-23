@@ -20,6 +20,15 @@ export interface AssistantModuleDefinition {
   /** Whether this route belongs to this module. First match wins. */
   matches: (pathname: string) => boolean;
   capabilities: string[];
+  /**
+   * Short, developer-authored "how do I…" facts about this module's own UI
+   * (e.g. what a button is called, what a field requires) — never business
+   * data. Lets the assistant answer procedural questions honestly instead of
+   * treating every non-data question as out of scope. Empty until someone
+   * has verified the copy below against the real page, same discipline as
+   * `capabilities`: no entry here may describe a control that doesn't exist.
+   */
+  helpContent: string[];
   /** False when the module is real but has no context provider wired up yet. */
   hasProvider: boolean;
 }
@@ -47,6 +56,7 @@ registerAssistantModule({
   // doesn't. No page needs to call `usePublishAssistantContext` for this
   // module while that stays true.
   capabilities: [],
+  helpContent: [],
   hasProvider: false,
 });
 
@@ -55,6 +65,9 @@ registerAssistantModule({
   name: "Governance",
   matches: prefixMatcher("/governance"),
   capabilities: ["explain_approval_status", "summarize_decisions"],
+  helpContent: [
+    'Each pending item appears as an approval card with decision buttons. "Approve" and "Continue" need no comment. "Reject" and "Request Changes" require you to type a reason first — the button stays disabled until you do.',
+  ],
   hasProvider: true,
 });
 
@@ -63,6 +76,9 @@ registerAssistantModule({
   name: "Strategy Hierarchy",
   matches: prefixMatcher("/strategy-hierarchy"),
   capabilities: ["explain_hierarchy", "identify_gaps", "explain_relationships"],
+  helpContent: [
+    'Click "Add Node" at the top of the hierarchy view to create a new node. The same dialog opens in edit mode when you choose to edit an existing node.',
+  ],
   hasProvider: true,
 });
 
@@ -71,6 +87,7 @@ registerAssistantModule({
   name: "Balanced Scorecards",
   matches: prefixMatcher("/balanced-scorecards"),
   capabilities: ["explain_performance", "analyze_kpis", "explain_variance"],
+  helpContent: ['Click "New Scorecard" to open the scorecard setup dialog and create one.'],
   hasProvider: true,
 });
 
@@ -79,6 +96,9 @@ registerAssistantModule({
   name: "KPIs & OKRs",
   matches: prefixMatcher("/kpis-okrs"),
   capabilities: ["explain_kpi", "identify_underperformance", "explain_okr_progress"],
+  helpContent: [
+    'In the KPI Library tab, click "Add KPI" to create a new KPI. In the OKR Library tab, use the equivalent create action to add a new objective.',
+  ],
   hasProvider: true,
 });
 
@@ -87,6 +107,9 @@ registerAssistantModule({
   name: "Initiatives & Projects",
   matches: prefixMatcher("/initiatives-projects"),
   capabilities: ["explain_initiative_status", "identify_at_risk_initiatives"],
+  helpContent: [
+    'Click "Create Initiative" ("New Initiative" in the register view) to open the initiative creation form.',
+  ],
   hasProvider: true,
 });
 
@@ -107,6 +130,7 @@ for (const [id, name, prefix] of [
     name,
     matches: prefixMatcher(prefix),
     capabilities: [],
+    helpContent: [],
     hasProvider: false,
   });
 }
@@ -116,6 +140,7 @@ const GENERAL_MODULE: AssistantModuleDefinition = {
   name: "StratAlign",
   matches: () => true,
   capabilities: [],
+  helpContent: [],
   hasProvider: false,
 };
 

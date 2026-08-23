@@ -41,11 +41,28 @@ describe("resolveModule", () => {
     }
   });
 
+  it("gives every implemented module procedural how-to guidance, not just data capabilities", () => {
+    for (const route of [
+      "/strategy-hierarchy",
+      "/balanced-scorecards",
+      "/kpis-okrs",
+      "/initiatives-projects",
+      "/governance",
+    ]) {
+      const moduleDef = resolveModule(route);
+      expect(moduleDef.helpContent.length).toBeGreaterThan(0);
+      for (const item of moduleDef.helpContent) {
+        expect(item.trim().length).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it("resolves a future/unimplemented module honestly, without fake capabilities", () => {
     for (const route of ["/dashboards", "/reports", "/data-integrations", "/settings"]) {
       const moduleDef = resolveModule(route);
       expect(moduleDef.hasProvider).toBe(false);
       expect(moduleDef.capabilities).toEqual([]);
+      expect(moduleDef.helpContent).toEqual([]);
     }
   });
 

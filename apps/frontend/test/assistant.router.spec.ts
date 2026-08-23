@@ -41,6 +41,7 @@ const askInput = {
     entity: null,
     data: { kpis: [{ name: "Revenue Growth", status: "on_track" }] },
     capabilities: ["analyze_kpis"],
+    helpContent: [],
   },
   history: [] as { role: "user" | "assistant"; content: string }[],
 };

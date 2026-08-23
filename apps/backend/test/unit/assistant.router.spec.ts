@@ -48,6 +48,7 @@ const validInput = {
     entity: null,
     data: { kpis: [{ name: "Revenue Growth", status: "on_track" }] },
     capabilities: ["analyze_kpis"],
+    helpContent: [],
   },
   history: [{ role: "user" as const, content: "Hi" }],
 };

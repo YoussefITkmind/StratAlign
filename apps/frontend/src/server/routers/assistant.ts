@@ -21,6 +21,8 @@ const MAX_CONTEXT_ROW_KEYS = 20;
 const MAX_CONTEXT_ARRAY_ITEMS = 40;
 const MAX_CONTEXT_STRING_LENGTH = 500;
 const MAX_CAPABILITIES = 10;
+const MAX_HELP_ITEMS = 20;
+const MAX_HELP_ITEM_LENGTH = 300;
 
 const backend = (ctx: { cookieHeader: string | null }) =>
   createBackendRegistryClient(ctx.cookieHeader);
@@ -68,6 +70,7 @@ const assistantModuleContextSchema = z
     entity: entityRefSchema,
     data: contextDataSchema,
     capabilities: z.array(z.string().trim().min(1).max(60)).max(MAX_CAPABILITIES),
+    helpContent: z.array(z.string().trim().min(1).max(MAX_HELP_ITEM_LENGTH)).max(MAX_HELP_ITEMS),
   })
   .strict();
 

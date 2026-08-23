@@ -50,6 +50,7 @@ const baseInput: AskAssistantInput = {
       kpis: [{ name: "Revenue Growth", status: "on_track" }],
     },
     capabilities: ["analyze_kpis"],
+    helpContent: ['Click "New Scorecard" to open the scorecard setup dialog and create one.'],
   },
   history: [],
 };
@@ -80,6 +81,28 @@ describe("ContextAwareAssistantService", () => {
       expect(request.prompt).toContain("What is the current revenue growth?");
       expect(request.system).toContain("Never invent business metrics");
       expect(request.feature).toBe("assistant.global");
+    });
+
+    it("passes supplied platform help into the prompt under its own section", async () => {
+      const { service, complete } = makeService();
+
+      await service.ask(baseInput);
+
+      const prompt = complete.mock.calls[0][0].prompt as string;
+      expect(prompt).toContain("PLATFORM HELP");
+      expect(prompt).toContain('Click "New Scorecard"');
+    });
+
+    it("tells the model plainly when no platform help was supplied for this module", async () => {
+      const { service, complete } = makeService();
+
+      await service.ask({
+        ...baseInput,
+        context: { ...baseInput.context, helpContent: [] },
+      });
+
+      const prompt = complete.mock.calls[0][0].prompt as string;
+      expect(prompt).toContain("(no how-to guidance supplied for this module yet)");
     });
 
     it("includes prior conversation turns in the prompt", async () => {
