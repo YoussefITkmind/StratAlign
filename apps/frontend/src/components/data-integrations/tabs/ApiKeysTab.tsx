@@ -1,8 +1,22 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Eye, EyeOff, Copy, Plus, X, Check } from "lucide-react";
-import { ApiKey, ApiKeyScope } from "@/types/dataIntegrations";
+import { trpc } from "@/lib/trpc/client";
+
+type ApiKeyScope = "ADMIN" | "READ" | "WRITE";
+type ApiKeyRow = {
+  id: string;
+  name: string;
+  scope: ApiKeyScope;
+  keyPreview: string;
+  owner: string;
+  created: string;
+  expires: string;
+  lastUsed: string;
+  requests: number;
+  disabled: boolean;
+};
 
 const SCOPE_STYLES: Record<ApiKeyScope, string> = {
   ADMIN: "bg-orange-50 text-orange-600 border-orange-200",
@@ -10,25 +24,38 @@ const SCOPE_STYLES: Record<ApiKeyScope, string> = {
   WRITE: "bg-violet-50 text-violet-600 border-violet-200",
 };
 
-function mask(key: string) {
-  return key.slice(0, 12) + "•".repeat(Math.max(key.length - 12, 8));
-}
+export default function ApiKeysTab({ search }: { search: string }) {
+  const utils = trpc.useUtils();
+  const query = trpc.integrations.apiKeys.list.useQuery();
+  const apiKeys = useMemo(() => query.data ?? [], [query.data]);
 
-export default function ApiKeysTab({
-  apiKeys,
-  setApiKeys,
-  search,
-}: {
-  apiKeys: ApiKey[];
-  setApiKeys: React.Dispatch<React.SetStateAction<ApiKey[]>>;
-  search: string;
-}) {
   const [revealed, setRevealed] = useState<string[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState("");
   const [newScope, setNewScope] = useState<ApiKeyScope>("READ");
-  const [revokeTarget, setRevokeTarget] = useState<ApiKey | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<ApiKeyRow | null>(null);
+  const [justCreatedSecrets, setJustCreatedSecrets] = useState<Record<string, string>>({});
+
+  const createMutation = trpc.integrations.apiKeys.create.useMutation({
+    onSuccess: (created) => {
+      utils.integrations.apiKeys.list.invalidate();
+      setJustCreatedSecrets((prev) => ({ ...prev, [created.id]: created.secret }));
+      setRevealed((prev) => [...prev, created.id]);
+      setNewName("");
+      setNewScope("READ");
+      setShowAdd(false);
+    },
+  });
+  const toggleDisabledMutation = trpc.integrations.apiKeys.toggleDisabled.useMutation({
+    onSuccess: () => utils.integrations.apiKeys.list.invalidate(),
+  });
+  const revokeMutation = trpc.integrations.apiKeys.revoke.useMutation({
+    onSuccess: () => {
+      utils.integrations.apiKeys.list.invalidate();
+      setRevokeTarget(null);
+    },
+  });
 
   const filtered = apiKeys.filter((k) => k.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -36,51 +63,16 @@ export default function ApiKeysTab({
     setRevealed((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  function copyKey(k: ApiKey) {
-    navigator.clipboard?.writeText(k.key);
+  function copyKey(k: ApiKeyRow) {
+    const value = justCreatedSecrets[k.id] ?? k.keyPreview;
+    navigator.clipboard?.writeText(value);
     setCopiedId(k.id);
     setTimeout(() => setCopiedId(null), 1500);
   }
 
-  function toggleDisable(id: string) {
-    setApiKeys((prev) => prev.map((k) => (k.id === id ? { ...k, disabled: !k.disabled } : k)));
-  }
-
-  function confirmRevoke() {
-    if (!revokeTarget) return;
-    setApiKeys((prev) => prev.filter((k) => k.id !== revokeTarget.id));
-    setRevokeTarget(null);
-  }
-
   function addKey() {
     if (!newName.trim()) return;
-    const id = `k${Date.now()}`;
-    const rand = Math.random().toString(36).slice(2, 14);
-    const prefix = newScope === "ADMIN" ? "adm" : newScope === "WRITE" ? "wrt" : "rd";
-    const today = new Date();
-    const created = today.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    const nextYear = new Date(today);
-    nextYear.setFullYear(nextYear.getFullYear() + 1);
-    const expires = nextYear.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    setApiKeys((prev) => [
-      {
-        id,
-        name: newName.trim(),
-        scope: newScope,
-        key: `bsc_${prefix}_sk_${rand}`,
-        owner: "Alex Morgan",
-        created,
-        expires,
-        lastUsed: "Never",
-        requests: 0,
-        disabled: false,
-      },
-      ...prev,
-    ]);
-    setNewName("");
-    setNewScope("READ");
-    setShowAdd(false);
-    setRevealed((prev) => [...prev, id]);
+    createMutation.mutate({ name: newName.trim(), scope: newScope });
   }
 
   return (
@@ -104,6 +96,7 @@ export default function ApiKeysTab({
       <div className="mt-4 flex flex-col gap-3">
         {filtered.map((k) => {
           const isRevealed = revealed.includes(k.id);
+          const displayValue = justCreatedSecrets[k.id] ?? k.keyPreview;
           return (
             <div
               key={k.id}
@@ -128,7 +121,7 @@ export default function ApiKeysTab({
                   </div>
                   <div className="mt-1.5 flex items-center gap-2">
                     <code className="rounded-md bg-slate-50 px-2 py-1 text-xs text-slate-500">
-                      {isRevealed ? k.key : mask(k.key)}
+                      {isRevealed ? displayValue : k.keyPreview}
                     </code>
                     <button
                       onClick={() => toggleReveal(k.id)}
@@ -149,11 +142,17 @@ export default function ApiKeysTab({
                       {copiedId === k.id ? "Copied" : "Copy"}
                     </button>
                   </div>
+                  {justCreatedSecrets[k.id] && (
+                    <p className="mt-1 text-[11px] text-amber-600">
+                      This is the only time the full key is shown — copy it now.
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
-                    onClick={() => toggleDisable(k.id)}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    onClick={() => toggleDisabledMutation.mutate({ id: k.id })}
+                    disabled={toggleDisabledMutation.isPending && toggleDisabledMutation.variables?.id === k.id}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                   >
                     {k.disabled ? "Enable" : "Disable"}
                   </button>
@@ -188,7 +187,7 @@ export default function ApiKeysTab({
             </div>
           );
         })}
-        {filtered.length === 0 && (
+        {!query.isLoading && filtered.length === 0 && (
           <div className="rounded-xl border border-dashed border-slate-200 py-12 text-center text-sm text-slate-400">
             No API keys match your search.
           </div>
@@ -250,7 +249,7 @@ export default function ApiKeysTab({
               </button>
               <button
                 onClick={addKey}
-                disabled={!newName.trim()}
+                disabled={!newName.trim() || createMutation.isPending}
                 className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
               >
                 Create key
@@ -282,8 +281,9 @@ export default function ApiKeysTab({
                 Cancel
               </button>
               <button
-                onClick={confirmRevoke}
-                className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                onClick={() => revokeMutation.mutate({ id: revokeTarget.id })}
+                disabled={revokeMutation.isPending}
+                className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40"
               >
                 Revoke key
               </button>
