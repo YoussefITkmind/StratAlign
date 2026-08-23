@@ -153,7 +153,12 @@ class OpenAICompatibleVLMReader:
     def synthesize_text(self, question: str, evidence_blocks: list[str]) -> VLMAnswer:
         instruction = (
             "Synthesize an answer only from the supplied source summaries. Do not invent facts. "
-            "When sources conflict, state the conflict and identify the source labels. "
+            "Treat each SOURCE block as a separate report. When the question asks how something changed between reports, "
+            "compare the value stated for each report directly and calculate the cross-report direction and difference when the values permit it. "
+            "Do not confuse historical movement described inside one report with movement between the reports being compared. "
+            "For example, if one source reports a current value of 86 and another source reports a current value of 85 while also saying it rose from 82 to 85 internally, "
+            "the cross-report change is 86 to 85 (down 1), while 82 to 85 is only the later report's internal historical trend. "
+            "Keep those two timelines explicitly separate. When sources conflict, state the conflict and identify the source labels. "
             'Return JSON with an "answer" string and an "evidence" array.\n\n'
             "Question: " + question + "\n\nSources:\n" + "\n\n".join(evidence_blocks)
         )
