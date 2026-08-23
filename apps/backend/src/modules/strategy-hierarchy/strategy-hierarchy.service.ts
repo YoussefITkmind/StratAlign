@@ -251,6 +251,7 @@ export class StrategyHierarchyService {
       maxOutputTokens: DRAFT_MAX_OUTPUT_TOKENS,
       temperature: DRAFT_TEMPERATURE,
       feature: DRAFT_DESCRIPTION_FEATURE,
+      responseFormat: "text",
     });
 
     const draft = completion.text.trim();

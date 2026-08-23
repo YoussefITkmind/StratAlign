@@ -75,6 +75,17 @@ describe("OpenAI LLM provider", () => {
     expect(body.max_tokens).toBe(8_192);
   });
 
+  it("omits response_format for a plain-text request instead of forcing JSON mode", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse("Plain prose, not JSON."));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await provider().complete({ ...request, responseFormat: "text" });
+
+    const [, init] = fetchMock.mock.calls[0];
+    const body = JSON.parse(init.body);
+    expect(body.response_format).toBeUndefined();
+  });
+
   it("sends the key as a header and never in the URL or body", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse("{}"));
     vi.stubGlobal("fetch", fetchMock);
