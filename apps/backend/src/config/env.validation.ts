@@ -290,6 +290,24 @@ const environmentSchema = z.object({
     .max(5)
     .default(2),
 
+  /**
+   * PixelRAG document-intelligence service.
+   *
+   * Optional so the rest of StratAlign can start and operate normally when
+   * the separately deployed PixelRAG service is not configured.
+   */
+  PIXELRAG_SERVICE_URL: z
+    .string()
+    .url()
+    .optional(),
+
+  PIXELRAG_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(600_000)
+    .default(300_000),
+
   AUTH_SECRET: z
     .string()
     .min(32, "AUTH_SECRET must be at least 32 characters"),

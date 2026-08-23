@@ -49,6 +49,7 @@ import { ValueManagementService } from "./modules/value/value-management.service
 import { createLlmProvider } from "./modules/ai/llm.factory";
 import { ThemeContextBuilder } from "./modules/ai/theme-context.builder";
 import { AiSuggestionService } from "./modules/ai/ai-suggestion.service";
+import { PixelRagClient } from "./modules/pixelrag/pixelrag.client";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -132,6 +133,13 @@ async function bootstrap(): Promise<void> {
     logger.child("ai-suggestion"),
   );
 
+  const pixelrag = environment.PIXELRAG_SERVICE_URL
+    ? new PixelRagClient(
+        environment.PIXELRAG_SERVICE_URL,
+        environment.PIXELRAG_TIMEOUT_MS,
+      )
+    : undefined;
+
   const server = createHTTPServer({
     router: rootRouter,
     basePath: "/trpc/",
@@ -146,6 +154,7 @@ async function bootstrap(): Promise<void> {
         strategyHierarchy,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
         aiSuggestion,
+        pixelrag,
       };
     },
     middleware(request, response, next) {
