@@ -1,24 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Plus, Trash2, ChevronDown, X } from "lucide-react";
-import { Webhook } from "@/types/dataIntegrations";
+import { trpc } from "@/lib/trpc/client";
 
-export default function WebhooksTab({
-  webhooks,
-  setWebhooks,
-  search,
-}: {
-  webhooks: Webhook[];
-  setWebhooks: React.Dispatch<React.SetStateAction<Webhook[]>>;
-  search: string;
-}) {
+type WebhookRow = {
+  id: string;
+  name: string;
+  url: string;
+  events: string[];
+  active: boolean;
+  successRate: number;
+};
+
+export default function WebhooksTab({ search }: { search: string }) {
+  const utils = trpc.useUtils();
+  const query = trpc.integrations.webhooks.list.useQuery();
+  const webhooks = useMemo(() => query.data ?? [], [query.data]);
+
   const [expanded, setExpanded] = useState<string[]>([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Webhook | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WebhookRow | null>(null);
   const [newName, setNewName] = useState("");
   const [newUrl, setNewUrl] = useState("");
   const [newEvents, setNewEvents] = useState("");
+
+  const createMutation = trpc.integrations.webhooks.create.useMutation({
+    onSuccess: () => {
+      utils.integrations.webhooks.list.invalidate();
+      setNewName("");
+      setNewUrl("");
+      setNewEvents("");
+      setShowAdd(false);
+    },
+  });
+  const toggleActiveMutation = trpc.integrations.webhooks.toggleActive.useMutation({
+    onSuccess: () => utils.integrations.webhooks.list.invalidate(),
+  });
+  const deleteMutation = trpc.integrations.webhooks.delete.useMutation({
+    onSuccess: () => {
+      utils.integrations.webhooks.list.invalidate();
+      setDeleteTarget(null);
+    },
+  });
 
   const filtered = webhooks.filter(
     (w) =>
@@ -29,18 +53,8 @@ export default function WebhooksTab({
   const activeCount = webhooks.filter((w) => w.active && w.successRate >= 90).length;
   const failingCount = webhooks.filter((w) => w.successRate < 90).length;
 
-  function toggleActive(id: string) {
-    setWebhooks((prev) => prev.map((w) => (w.id === id ? { ...w, active: !w.active } : w)));
-  }
-
   function toggleExpand(id: string) {
     setExpanded((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
-
-  function confirmDelete() {
-    if (!deleteTarget) return;
-    setWebhooks((prev) => prev.filter((w) => w.id !== deleteTarget.id));
-    setDeleteTarget(null);
   }
 
   function addWebhook() {
@@ -49,21 +63,7 @@ export default function WebhooksTab({
       .split(",")
       .map((e) => e.trim())
       .filter(Boolean);
-    setWebhooks((prev) => [
-      {
-        id: `w${Date.now()}`,
-        name: newName.trim(),
-        url: newUrl.trim(),
-        events: events.length ? events : ["custom.event"],
-        active: true,
-        successRate: 100,
-      },
-      ...prev,
-    ]);
-    setNewName("");
-    setNewUrl("");
-    setNewEvents("");
-    setShowAdd(false);
+    createMutation.mutate({ name: newName.trim(), url: newUrl.trim(), events });
   }
 
   return (
@@ -139,8 +139,9 @@ export default function WebhooksTab({
                   </div>
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => toggleActive(w.id)}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      onClick={() => toggleActiveMutation.mutate({ id: w.id })}
+                      disabled={toggleActiveMutation.isPending && toggleActiveMutation.variables?.id === w.id}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                     >
                       {w.active ? "Disable" : "Enable"}
                     </button>
@@ -190,7 +191,7 @@ export default function WebhooksTab({
             </div>
           );
         })}
-        {filtered.length === 0 && (
+        {!query.isLoading && filtered.length === 0 && (
           <div className="rounded-xl border border-dashed border-slate-200 py-12 text-center text-sm text-slate-400">
             No webhooks match your search.
           </div>
@@ -252,7 +253,7 @@ export default function WebhooksTab({
               </button>
               <button
                 onClick={addWebhook}
-                disabled={!newName.trim() || !newUrl.trim()}
+                disabled={!newName.trim() || !newUrl.trim() || createMutation.isPending}
                 className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
               >
                 Add webhook
@@ -284,8 +285,9 @@ export default function WebhooksTab({
                 Cancel
               </button>
               <button
-                onClick={confirmDelete}
-                className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                onClick={() => deleteMutation.mutate({ id: deleteTarget.id })}
+                disabled={deleteMutation.isPending}
+                className="rounded-lg bg-red-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40"
               >
                 Delete webhook
               </button>

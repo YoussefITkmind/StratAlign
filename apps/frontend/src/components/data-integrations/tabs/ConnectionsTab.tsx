@@ -2,84 +2,55 @@
 
 import { useMemo, useState } from "react";
 import { Search, ChevronDown, RefreshCw, Check } from "lucide-react";
-import { Connection, ConnectionStatus } from "@/types/dataIntegrations";
+import { trpc } from "@/lib/trpc/client";
 
-const STATUS_STYLES: Record<ConnectionStatus, { dot: string; text: string }> = {
-  Connected: { dot: "bg-emerald-500", text: "text-emerald-600" },
-  Error: { dot: "bg-red-500", text: "text-red-600" },
-  Disconnected: { dot: "bg-slate-400", text: "text-slate-500" },
-  Pending: { dot: "bg-orange-500", text: "text-orange-600" },
+const STATUS_META: Record<string, { label: string; dot: string; text: string }> = {
+  CONNECTED: { label: "Connected", dot: "bg-emerald-500", text: "text-emerald-600" },
+  ERROR: { label: "Error", dot: "bg-red-500", text: "text-red-600" },
+  DISCONNECTED: { label: "Disconnected", dot: "bg-slate-400", text: "text-slate-500" },
+  PENDING: { label: "Pending", dot: "bg-orange-500", text: "text-orange-600" },
 };
 
 function fmt(n: number) {
   return n.toLocaleString("en-US");
 }
 
-export default function ConnectionsTab({
-  connections,
-  setConnections,
-  search,
-}: {
-  connections: Connection[];
-  setConnections: React.Dispatch<React.SetStateAction<Connection[]>>;
-  search: string;
-}) {
+export default function ConnectionsTab({ search }: { search: string }) {
+  const utils = trpc.useUtils();
+  const query = trpc.integrations.connections.list.useQuery();
+  const connections = useMemo(() => query.data ?? [], [query.data]);
+
+  const toggleMutation = trpc.integrations.connections.toggle.useMutation({
+    onSuccess: () => utils.integrations.connections.list.invalidate(),
+  });
+  const syncMutation = trpc.integrations.connections.syncNow.useMutation({
+    onSuccess: () => utils.integrations.connections.list.invalidate(),
+  });
+
   const [category, setCategory] = useState("All Categories");
   const [status, setStatus] = useState("All Status");
   const [catOpen, setCatOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
-  const [syncingIds, setSyncingIds] = useState<string[]>([]);
 
   const categories = useMemo(
     () => ["All Categories", ...Array.from(new Set(connections.map((c) => c.category)))],
     [connections]
   );
-  const statuses = ["All Status", "Connected", "Error", "Disconnected", "Pending"];
+  const statuses = ["All Status", ...Object.values(STATUS_META).map((m) => m.label)];
 
   const filtered = connections.filter((c) => {
     const matchesSearch = c.name.toLowerCase().includes(search.toLowerCase());
     const matchesCategory = category === "All Categories" || c.category === category;
-    const matchesStatus = status === "All Status" || c.status === status;
+    const matchesStatus = status === "All Status" || STATUS_META[c.status]?.label === status;
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
   const counts = {
-    Connected: connections.filter((c) => c.status === "Connected").length,
-    Error: connections.filter((c) => c.status === "Error").length,
-    Disconnected: connections.filter((c) => c.status === "Disconnected").length,
-    Pending: connections.filter((c) => c.status === "Pending").length,
+    Connected: connections.filter((c) => c.status === "CONNECTED").length,
+    Error: connections.filter((c) => c.status === "ERROR").length,
+    Disconnected: connections.filter((c) => c.status === "DISCONNECTED").length,
+    Pending: connections.filter((c) => c.status === "PENDING").length,
   };
-
-  function toggleConnection(id: string) {
-    setConnections((prev) =>
-      prev.map((c) => {
-        if (c.id !== id) return c;
-        if (c.status === "Connected") {
-          return { ...c, status: "Disconnected", lastSync: "Disconnected just now" };
-        }
-        return { ...c, status: "Connected", lastSync: "Last: just now" };
-      })
-    );
-  }
-
-  function syncNow(id: string) {
-    setSyncingIds((prev) => [...prev, id]);
-    setTimeout(() => {
-      setConnections((prev) =>
-        prev.map((c) =>
-          c.id === id
-            ? {
-                ...c,
-                lastSync: "Last: just now",
-                recordsIn: c.recordsIn + Math.floor(Math.random() * 500),
-                recordsOut: c.recordsOut + Math.floor(Math.random() * 200),
-              }
-            : c
-        )
-      );
-      setSyncingIds((prev) => prev.filter((x) => x !== id));
-    }, 1400);
-  }
 
   return (
     <div>
@@ -132,9 +103,14 @@ export default function ConnectionsTab({
 
       {/* Cards */}
       <div className="mt-4 flex flex-col gap-3">
+        {query.isLoading && (
+          <div className="rounded-xl border border-dashed border-slate-200 py-12 text-center text-sm text-slate-400">
+            Loading connections…
+          </div>
+        )}
         {filtered.map((c) => {
-          const s = STATUS_STYLES[c.status];
-          const syncing = syncingIds.includes(c.id);
+          const meta = STATUS_META[c.status];
+          const syncing = syncMutation.isPending && syncMutation.variables?.id === c.id;
           return (
             <div
               key={c.id}
@@ -155,9 +131,9 @@ export default function ConnectionsTab({
                       </span>
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
-                      <span className={`flex items-center gap-1 font-medium ${s.text}`}>
-                        <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
-                        {c.status}
+                      <span className={`flex items-center gap-1 font-medium ${meta.text}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+                        {meta.label}
                       </span>
                       <span className="rounded-md border border-slate-200 px-1.5 py-0.5 font-medium text-slate-500">
                         {c.direction}
@@ -169,8 +145,8 @@ export default function ConnectionsTab({
 
                 <div className="flex shrink-0 items-center gap-2">
                   <button
-                    onClick={() => syncNow(c.id)}
-                    disabled={syncing || c.status !== "Connected"}
+                    onClick={() => syncMutation.mutate({ id: c.id })}
+                    disabled={syncing || c.status !== "CONNECTED"}
                     className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <RefreshCw
@@ -179,14 +155,15 @@ export default function ConnectionsTab({
                     Sync Now
                   </button>
                   <button
-                    onClick={() => toggleConnection(c.id)}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                      c.status === "Connected"
+                    onClick={() => toggleMutation.mutate({ id: c.id })}
+                    disabled={toggleMutation.isPending && toggleMutation.variables?.id === c.id}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-40 ${
+                      c.status === "CONNECTED"
                         ? "bg-red-600 text-white hover:bg-red-700"
                         : "bg-slate-900 text-white hover:bg-slate-800"
                     }`}
                   >
-                    {c.status === "Connected" ? "Disconnect" : "Connect"}
+                    {c.status === "CONNECTED" ? "Disconnect" : "Connect"}
                   </button>
                 </div>
               </div>
@@ -205,7 +182,7 @@ export default function ConnectionsTab({
             </div>
           );
         })}
-        {filtered.length === 0 && (
+        {!query.isLoading && filtered.length === 0 && (
           <div className="rounded-xl border border-dashed border-slate-200 py-12 text-center text-sm text-slate-400">
             No connections match your filters.
           </div>

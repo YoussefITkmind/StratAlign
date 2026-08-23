@@ -49,6 +49,10 @@ import { ValueManagementService } from "./modules/value/value-management.service
 import { createLlmProvider } from "./modules/ai/llm.factory";
 import { ThemeContextBuilder } from "./modules/ai/theme-context.builder";
 import { AiSuggestionService } from "./modules/ai/ai-suggestion.service";
+import { ConnectionsService } from "./modules/integrations/connections.service";
+import { SyncLogsService } from "./modules/integrations/sync-logs.service";
+import { ApiKeysService } from "./modules/integrations/api-keys.service";
+import { WebhooksService } from "./modules/integrations/webhooks.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -106,6 +110,12 @@ async function bootstrap(): Promise<void> {
     logger.child("value-checkin-scheduler"),
   );
   const value = new ValueManagementService(prisma, governance, governanceEscalation, rules, scheduler);
+  const integrations = {
+    connections: new ConnectionsService(prisma),
+    syncLogs: new SyncLogsService(prisma),
+    apiKeys: new ApiKeysService(prisma),
+    webhooks: new WebhooksService(prisma),
+  };
 
   // AI stays behind one provider abstraction, constructed once. Nothing else in
   // the platform is allowed to know which vendor is configured, or whether one
@@ -145,7 +155,7 @@ async function bootstrap(): Promise<void> {
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal,
         strategyHierarchy,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
-        aiSuggestion,
+        aiSuggestion, integrations,
       };
     },
     middleware(request, response, next) {

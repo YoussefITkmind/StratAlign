@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { createHash } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { NotificationChannel } from "../src/generated/prisma/enums";
@@ -446,12 +447,146 @@ async function seedStrategyHierarchy(): Promise<void> {
   });
 }
 
+async function seedDataIntegrations(): Promise<void> {
+  const existing = await prisma.connection.findFirst();
+  if (existing) {
+    console.log("Data & Integrations already seeded, skipping");
+    return;
+  }
+
+  const administrator =
+    (await prisma.user.findUnique({ where: { email: "bob@example.test" } })) ??
+    (await prisma.user.findFirst({ orderBy: { createdAt: "asc" } }));
+
+  if (!administrator) {
+    console.log("No users exist yet, skipping Data & Integrations seed");
+    return;
+  }
+
+  await prisma.connection.createMany({
+    data: [
+      {
+        name: "Salesforce CRM", category: "CRM", status: "CONNECTED", direction: "Bi-directional",
+        lastSyncLabel: "Last: 4 minutes ago", recordsIn: 18420, recordsOut: 6210,
+        meta: "OAuth 2.0 · v58.0", color: "bg-blue-500", icon: "SF",
+      },
+      {
+        name: "NetSuite ERP", category: "Finance", status: "ERROR", direction: "Inbound",
+        lastSyncLabel: "Failed 2 hours ago", recordsIn: 9032, recordsOut: 0,
+        meta: "REST · Token auth", color: "bg-orange-500", icon: "NS",
+      },
+      {
+        name: "Snowflake ETL Service", category: "Data Warehouse", status: "ERROR", direction: "Outbound",
+        lastSyncLabel: "Failed 38 minutes ago", recordsIn: 0, recordsOut: 40218,
+        meta: "JDBC · Key pair auth", color: "bg-cyan-600", icon: "SN",
+      },
+      {
+        name: "Workday HCM", category: "HR", status: "CONNECTED", direction: "Inbound",
+        lastSyncLabel: "Last: 1 hour ago", recordsIn: 3204, recordsOut: 0,
+        meta: "SOAP · Cert auth", color: "bg-emerald-600", icon: "WD",
+      },
+      {
+        name: "HubSpot Marketing", category: "Marketing", status: "PENDING", direction: "Bi-directional",
+        lastSyncLabel: "Awaiting authorization", recordsIn: 0, recordsOut: 0,
+        meta: "OAuth 2.0 · Setup incomplete", color: "bg-fuchsia-500", icon: "HS",
+      },
+      {
+        name: "Jira Cloud", category: "Project Management", status: "CONNECTED", direction: "Bi-directional",
+        lastSyncLabel: "Last: 12 minutes ago", recordsIn: 1540, recordsOut: 890,
+        meta: "REST · API token", color: "bg-indigo-600", icon: "JR",
+      },
+      {
+        name: "Zendesk Support", category: "Support", status: "DISCONNECTED", direction: "Inbound",
+        lastSyncLabel: "Disconnected 3 days ago", recordsIn: 0, recordsOut: 0,
+        meta: "REST · API token", color: "bg-slate-500", icon: "ZD",
+      },
+    ],
+  });
+
+  await prisma.syncLog.createMany({
+    data: [
+      {
+        integrationName: "Salesforce CRM", startedLabel: "Aug 23, 09:12", durationLabel: "48s",
+        status: "SUCCESS", recordsIn: 1240, recordsOut: 320, errorCount: 0,
+        message: "Sync completed without errors.", color: "bg-blue-500", icon: "SF",
+      },
+      {
+        integrationName: "Snowflake ETL Service", startedLabel: "Aug 23, 08:44", durationLabel: "2m 10s",
+        status: "FAILED", recordsIn: 0, recordsOut: 0, errorCount: 12,
+        message: "Connection timed out while authenticating with key pair.", color: "bg-cyan-600", icon: "SN",
+      },
+      {
+        integrationName: "NetSuite ERP", startedLabel: "Aug 23, 07:58", durationLabel: "1m 02s",
+        status: "FAILED", recordsIn: 0, recordsOut: 0, errorCount: 4,
+        message: "Stored API token expired.", color: "bg-orange-500", icon: "NS",
+      },
+      {
+        integrationName: "Workday HCM", startedLabel: "Aug 23, 07:30", durationLabel: "3m 41s",
+        status: "PARTIAL", recordsIn: 2980, recordsOut: 0, errorCount: 3,
+        message: "224 records skipped due to schema mismatch.", color: "bg-emerald-600", icon: "WD",
+      },
+      {
+        integrationName: "Jira Cloud", startedLabel: "Aug 23, 06:15", durationLabel: "22s",
+        status: "SUCCESS", recordsIn: 410, recordsOut: 205, errorCount: 0,
+        message: "Sync completed without errors.", color: "bg-indigo-600", icon: "JR",
+      },
+      {
+        integrationName: "Salesforce CRM", startedLabel: "Aug 23, 05:59", durationLabel: "Running…",
+        status: "RUNNING", recordsIn: null, recordsOut: null, errorCount: 0,
+        message: "Sync in progress.", color: "bg-blue-500", icon: "SF",
+      },
+    ],
+  });
+
+  const oneYearFromNow = new Date();
+  oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+  const seedKeyHash = (seed: string) => createHash("sha256").update(seed).digest("hex");
+
+  await prisma.apiKey.createMany({
+    data: [
+      {
+        name: "Mobile App – Production", scope: "READ", keyPrefix: "bsc_rd_sk_",
+        keyHash: seedKeyHash("mobile-app-production"), ownerId: administrator.id, ownerName: "Alex Morgan",
+        lastUsedLabel: "3 minutes ago", requestCount: 128430, expiresAt: oneYearFromNow,
+      },
+      {
+        name: "Data Warehouse Sync", scope: "WRITE", keyPrefix: "bsc_wrt_sk_",
+        keyHash: seedKeyHash("data-warehouse-sync"), ownerId: administrator.id, ownerName: "Priya Nair",
+        lastUsedLabel: "1 hour ago", requestCount: 54210, expiresAt: oneYearFromNow,
+      },
+      {
+        name: "Legacy Reporting Tool", scope: "ADMIN", keyPrefix: "bsc_adm_sk_",
+        keyHash: seedKeyHash("legacy-reporting-tool"), ownerId: administrator.id, ownerName: "Alex Morgan",
+        disabled: true, lastUsedLabel: "2 days ago", requestCount: 980, expiresAt: oneYearFromNow,
+      },
+    ],
+  });
+
+  await prisma.webhook.createMany({
+    data: [
+      {
+        name: "Forecast Update → Slack", url: "https://platform.company/webhooks/forecast-slack",
+        events: ["forecast.updated"], active: true, successRate: 99.6,
+      },
+      {
+        name: "Opportunity Sync → Finance", url: "https://platform.company/webhooks/opp-finance",
+        events: ["opportunity.won", "opportunity.lost"], active: true, successRate: 82.3,
+      },
+      {
+        name: "Sync Failure Alerts", url: "https://platform.company/webhooks/sync-alerts",
+        events: ["sync.failed"], active: false, successRate: 100,
+      },
+    ],
+  });
+}
+
 async function main(): Promise<void> {
   await seedSystemSettings();
   await seedRolesAndPolicies();
   await seedTestUsers();
   await seedNotificationTemplates();
   await seedStrategyHierarchy();
+  await seedDataIntegrations();
 
   console.log("Database seed completed successfully");
 }
