@@ -137,6 +137,7 @@ async function bootstrap(): Promise<void> {
     ? new PixelRagClient(
         environment.PIXELRAG_SERVICE_URL,
         environment.PIXELRAG_TIMEOUT_MS,
+        environment.PIXELRAG_SERVICE_TOKEN,
       )
     : undefined;
 
