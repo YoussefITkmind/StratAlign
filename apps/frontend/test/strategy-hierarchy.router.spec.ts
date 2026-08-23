@@ -10,7 +10,7 @@ vi.mock("@/server/trpc", async () => {
 });
 
 const calls = vi.hoisted(() => ({
-  tree: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(),
+  tree: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), draftDescription: vi.fn(),
 }));
 vi.mock("@/server/backend-registry-client", () => ({
   createBackendRegistryClient: vi.fn(() => ({ strategyHierarchy: {
@@ -18,6 +18,7 @@ vi.mock("@/server/backend-registry-client", () => ({
     create: { mutate: calls.create },
     update: { mutate: calls.update },
     delete: { mutate: calls.delete },
+    draftDescription: { mutate: calls.draftDescription },
   } })),
   translateBackendRegistryError: (error: unknown) => { throw error; },
 }));
@@ -64,6 +65,13 @@ describe("Strategy Hierarchy backend proxy", () => {
   it("forwards delete", async () => {
     calls.delete.mockResolvedValue({ deleted: true });
     await expect(caller().deleteNode({ id: NODE })).resolves.toEqual({ deleted: true });
+  });
+
+  it("forwards a description draft request", async () => {
+    calls.draftDescription.mockResolvedValue({ draft: "A generated description." });
+    const input = { name: "Increase sales", type: "objective" as const, parentName: "Acme Corp 2025 Strategic Plan" };
+    await expect(caller().draftDescription(input)).resolves.toEqual({ draft: "A generated description." });
+    expect(calls.draftDescription).toHaveBeenCalledWith(input);
   });
 
   it("refuses every procedure without a session", async () => {

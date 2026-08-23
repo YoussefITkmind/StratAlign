@@ -77,7 +77,23 @@ async function bootstrap(): Promise<void> {
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
   const traceabilityRead = new TraceabilityReadService(prisma);
   const strategyNodeBridge = new StrategyNodeBridgeService(prisma);
-  const strategyHierarchy = new StrategyHierarchyService(prisma, strategyNodeBridge);
+
+  // AI stays behind one provider abstraction, constructed once. Nothing else in
+  // the platform is allowed to know which vendor is configured, or whether one
+  // is configured at all.
+  const llm = createLlmProvider(
+    {
+      provider: environment.AI_PROVIDER,
+      apiKey: environment.AI_API_KEY,
+      model: environment.AI_MODEL,
+      baseUrl: environment.AI_BASE_URL,
+      timeoutMs: environment.AI_TIMEOUT_MS,
+      maxRetries: environment.AI_MAX_RETRIES,
+    },
+    logger.child("ai"),
+  );
+
+  const strategyHierarchy = new StrategyHierarchyService(prisma, strategyNodeBridge, llm);
   const approvalGateway = new GovernanceApprovalGateway(governance);
   const strategyNodeGateway = new PrismaStrategyNodeGateway(prisma);
   const registry = {
@@ -109,20 +125,6 @@ async function bootstrap(): Promise<void> {
   );
   const value = new ValueManagementService(prisma, governance, governanceEscalation, rules, scheduler);
 
-  // AI stays behind one provider abstraction, constructed once. Nothing else in
-  // the platform is allowed to know which vendor is configured, or whether one
-  // is configured at all.
-  const llm = createLlmProvider(
-    {
-      provider: environment.AI_PROVIDER,
-      apiKey: environment.AI_API_KEY,
-      model: environment.AI_MODEL,
-      baseUrl: environment.AI_BASE_URL,
-      timeoutMs: environment.AI_TIMEOUT_MS,
-      maxRetries: environment.AI_MAX_RETRIES,
-    },
-    logger.child("ai"),
-  );
   const aiSuggestion = new AiSuggestionService(
     prisma,
     new ThemeContextBuilder(prisma, strategyTraversal),
