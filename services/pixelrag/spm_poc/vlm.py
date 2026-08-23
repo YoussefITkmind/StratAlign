@@ -37,17 +37,14 @@ def _json_text(text: str) -> Any:
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as original_error:
-        # Recover valid JSON when a provider wraps it in explanatory prose.
         start = cleaned.find("{")
         end = cleaned.rfind("}")
-
         if start != -1 and end > start:
             candidate = cleaned[start:end + 1]
             try:
                 return json.loads(candidate)
             except json.JSONDecodeError:
                 pass
-
         raise original_error
 
 
@@ -112,7 +109,6 @@ class OpenAICompatibleVLMReader:
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
             raise VLMError("VLM returned an unexpected response") from error
 
-
     def _complete_text(self, instruction: str) -> str:
         payload = json.dumps({
             "model": self.model,
@@ -137,65 +133,38 @@ class OpenAICompatibleVLMReader:
         except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
             raise VLMError("VLM returned an unexpected response") from error
 
-    def _grounded_answer_with_repair(
-        self,
-        raw: str,
-        error_message: str,
-    ) -> VLMAnswer:
+    def _grounded_answer_with_repair(self, raw: str, error_message: str) -> VLMAnswer:
         try:
             return VLMAnswer.model_validate(_json_text(raw))
         except (json.JSONDecodeError, ValidationError):
             repair_instruction = (
                 "Repair the supplied model output into valid JSON only. "
-                'The required schema is exactly '
-                '{"answer": "string", "evidence": ["string"]}. '
+                'The required schema is exactly {"answer": "string", "evidence": ["string"]}. '
                 "Preserve only facts already present in the supplied output. "
-                "Do not add new facts or evidence. "
-                "Return JSON only, with no Markdown or explanation.\n\n"
-                "Output to repair:\n"
-                + raw
+                "Do not add new facts or evidence. Return JSON only, with no Markdown or explanation.\n\n"
+                "Output to repair:\n" + raw
             )
-
             repaired = self._complete_text(repair_instruction)
-
             try:
                 return VLMAnswer.model_validate(_json_text(repaired))
             except (json.JSONDecodeError, ValidationError) as error:
                 raise VLMError(error_message) from error
 
-    def synthesize_text(
-        self,
-        question: str,
-        evidence_blocks: list[str],
-    ) -> VLMAnswer:
+    def synthesize_text(self, question: str, evidence_blocks: list[str]) -> VLMAnswer:
         instruction = (
-            "Synthesize an answer only from the supplied source summaries. "
-            "Do not invent facts. "
+            "Synthesize an answer only from the supplied source summaries. Do not invent facts. "
             "When sources conflict, state the conflict and identify the source labels. "
             'Return JSON with an "answer" string and an "evidence" array.\n\n'
-            "Question: "
-            + question
-            + "\n\nSources:\n"
-            + "\n\n".join(evidence_blocks)
+            "Question: " + question + "\n\nSources:\n" + "\n\n".join(evidence_blocks)
         )
-
         raw = self._complete_text(instruction)
-
         return self._grounded_answer_with_repair(
             raw,
             "VLM synthesis was not valid grounded-answer JSON after automatic recovery",
         )
 
-    def answer(
-        self,
-        question: str,
-        image_paths: list[Path],
-    ) -> VLMAnswer:
-        raw = self._complete(
-            f"{GROUNDING_PROMPT}\n\nQuestion: {question}",
-            image_paths,
-        )
-
+    def answer(self, question: str, image_paths: list[Path]) -> VLMAnswer:
+        raw = self._complete(f"{GROUNDING_PROMPT}\n\nQuestion: {question}", image_paths)
         return self._grounded_answer_with_repair(
             raw,
             "VLM answer was not valid grounded-answer JSON after automatic recovery",
@@ -206,8 +175,12 @@ class OpenAICompatibleVLMReader:
         prompt = (
             "Extract SPM data only from the supplied visual evidence. Be exhaustive across every supplied page. "
             "Do not infer or invent missing values; use null for missing fields and [] for absent groups. "
-            "For KPIs, classify category as kpi, financial, risk, operational, people, or other; capture reporting period "
-            "when explicitly visible; include common aliases only when the document itself establishes them. "
+            "Keep objectives, KPIs and initiatives semantically distinct. A KPI must be a measurable performance indicator "
+            "with an explicitly visible metric, target, actual, status, unit or measurement context. Do not turn management "
+            "decisions, recommendations, risks, narrative observations, initiatives, milestones or objective statements into KPIs. "
+            "Do not emit duplicate entities just because the same item appears in an executive summary and a detail section; "
+            "prefer the most complete visible representation. For KPIs, classify category as kpi, financial, risk, operational, "
+            "people, or other; capture reporting period when explicitly visible; include aliases only when the document establishes them. "
             "Set confidence from 0 to 1 to reflect extraction certainty from visible evidence, not business confidence. "
             "Do not merge different period values into one KPI actual; prefer the latest/current value explicitly labelled in the evidence. "
             "Return only JSON that validates against this JSON Schema:\n" + schema
