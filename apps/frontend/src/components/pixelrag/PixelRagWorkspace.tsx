@@ -25,7 +25,7 @@ type TabKey = "documents" | "ask" | "extraction" | "intelligence" | "performance
 
 const tabs: Array<{ key: TabKey; label: string; icon: ComponentType<{ className?: string }> }> = [
   { key: "documents", label: "Documents", icon: FileText },
-  { key: "ask", label: "Ask & Compare", icon: MessageSquareText },
+  { key: "ask", label: "Ask documents", icon: MessageSquareText },
   { key: "extraction", label: "Extract & Propose", icon: DatabaseZap },
   { key: "intelligence", label: "Intelligence", icon: BrainCircuit },
   { key: "performance", label: "Performance", icon: Gauge },
