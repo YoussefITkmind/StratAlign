@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PrismaService } from "../../database/prisma.service";
 import type { EventBusService } from "../../events/event-bus.service";
 import type { StagedChangeKind } from "./strategy.service";
+import { hierarchyImportPayloadSchema } from "./strategy-hierarchy-import.schema";
 
 interface StageRow {
   id: string;
@@ -16,8 +17,7 @@ interface StageRow {
 export interface ActivationResult {
   stagedChangeId: string;
   kind: StagedChangeKind;
-  aggregateId: string;
-  eventType: "strategy.node.activated" | "strategy.edge.activated";
+  activated: Array<{ aggregateId: string; eventType: "strategy.node.activated" | "strategy.edge.activated" }>;
 }
 
 /** Applies exactly one approved staged strategy change and writes its activation event atomically. */
@@ -42,7 +42,49 @@ export class StrategyActivationService {
 
       const payload = change.payload ?? {};
       let aggregateId = change.target_id ?? randomUUID();
-      let eventType: ActivationResult["eventType"];
+      let eventType: "strategy.node.activated" | "strategy.edge.activated";
+
+      if (change.kind === "hierarchy_import") {
+        const imported = hierarchyImportPayloadSchema.parse(payload);
+        for (const node of imported.nodes) {
+          await tx.$executeRaw`
+            INSERT INTO strategy.strategy_nodes
+              (id,type,name_en,name_ar,plan_version_id,state,created_by)
+            VALUES (${node.id}::uuid,${node.type}::strategy."StrategyNodeType",${node.nameEn},${node.nameAr},${change.plan_version_id}::uuid,'active',${change.requested_by})
+          `;
+        }
+        for (const edge of imported.edges) {
+          await tx.$executeRaw`
+            INSERT INTO strategy.strategy_edges
+              (id,from_node_id,to_node_id,edge_type,plan_version_id)
+            VALUES (${edge.id}::uuid,${edge.fromNodeId}::uuid,${edge.toNodeId}::uuid,${edge.edgeType}::strategy."StrategyEdgeType",${change.plan_version_id}::uuid)
+          `;
+        }
+
+        await tx.$executeRaw`
+          UPDATE strategy.staged_changes SET status='applied',applied_at=CURRENT_TIMESTAMP
+          WHERE id=${change.id}::uuid AND status='pending'
+        `;
+        const appliedImports = await tx.$executeRaw`
+          UPDATE strategy.portfolio_hierarchy_imports SET status='applied',applied_at=CURRENT_TIMESTAMP
+          WHERE id=${imported.diffId}::uuid AND staged_change_id=${change.id}::uuid
+        `;
+        if (appliedImports !== 1) throw new Error("Hierarchy import audit record does not match the staged change");
+
+        const activated = [
+          ...imported.nodes.map((node) => ({ aggregateId: node.id, eventType: "strategy.node.activated" as const })),
+          ...imported.edges.map((edge) => ({ aggregateId: edge.id, eventType: "strategy.edge.activated" as const })),
+        ];
+        await this.eventBus.publishWithin(tx, activated.map((entity) => ({
+          eventType: entity.eventType,
+          eventVersion: 1,
+          aggregateType: entity.eventType === "strategy.node.activated" ? "strategy_node" : "strategy_edge",
+          aggregateId: entity.aggregateId,
+          dedupeKey: `${entity.eventType}:${change.id}:${entity.aggregateId}`,
+          payload: { domain: "strategy", stagedChangeId: change.id, approvalCaseId: change.approval_case_id, planVersionId: change.plan_version_id, kind: change.kind },
+        })));
+        return { stagedChangeId: change.id, kind: change.kind, activated };
+      }
 
       if (change.kind === "node_create") {
         await tx.$executeRaw`
@@ -124,7 +166,7 @@ export class StrategyActivationService {
         },
       }]);
 
-      return { stagedChangeId: change.id, kind: change.kind, aggregateId, eventType };
+      return { stagedChangeId: change.id, kind: change.kind, activated: [{ aggregateId, eventType }] };
     });
 
     if (result) await this.eventBus.nudgeRelay();

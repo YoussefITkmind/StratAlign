@@ -50,6 +50,7 @@ import { createLlmProvider } from "./modules/ai/llm.factory";
 import { ThemeContextBuilder } from "./modules/ai/theme-context.builder";
 import { AiSuggestionService } from "./modules/ai/ai-suggestion.service";
 import { ContextAwareAssistantService } from "./modules/ai/assistant.service";
+import { TraceabilityReadService } from "./modules/traceability/traceability-read.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -75,8 +76,25 @@ async function bootstrap(): Promise<void> {
   const governanceEscalation = new GovernanceEscalationService(prisma, eventBus);
   const strategy = new StrategyService(prisma);
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
+  const traceabilityRead = new TraceabilityReadService(prisma);
   const strategyNodeBridge = new StrategyNodeBridgeService(prisma);
-  const strategyHierarchy = new StrategyHierarchyService(prisma, strategyNodeBridge);
+
+  // AI stays behind one provider abstraction, constructed once. Nothing else in
+  // the platform is allowed to know which vendor is configured, or whether one
+  // is configured at all.
+  const llm = createLlmProvider(
+    {
+      provider: environment.AI_PROVIDER,
+      apiKey: environment.AI_API_KEY,
+      model: environment.AI_MODEL,
+      baseUrl: environment.AI_BASE_URL,
+      timeoutMs: environment.AI_TIMEOUT_MS,
+      maxRetries: environment.AI_MAX_RETRIES,
+    },
+    logger.child("ai"),
+  );
+
+  const strategyHierarchy = new StrategyHierarchyService(prisma, strategyNodeBridge, llm);
   const approvalGateway = new GovernanceApprovalGateway(governance);
   const strategyNodeGateway = new PrismaStrategyNodeGateway(prisma);
   const registry = {
@@ -98,7 +116,7 @@ async function bootstrap(): Promise<void> {
   );
   const scorecard = new ScorecardService(prisma, governance, rules, measurements);
   const execution = new StageAwareExecutionService(prisma, prisma, eventBus);
-  const portfolio = new PortfolioService(prisma, rules);
+  const portfolio = new PortfolioService(prisma, rules, governance, strategy);
   const schedulerRead = new SchedulerReadService(prisma);
   const scheduler = new SchedulerService(
     prisma,
@@ -108,20 +126,6 @@ async function bootstrap(): Promise<void> {
   );
   const value = new ValueManagementService(prisma, governance, governanceEscalation, rules, scheduler);
 
-  // AI stays behind one provider abstraction, constructed once. Nothing else in
-  // the platform is allowed to know which vendor is configured, or whether one
-  // is configured at all.
-  const llm = createLlmProvider(
-    {
-      provider: environment.AI_PROVIDER,
-      apiKey: environment.AI_API_KEY,
-      model: environment.AI_MODEL,
-      baseUrl: environment.AI_BASE_URL,
-      timeoutMs: environment.AI_TIMEOUT_MS,
-      maxRetries: environment.AI_MAX_RETRIES,
-    },
-    logger.child("ai"),
-  );
   const aiSuggestion = new AiSuggestionService(
     prisma,
     new ThemeContextBuilder(prisma, strategyTraversal),
@@ -144,7 +148,7 @@ async function bootstrap(): Promise<void> {
       return {
         health, credentials, loginRateLimiter, clientIp: req.socket.remoteAddress ?? "unknown",
         session: await sessions.getSession({ headers }), oidcIdentities, authenticationFreshness,
-        authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal,
+        authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
         strategyHierarchy,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
         aiSuggestion, assistant,

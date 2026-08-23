@@ -15,6 +15,16 @@ const linkedKpis = z.array(z.string().trim().min(1).max(80)).max(20);
 export const strategyHierarchyRouter = router({
   tree: authenticatedProcedure.query(({ ctx }) => forward(() => backend(ctx).strategyHierarchy.tree.query())),
 
+  draftDescription: authenticatedProcedure
+    .input(
+      z.object({
+        name: z.string().trim().min(1).max(200),
+        type: nodeType,
+        parentName: z.string().trim().max(200).optional(),
+      }).strict(),
+    )
+    .mutation(({ ctx, input }) => forward(() => backend(ctx).strategyHierarchy.draftDescription.mutate(input))),
+
   createNode: authenticatedProcedure
     .input(
       z.object({

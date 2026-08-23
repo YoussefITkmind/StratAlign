@@ -119,17 +119,59 @@ export const llmSuggestionSchema = baseSuggestionSchema.superRefine(
   },
 );
 
-export const llmSuggestionResponseSchema = z
-  .object({
-    suggestions: z
-      .array(llmSuggestionSchema)
-      .min(MIN_SUGGESTIONS)
-      .max(MAX_SUGGESTIONS),
-  })
-  .strict();
+/**
+ * The outer envelope only. Deliberately not `.strict()` and deliberately not
+ * validating each suggestion's shape here: a model that adds a stray
+ * top-level field (a "note", a "reasoning" aside) or gets one suggestion
+ * wrong must not fail every other suggestion in the same completion. Each
+ * element is re-validated individually by `llmSuggestionSchema` — see
+ * `parseLlmSuggestions` below.
+ */
+const suggestionsEnvelopeSchema = z.object({
+  suggestions: z.array(z.unknown()).min(MIN_SUGGESTIONS).max(MAX_SUGGESTIONS),
+});
 
 export type LlmSuggestion = z.infer<typeof llmSuggestionSchema>;
-export type LlmSuggestionResponse = z.infer<typeof llmSuggestionResponseSchema>;
+
+export interface ParsedLlmSuggestions {
+  suggestions: LlmSuggestion[];
+  /** Individually-invalid items dropped without failing the rest. */
+  droppedCount: number;
+}
+
+/**
+ * Validates the envelope, then each suggestion on its own. One malformed
+ * item (wrong enum casing, a stray field, a mistyped number) is dropped
+ * rather than discarding every valid suggestion beside it in the same
+ * completion — the same principle `acceptMany` already applies on the way
+ * back in.
+ *
+ * Returns `null` only when the response isn't shaped like a suggestion list
+ * at all (not an object, no `suggestions` array) — that is the one case
+ * nothing here can salvage.
+ */
+export function parseLlmSuggestions(decoded: unknown): ParsedLlmSuggestions | null {
+  const envelope = suggestionsEnvelopeSchema.safeParse(decoded);
+
+  if (!envelope.success) {
+    return null;
+  }
+
+  const suggestions: LlmSuggestion[] = [];
+  let droppedCount = 0;
+
+  for (const raw of envelope.data.suggestions) {
+    const result = llmSuggestionSchema.safeParse(raw);
+
+    if (result.success) {
+      suggestions.push(result.data);
+    } else {
+      droppedCount += 1;
+    }
+  }
+
+  return { suggestions, droppedCount };
+}
 
 /**
  * Pulls the JSON object out of a completion.

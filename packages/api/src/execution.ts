@@ -51,19 +51,65 @@ export interface ExecutionListItemView {
   nameAr: string;
   strategicPlayNodeId: string;
   ownerUserId: string;
+  ownerDisplayName: string | null;
   stage: "design" | "pilot" | "execute" | "scale" | "done";
   latestStatus: "on_track" | "at_risk" | "off_track" | null;
   latestConfidence: "high" | "medium" | "low" | null;
   hasJiraLink: boolean;
+  linkedProjectCount: number;
   updatedAt: Date;
+}
+
+export interface ExecutionInitiativeDetailView {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  strategicPlayNodeId: string;
+  ownerUserId: string;
+  stage: "design" | "pilot" | "execute" | "scale" | "done";
+  createdAt: Date;
+  updatedAt: Date;
+  owner: { id: string; displayName: string | null };
+  strategicPlay: { id: string; nameEn: string; nameAr: string; planVersionId: string };
+  objectives: Array<{ id: string; nameEn: string; nameAr: string }>;
+  jiraLink: null | {
+    id: string;
+    jiraProjectKey: string;
+    jiraProjectUrl: string;
+    lastSyncedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+  };
+  milestones: Array<{
+    id: string;
+    nameEn: string;
+    nameAr: string;
+    dueDate: Date;
+    forecastDate: Date | null;
+    health: "on_time" | "at_risk" | "late";
+    source: "manual" | "jira";
+    createdAt: Date;
+  }>;
+  latestStatus: null | {
+    id: string;
+    period: string;
+    stage: "design" | "pilot" | "execute" | "scale" | "done";
+    status: "on_track" | "at_risk" | "off_track";
+    confidence: "high" | "medium" | "low";
+    narrativeEn: string | null;
+    narrativeAr: string | null;
+    submittedBy: string;
+    createdAt: Date;
+  };
 }
 
 export interface ExecutionServiceContract {
   list(input: {
     status?: "on_track" | "at_risk" | "off_track";
-    scope: "all" | "mine";
+    scope: "all" | "mine" | "my_plays";
     actorUserId: string;
   }): Promise<ExecutionListItemView[]>;
+  getInitiative(initiativeId: string): Promise<ExecutionInitiativeDetailView>;
   registerInitiative(input: {
     nameEn: string;
     nameAr: string;
@@ -79,7 +125,13 @@ export interface ExecutionServiceContract {
     actorUserId: string;
     actorIsSeoAdministrator: boolean;
   }): Promise<unknown>;
-  linkJira(input: { initiativeId: string; jiraProjectKey: string; jiraProjectUrl: string }): Promise<unknown>;
+  linkJira(input: {
+    initiativeId: string;
+    jiraProjectKey: string;
+    jiraProjectUrl: string;
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
+  }): Promise<unknown>;
   flagMilestone(input: {
     jiraLinkId: string;
     nameEn: string;
@@ -88,6 +140,8 @@ export interface ExecutionServiceContract {
     forecastDate?: Date | null;
     health: "on_time" | "at_risk" | "late";
     source: "manual" | "jira";
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
   }): Promise<unknown>;
   updateStatus(input: {
     initiativeId: string;
@@ -97,7 +151,8 @@ export interface ExecutionServiceContract {
     confidence: "high" | "medium" | "low";
     narrativeEn?: string | null;
     narrativeAr?: string | null;
-    submittedBy: string;
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
   }): Promise<unknown>;
   statusHistory(initiativeId: string): Promise<unknown[]>;
 }
@@ -119,7 +174,11 @@ function mapExecutionError(error: unknown): never {
   const code = typeof error === "object" && error !== null && "code" in error
     ? String((error as { code: unknown }).code)
     : "";
-  if (code === "EXECUTION_PLAY_OWNERSHIP_REQUIRED" || code === "EXECUTION_STAGE_OWNERSHIP_REQUIRED") {
+  if (
+    code === "EXECUTION_PLAY_OWNERSHIP_REQUIRED" ||
+    code === "EXECUTION_STAGE_OWNERSHIP_REQUIRED" ||
+    code === "EXECUTION_INITIATIVE_OWNERSHIP_REQUIRED"
+  ) {
     throw new TRPCError({ code: "FORBIDDEN", message: error instanceof Error ? error.message : "Execution ownership is required" });
   }
   if (
@@ -138,11 +197,20 @@ export const executionRouter = router({
     list: protectedProcedure
       .input(z.object({
         status: initiativeStatusSchema.optional(),
-        scope: z.enum(["all", "mine"]),
+        scope: z.enum(["all", "mine", "my_plays"]),
       }).strict())
       .query(async ({ ctx, input }) => {
         try {
           return await service(ctx).list({ ...input, actorUserId: ctx.session.user.id });
+        } catch (error) {
+          return mapExecutionError(error);
+        }
+      }),
+    get: protectedProcedure
+      .input(z.object({ initiativeId: z.string().uuid() }).strict())
+      .query(async ({ ctx, input }) => {
+        try {
+          return await service(ctx).getInitiative(input.initiativeId);
         } catch (error) {
           return mapExecutionError(error);
         }
@@ -176,14 +244,26 @@ export const executionRouter = router({
     linkJira: requireRole("initiative_owner", "objective_play_owner", "seo_administrator")
       .input(jiraLinkInputSchema)
       .mutation(async ({ ctx, input }) => {
-        try { return await service(ctx).linkJira(input); } catch (error) { return mapExecutionError(error); }
+        try {
+          return await service(ctx).linkJira({
+            ...input,
+            actorUserId: ctx.session.user.id,
+            actorIsSeoAdministrator: ctx.authorizationState.roles.includes("seo_administrator"),
+          });
+        } catch (error) { return mapExecutionError(error); }
       }),
   }),
   milestone: router({
     flag: requireRole("initiative_owner", "objective_play_owner", "seo_administrator")
       .input(milestoneFlagInputSchema)
       .mutation(async ({ ctx, input }) => {
-        try { return await service(ctx).flagMilestone(input); } catch (error) { return mapExecutionError(error); }
+        try {
+          return await service(ctx).flagMilestone({
+            ...input,
+            actorUserId: ctx.session.user.id,
+            actorIsSeoAdministrator: ctx.authorizationState.roles.includes("seo_administrator"),
+          });
+        } catch (error) { return mapExecutionError(error); }
       }),
   }),
   status: router({
@@ -191,7 +271,11 @@ export const executionRouter = router({
       .input(statusUpdateInputSchema)
       .mutation(async ({ ctx, input }) => {
         try {
-          return await service(ctx).updateStatus({ ...input, submittedBy: ctx.session.user.id });
+          return await service(ctx).updateStatus({
+            ...input,
+            actorUserId: ctx.session.user.id,
+            actorIsSeoAdministrator: ctx.authorizationState.roles.includes("seo_administrator"),
+          });
         } catch (error) {
           return mapExecutionError(error);
         }

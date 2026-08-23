@@ -16,6 +16,14 @@ export interface LlmCompletionRequest {
   readonly temperature: number;
   /** Traced through to the log record, never sent upstream. */
   readonly feature: string;
+  /**
+   * "json" forces a structured JSON object back (the default — preserves
+   * every existing caller's behaviour). "text" asks for plain prose instead;
+   * a provider that only supports strict JSON mode must not silently coerce
+   * a "text" request into JSON mode, since some providers (OpenAI) reject a
+   * JSON-mode request outright unless the prompt itself mentions "json".
+   */
+  readonly responseFormat?: "json" | "text";
 }
 
 export interface LlmCompletionResult {
