@@ -77,6 +77,9 @@ export interface StrategyHierarchyServiceContract {
 
   /** One-time sync of pre-existing nodes into the AI-suggestion/registry graph. */
   backfillBridge?(): Promise<{ perspectives: number; objectives: number }>;
+
+  /** Model-drafted description for the Add/Edit Node modal's "Draft with AI" action. */
+  draftDescription(input: { name: string; type: NodeType; parentName?: string }): Promise<{ draft: string }>;
 }
 
 declare module "./index" {
@@ -136,6 +139,22 @@ export const strategyHierarchyRouter = router({
           actorUserId: ctx.session!.user.id,
           actorName: ctx.session!.user.name ?? ctx.session!.user.email ?? "Unknown",
         });
+      } catch (e) {
+        return fail(e);
+      }
+    }),
+
+  draftDescription: admin()
+    .input(
+      z.object({
+        name: z.string().trim().min(1).max(200),
+        type: nodeType,
+        parentName: z.string().trim().max(200).optional(),
+      }).strict(),
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await service(ctx).draftDescription(input);
       } catch (e) {
         return fail(e);
       }
