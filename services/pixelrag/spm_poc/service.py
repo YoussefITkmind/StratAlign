@@ -65,6 +65,14 @@ class DocumentService:
         return " ".join((value or "").casefold().replace("-", " ").split())
 
     @classmethod
+    def _initiative_key(cls, value: str | None) -> str:
+        """Collapse harmless naming variants such as '<name>' vs '<name> Initiative'."""
+        key = cls._key(value)
+        if key.endswith(" initiative"):
+            key = key[: -len(" initiative")].strip()
+        return key
+
+    @classmethod
     def _merge(cls, extractions: list[ExtractedSPMDocument]) -> ExtractedSPMDocument:
         objective_map: dict[str, Objective] = {}
         kpi_map: dict[str, KPI] = {}
@@ -75,6 +83,18 @@ class DocumentService:
             if existing is None:
                 return incoming
             payload = existing.model_dump()
+
+            # Preserve harmless naming variants as aliases rather than creating
+            # duplicate entities. Keep the first canonical record so a later
+            # retrieval pass cannot overwrite an already populated owner/status.
+            existing_name = payload.get("name")
+            incoming_name = getattr(incoming, "name", None)
+            if existing_name and incoming_name and cls._key(existing_name) != cls._key(incoming_name):
+                aliases = list(payload.get("aliases") or [])
+                if incoming_name not in aliases:
+                    aliases.append(incoming_name)
+                payload["aliases"] = sorted(set(aliases))
+
             for field, value in incoming.model_dump().items():
                 current = payload.get(field)
                 if value not in (None, "", [], {}) and current in (None, "", [], {}):
@@ -100,7 +120,7 @@ class DocumentService:
                 if key:
                     kpi_map[key] = choose(kpi_map.get(key), item)
             for item in extraction.initiatives:
-                key = cls._key(item.name)
+                key = cls._initiative_key(item.name)
                 if key:
                     initiative_map[key] = choose(initiative_map.get(key), item)
 
