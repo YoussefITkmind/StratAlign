@@ -13,6 +13,7 @@ import uvicorn
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from spm_poc.visual_documents import VisualDocumentLibrary
 from spm_poc.web import WebRuntime, create_app
 
 
@@ -23,7 +24,9 @@ if __name__ == "__main__":
         runtime = RemoteEmbeddingWebRuntime(ROOT)
         print("PixelRAG: using remote embedding runtime", flush=True)
     else:
-        runtime = WebRuntime(ROOT)
+        documents = VisualDocumentLibrary(ROOT)
+        runtime = WebRuntime(ROOT, document_library=documents)
+        documents._before_index = runtime.process_manager.stop
         print("PixelRAG: using local embedding runtime", flush=True)
 
     app = create_app(runtime)
