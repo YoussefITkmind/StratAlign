@@ -32,7 +32,7 @@ export class PixelRagClientError extends Error {
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "PUT";
+  method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
   headers?: Record<string, string>;
 }
@@ -171,6 +171,16 @@ export class PixelRagClient {
     return this.request<PixelRagDocumentRecord>(
       `/api/documents/${encodeURIComponent(documentId)}/select`,
       { method: "POST" },
+    );
+  }
+
+  deleteDocument(documentId: string, actor?: string): Promise<PixelRagDocumentRecord> {
+    return this.request<PixelRagDocumentRecord>(
+      `/api/documents/${encodeURIComponent(documentId)}`,
+      {
+        method: "DELETE",
+        headers: this.actorHeaders(actor ? { actor } : undefined),
+      },
     );
   }
 
