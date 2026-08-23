@@ -13,6 +13,7 @@ import uvicorn
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from spm_poc.demo_seed import ensure_demo_baseline
 from spm_poc.visual_documents import VisualDocumentLibrary
 from spm_poc.web import WebRuntime, create_app
 
@@ -28,6 +29,10 @@ if __name__ == "__main__":
         runtime = WebRuntime(ROOT, document_library=documents)
         documents._before_index = runtime.process_manager.stop
         print("PixelRAG: using local embedding runtime", flush=True)
+
+    seeded = ensure_demo_baseline(runtime.repository())
+    if seeded:
+        print("PixelRAG: seeded isolated demo strategy/KPI baseline", flush=True)
 
     app = create_app(runtime)
     service_token = os.getenv("PIXELRAG_SERVICE_TOKEN", "").strip()
