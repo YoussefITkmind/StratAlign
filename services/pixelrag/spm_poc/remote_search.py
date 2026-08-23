@@ -19,8 +19,9 @@ from .remote_embeddings import RemoteEmbeddingClient
 class RemotePixelRAGClient:
     """Drop-in search client exposing the same search() contract as PixelRAGClient."""
 
-    def __init__(self, index_dir: str | Path) -> None:
+    def __init__(self, index_dir: str | Path, *, minimum_recall_k: int = 6) -> None:
         self.index_dir = Path(index_dir).resolve()
+        self.minimum_recall_k = max(1, minimum_recall_k)
         index_path = self.index_dir / "index.faiss"
         metadata_path = self.index_dir / "metadata.npz"
         if not index_path.exists():
@@ -50,7 +51,12 @@ class RemotePixelRAGClient:
             raise PixelRAGError("Remote query embedding is empty")
         query_vector = (vector / norm).reshape(1, -1)
 
-        fetch_k = min(max(top_k, 1), int(self.index.ntotal)) if self.index.ntotal else 0
+        # Keep a small recall floor for visually rich reports. Appendix pages can
+        # contain the exact wording of a question and outrank the page containing
+        # the answer; the grounded VLM should see a broader candidate evidence set.
+        requested_k = max(top_k, 1)
+        candidate_k = max(requested_k, self.minimum_recall_k)
+        fetch_k = min(candidate_k, int(self.index.ntotal)) if self.index.ntotal else 0
         if fetch_k == 0:
             return []
 
