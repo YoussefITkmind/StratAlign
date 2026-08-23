@@ -15,9 +15,15 @@ class DocumentService:
         self.reader = reader
 
     def ask(self, question: str, top_k: int = 3) -> DocumentAnswer:
-        tiles = self.resolver.resolve_all(self.pixelrag.search(question, top_k))
-        answer = self.reader.answer(question, [tile.image_path for tile in tiles])
-        return DocumentAnswer(answer=answer.answer, evidence=answer.evidence, tiles=tiles)
+        # Some search adapters intentionally fetch a broader candidate set than
+        # top_k to protect recall on visually rich reports. Keep that wider set
+        # for the grounded VLM answer, but expose only the requested highest-
+        # ranked visual sources to the UI so a focused question does not display
+        # every page in the document as evidence.
+        candidate_tiles = self.resolver.resolve_all(self.pixelrag.search(question, top_k))
+        answer = self.reader.answer(question, [tile.image_path for tile in candidate_tiles])
+        visible_tiles = candidate_tiles[:max(1, top_k)]
+        return DocumentAnswer(answer=answer.answer, evidence=answer.evidence, tiles=visible_tiles)
 
     def extract_spm(self, top_k: int = 5) -> ExtractedSPMDocument:
         """Legacy single-pass extraction retained for compatibility and tests."""
