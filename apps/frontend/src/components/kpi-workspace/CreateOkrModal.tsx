@@ -79,7 +79,7 @@ export default function CreateOkrModal({
     setAppliedSnapshot({ title: nextTitle, keyResults: nextKeyResults });
   };
 
-  const runAiSuggest = async (force = false) => {
+  const runAiSuggest = async (force = false, isRetry = false) => {
     if (!themeNodeId || generate.isPending) return;
     if (hasHandEdited && !force) {
       setConfirmingRegenerate(true);
@@ -97,6 +97,12 @@ export default function CreateOkrModal({
       }
       applySuggestion(suggestion);
     } catch (cause) {
+      // AI generation is non-deterministic — a malformed response is usually
+      // fixed by asking again, so retry once, silently, before bothering the user.
+      if (!isRetry) {
+        await runAiSuggest(force, true);
+        return;
+      }
       setAiError(errorMessage(cause));
     }
   };
