@@ -131,7 +131,7 @@ class WebApiTests(unittest.TestCase):
         response = self.client.post("/api/qa", json={"question": "", "top_k": 3})
         self.assertEqual(response.status_code, 422)
 
-    def test_smart_import_preview_does_not_modify_store_and_apply_does(self):
+    def test_smart_import_preview_does_not_modify_store_and_apply_is_not_exposed(self):
         service = Mock()
         service.extract_spm.return_value = self.extraction()
         self.runtime.document_service = lambda: service
@@ -142,16 +142,14 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(MockSPMRepository(self.runtime.store_path).read().kpis, [])
 
         applied = self.client.post("/api/smart-import/apply")
-        self.assertEqual(applied.status_code, 200)
-        self.assertEqual(applied.json()["created_kpis"], 1)
-        self.assertEqual(MockSPMRepository(self.runtime.store_path).read().kpis[0].name, "CSAT")
+        self.assertEqual(applied.status_code, 404)
+        self.assertEqual(MockSPMRepository(self.runtime.store_path).read().kpis, [])
 
-    def test_apply_requires_preview_for_selected_document(self):
+    def test_data_capture_apply_is_not_exposed(self):
         response = self.client.post("/api/data-capture/apply")
-        self.assertEqual(response.status_code, 409)
-        self.assertIn("Preview", response.json()["detail"])
+        self.assertEqual(response.status_code, 404)
 
-    def test_data_capture_preview_and_apply_update_actual_only(self):
+    def test_data_capture_preview_does_not_modify_store_and_apply_is_not_exposed(self):
         MockSPMRepository(self.runtime.store_path).write(
             MockSPMData(kpis=[MockKPI(name="CSAT", target=">= 90%", actual="86%", status="Red")])
         )
@@ -166,9 +164,10 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(update["proposed_actual"], "82%")
 
         applied = self.client.post("/api/data-capture/apply")
-        self.assertEqual(applied.status_code, 200)
+        self.assertEqual(applied.status_code, 404)
+
         stored = MockSPMRepository(self.runtime.store_path).read().kpis[0]
-        self.assertEqual(stored.actual, "82%")
+        self.assertEqual(stored.actual, "86%")
         self.assertEqual(stored.target, ">= 90%")
         self.assertEqual(stored.status, "Red")
 

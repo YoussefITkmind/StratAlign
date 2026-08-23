@@ -554,29 +554,6 @@ def create_app(runtime: WebRuntime | None = None) -> FastAPI:
         runtime.audit.append("smart_import.previewed", "workflow", resource_id=job.id, actor=actor, role=role, detail={"cached": cached, "creates": sum(i.action == "create" for i in proposal.objectives + proposal.kpis + proposal.initiatives)})
         return proposal.model_dump(mode="json")
 
-    @app.post("/api/smart-import/apply")
-    def smart_import_apply(
-        proposal_override: SmartImportProposal | None = None,
-        x_user_name: str | None = Header(default=None),
-        x_user_role: str | None = Header(default=None),
-    ) -> dict[str, Any]:
-        actor, role = _actor_role(x_user_name, x_user_role)
-        _require_apply(runtime, role)
-        proposal = proposal_override or _read_model(runtime.proposal_path("smart-import"), SmartImportProposal)
-        proposal = SmartImportProposal.model_validate(proposal)
-        if runtime.governance.get().require_human_approval:
-            proposal.status = "approved"
-        result = runtime.smart_import_service().apply(proposal)
-        proposal.status = "applied"
-        _write_model(runtime.proposal_path("smart-import"), proposal)
-        if proposal.job_id:
-            try:
-                runtime.workflows.update(proposal.job_id, status="applied", proposal=proposal.model_dump(mode="json"))
-            except KeyError:
-                pass
-        runtime.audit.append("smart_import.applied", "workflow", resource_id=proposal.job_id, actor=actor, role=role, detail=result.model_dump(mode="json"))
-        return result.model_dump(mode="json")
-
     @app.post("/api/data-capture/preview")
     def data_capture_preview(
         x_user_name: str | None = Header(default=None),
@@ -593,27 +570,6 @@ def create_app(runtime: WebRuntime | None = None) -> FastAPI:
         runtime.workflows.update(job.id, proposal=proposal.model_dump(mode="json"))
         runtime.audit.append("data_capture.previewed", "workflow", resource_id=job.id, actor=actor, role=role, detail={"cached": cached, "updates": len(proposal.updates)})
         return proposal.model_dump(mode="json")
-
-    @app.post("/api/data-capture/apply")
-    def data_capture_apply(
-        proposal_override: DataCaptureProposal | None = None,
-        x_user_name: str | None = Header(default=None),
-        x_user_role: str | None = Header(default=None),
-    ) -> dict[str, Any]:
-        actor, role = _actor_role(x_user_name, x_user_role)
-        _require_apply(runtime, role)
-        proposal = proposal_override or _read_model(runtime.proposal_path("data-capture"), DataCaptureProposal)
-        proposal = DataCaptureProposal.model_validate(proposal)
-        result = runtime.data_capture_service().apply(proposal)
-        proposal.status = "applied"
-        _write_model(runtime.proposal_path("data-capture"), proposal)
-        if proposal.job_id:
-            try:
-                runtime.workflows.update(proposal.job_id, status="applied", proposal=proposal.model_dump(mode="json"))
-            except KeyError:
-                pass
-        runtime.audit.append("data_capture.applied", "workflow", resource_id=proposal.job_id, actor=actor, role=role, detail=result.model_dump(mode="json"))
-        return result.model_dump(mode="json")
 
     @app.post("/api/intelligence")
     def intelligence(payload: IntelligenceRequest, x_user_role: str | None = Header(default=None)) -> dict[str, Any]:

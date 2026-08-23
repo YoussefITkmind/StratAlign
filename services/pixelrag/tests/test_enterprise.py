@@ -68,11 +68,15 @@ class EnterpriseFeatureTests(unittest.TestCase):
         self.assertEqual(proposal.updates[0].match_status, "matched")
         self.assertGreaterEqual(proposal.updates[0].match_score or 0, 0.98)
 
-    def test_governance_blocks_manager_apply(self):
+    def test_apply_endpoint_is_not_exposed(self):
         settings = GovernanceStore(self.root).get()
         self.assertNotIn("manager", settings.allowed_apply_roles)
-        response = self.client.post("/api/smart-import/apply", headers={"X-User-Role": "manager"})
-        self.assertEqual(response.status_code, 403)
+
+        response = self.client.post(
+            "/api/smart-import/apply",
+            headers={"X-User-Role": "manager"},
+        )
+        self.assertEqual(response.status_code, 404)
 
     def test_audit_records_selection(self):
         response = self.client.post("/api/documents/legacy-spm/select")
