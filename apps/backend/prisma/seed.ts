@@ -321,11 +321,17 @@ async function seedStrategyHierarchy(): Promise<void> {
   }
 
   // Every existing user gets seo_administrator so the seeded demo tree is
-  // immediately manageable — this environment has no other users than the
-  // handful of real demo accounts, so this is a safe, low-risk grant.
+  // immediately manageable — except the single-purpose e2e fixtures, whose
+  // whole point is to hold exactly one narrow role each. Granting them
+  // seo_administrator too outranks that role in the Home composition's
+  // priority order and silently breaks role-based e2e assertions.
+  const singlePurposeE2eEmails = ["dana@example.test", "erin@example.test", "alice@example.test"];
   const seoAdministratorRole = await prisma.role.findUnique({ where: { name: "seo_administrator" } });
   if (seoAdministratorRole) {
-    const allUsers = await prisma.user.findMany({ select: { id: true } });
+    const allUsers = await prisma.user.findMany({
+      select: { id: true },
+      where: { email: { notIn: singlePurposeE2eEmails } },
+    });
     for (const user of allUsers) {
       await prisma.scopeGrant.upsert({
         where: {
