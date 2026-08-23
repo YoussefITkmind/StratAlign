@@ -6,6 +6,7 @@ import { governanceRouter } from "@/server/routers/governance";
 import { registryRouter } from "@/server/routers/registry";
 import { rulesRouter } from "@/server/routers/rules";
 import { strategyRouter } from "@/server/routers/strategy";
+import { strategyHierarchyRouter } from "@/server/routers/strategy-hierarchy";
 import { captureRouter } from "@/server/routers/capture";
 import { scorecardRouter } from "@/server/routers/scorecard";
 import { homeRouter } from "@/server/routers/home";
@@ -21,6 +22,7 @@ export const appRouter = router({
   registry: registryRouter,
   rules: rulesRouter,
   strategy: strategyRouter,
+  strategyHierarchy: strategyHierarchyRouter,
   capture: captureRouter,
   scorecard: scorecardRouter,
   home: homeRouter,

@@ -14,6 +14,8 @@ interface Props {
   onToggle: (id: string) => void;
   canAddChild: boolean;
   onAddChild: (parentId: string) => void;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
 }
 
 // Reference row height on desktop, where rows are single-line — connector
@@ -21,16 +23,20 @@ interface Props {
 // when a row grows taller (mobile's stacked meta line).
 const ELBOW_Y = 26;
 
-export default function TreeRow({ node, depth, lines, hasNextSibling, expandedIds, forceExpanded, onToggle, canAddChild, onAddChild }: Props) {
+export default function TreeRow({ node, depth, lines, hasNextSibling, expandedIds, forceExpanded, onToggle, canAddChild, onAddChild, selectedId, onSelect }: Props) {
   const hasChildren = !!node.children?.length;
   const isOpen = forceExpanded || expandedIds.has(node.id);
   const typeCfg = TYPE_CONFIG[node.type];
   const statusCfg = STATUS_CONFIG[node.status];
   const Icon = typeCfg.icon;
+  const isSelected = node.id === selectedId;
 
   return (
     <div>
-      <div className="group flex min-h-[52px] items-stretch border-b border-gray-100 hover:bg-gray-50 md:h-[52px]">
+      <div
+        onClick={() => onSelect(node.id)}
+        className={`group flex min-h-[52px] cursor-pointer items-stretch border-b border-gray-100 hover:bg-gray-50 md:h-[52px] ${isSelected ? "bg-indigo-50/70 hover:bg-indigo-50/70" : ""}`}
+      >
         {/* connector columns */}
         {depth > 0 &&
           Array.from({ length: depth }).map((_, k) => {
@@ -58,7 +64,7 @@ export default function TreeRow({ node, depth, lines, hasNextSibling, expandedId
         <div className="relative w-6 shrink-0">
           {hasChildren && (
             <button
-              onClick={() => onToggle(node.id)}
+              onClick={(e) => { e.stopPropagation(); onToggle(node.id); }}
               style={{ top: ELBOW_Y }}
               className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
             >
@@ -76,7 +82,7 @@ export default function TreeRow({ node, depth, lines, hasNextSibling, expandedId
             <span className="truncate text-[15px] text-gray-900">{node.name}</span>
             {canAddChild && (
               <button
-                onClick={() => onAddChild(node.id)}
+                onClick={(e) => { e.stopPropagation(); onAddChild(node.id); }}
                 title="Add child node"
                 className="ml-1 hidden shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600 group-hover:inline-flex"
               >
@@ -116,6 +122,8 @@ export default function TreeRow({ node, depth, lines, hasNextSibling, expandedId
               onToggle={onToggle}
               canAddChild={canAddChild}
               onAddChild={onAddChild}
+              selectedId={selectedId}
+              onSelect={onSelect}
             />
           ))}
         </div>

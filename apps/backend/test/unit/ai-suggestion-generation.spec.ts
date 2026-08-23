@@ -333,6 +333,35 @@ describe("AI suggestion generation", () => {
       ).rejects.toBeInstanceOf(AiMalformedOutputError);
     });
 
+    it("drops a suggestion that fails validation on a field other than objectiveNodeId, without failing the whole batch", async () => {
+      // Regression: the fix for the objectiveNodeId case above only covered
+      // that one field. Any other per-item validation failure (a bad enum, a
+      // stray field, a non-finite number) still failed the entire array
+      // parse under the old `z.array(llmSuggestionSchema)` all-or-nothing
+      // validation, discarding every valid suggestion in the same
+      // completion — including ones of the other kind. Each item must be
+      // validated on its own.
+      const { service } = makeService({
+        complete: vi.fn().mockResolvedValue(
+          completion({
+            suggestions: [
+              { ...validOkr, keyResults: [] },
+              validKpi,
+            ],
+          }),
+        ),
+      });
+
+      const batch = await service.generate({
+        themeNodeId: THEME_ID,
+        kinds: ["kpi", "okr"],
+        maxSuggestions: 8,
+      });
+
+      expect(batch.suggestions).toHaveLength(1);
+      expect(batch.suggestions[0].kind).toBe("kpi");
+    });
+
     it("does not leak model output into the error a caller sees", async () => {
       const { service } = makeService({
         complete: vi.fn().mockResolvedValue(
@@ -356,6 +385,34 @@ describe("AI suggestion generation", () => {
           completion({
             suggestions: [
               { ...validOkr, objectiveNodeId: OTHER_OBJECTIVE_ID },
+              validKpi,
+            ],
+          }),
+        ),
+      });
+
+      const batch = await service.generate({
+        themeNodeId: THEME_ID,
+        kinds: ["kpi", "okr"],
+        maxSuggestions: 8,
+      });
+
+      expect(batch.suggestions).toHaveLength(1);
+      expect(batch.suggestions[0].kind).toBe("kpi");
+    });
+
+    it("drops an OKR whose objectiveNodeId isn't shaped like a real id, without failing the whole batch", async () => {
+      // Regression: a smaller model sometimes names the objective by its
+      // title rather than its id. That id will never match a real objective
+      // (isApplicable drops it), but it must not fail schema validation for
+      // the entire response — that would also throw away the valid KPI in
+      // the same completion, which is what was actually happening in
+      // production.
+      const { service } = makeService({
+        complete: vi.fn().mockResolvedValue(
+          completion({
+            suggestions: [
+              { ...validOkr, objectiveNodeId: "Drive Revenue Growth 40% YoY" },
               validKpi,
             ],
           }),

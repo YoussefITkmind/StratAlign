@@ -300,11 +300,158 @@ async function seedNotificationTemplates(): Promise<void> {
   }
 }
 
+async function seedStrategyHierarchy(): Promise<void> {
+  const existingRoot = await prisma.strategyHierarchyNode.findFirst({ where: { parentId: null } });
+  if (existingRoot) {
+    console.log("Strategy hierarchy already seeded, skipping");
+    return;
+  }
+
+  // "bob@example.test" only exists in non-production seeds (see seedTestUsers
+  // above); in a deployed environment there is no fixed demo admin to key
+  // off, so fall back to whichever real account exists.
+  const administrator =
+    (await prisma.user.findUnique({ where: { email: "bob@example.test" } })) ??
+    (await prisma.user.findFirst({ orderBy: { createdAt: "asc" } }));
+
+  if (!administrator) {
+    console.log("No users exist yet, skipping strategy hierarchy seed");
+    return;
+  }
+
+  // Every existing user gets seo_administrator so the seeded demo tree is
+  // immediately manageable — this environment has no other users than the
+  // handful of real demo accounts, so this is a safe, low-risk grant.
+  const seoAdministratorRole = await prisma.role.findUnique({ where: { name: "seo_administrator" } });
+  if (seoAdministratorRole) {
+    const allUsers = await prisma.user.findMany({ select: { id: true } });
+    for (const user of allUsers) {
+      await prisma.scopeGrant.upsert({
+        where: {
+          userId_roleId_orgScopeType_orgScopeId: {
+            userId: user.id,
+            roleId: seoAdministratorRole.id,
+            orgScopeType: "FUNCTION",
+            orgScopeId: "platform",
+          },
+        },
+        update: {},
+        create: {
+          userId: user.id,
+          roleId: seoAdministratorRole.id,
+          orgScopeType: "FUNCTION",
+          orgScopeId: "platform",
+          grantedById: administrator.id,
+        },
+      });
+    }
+    console.log(`Granted seo_administrator to ${allUsers.length} user(s)`);
+  } else {
+    console.log("seo_administrator role not found, skipping role grants");
+  }
+
+  const now = Date.now();
+  const hoursAgo = (h: number) => new Date(now - h * 60 * 60 * 1000);
+
+  const initials = (name: string) =>
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]!.toUpperCase())
+      .join("");
+
+  const OWNER_PALETTE = [
+    "bg-indigo-500", "bg-blue-500", "bg-emerald-500", "bg-amber-500",
+    "bg-rose-500", "bg-purple-500", "bg-cyan-600", "bg-teal-500",
+  ];
+  const colorFor = (seed: string) => {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+    return OWNER_PALETTE[hash % OWNER_PALETTE.length];
+  };
+
+  const owner = (name: string) => ({ ownerName: name, ownerInitials: initials(name), ownerColor: colorFor(name) });
+  const createdBy = administrator.id;
+
+  const plan = await prisma.strategyHierarchyNode.create({
+    data: {
+      name: "Acme Corp 2025 Strategic Plan",
+      type: "PLAN",
+      status: "ON_TRACK",
+      progress: 74,
+      ...owner("Alex Morgan"),
+      budget: "$12.4M",
+      startDate: new Date("2025-01-01"),
+      endDate: new Date("2025-12-01"),
+      description: "Our comprehensive corporate strategy to drive growth, customer excellence, and operational efficiency in 2025.",
+      linkedKpis: ["Revenue Growth", "Strategy Score"],
+      createdBy,
+      activity: {
+        create: [
+          { message: "Progress updated to 74%", actorName: "Alex Morgan", createdAt: hoursAgo(1) },
+          { message: "Status updated to At Risk", actorName: "Alex Morgan", createdAt: hoursAgo(2) },
+        ],
+      },
+    },
+  });
+
+  const revenue = await prisma.strategyHierarchyNode.create({
+    data: {
+      parentId: plan.id, name: "Revenue & Growth", type: "PERSPECTIVE", status: "AT_RISK", progress: 58,
+      ...owner("Sarah Chen"), createdBy,
+    },
+  });
+
+  const driveRevenue = await prisma.strategyHierarchyNode.create({
+    data: {
+      parentId: revenue.id, name: "Drive Revenue Growth 40% YoY", type: "OBJECTIVE", status: "AT_RISK", progress: 67,
+      ...owner("Sarah Chen"), createdBy,
+    },
+  });
+
+  const enterpriseSales = await prisma.strategyHierarchyNode.create({
+    data: {
+      parentId: driveRevenue.id, name: "Enterprise Sales Acceleration", type: "INITIATIVE", status: "AT_RISK", progress: 63,
+      ...owner("Tom Reyes"), createdBy,
+    },
+  });
+
+  await prisma.strategyHierarchyNode.create({
+    data: {
+      parentId: enterpriseSales.id, name: "APAC Market Entry", type: "PROJECT", status: "OFF_TRACK", progress: 31,
+      ...owner("Tom Reyes"), createdBy,
+    },
+  });
+
+  await prisma.strategyHierarchyNode.create({
+    data: {
+      parentId: enterpriseSales.id, name: "Enterprise Pipeline Expansion", type: "PROJECT", status: "ON_TRACK", progress: 72,
+      ...owner("Maria Wong"), createdBy,
+    },
+  });
+
+  await prisma.strategyHierarchyNode.create({
+    data: {
+      parentId: driveRevenue.id, name: "New Product Lines", type: "INITIATIVE", status: "ON_TRACK", progress: 65,
+      ...owner("Priya Nair"), createdBy,
+    },
+  });
+
+  await prisma.strategyHierarchyNode.create({
+    data: {
+      parentId: revenue.id, name: "Expand into 3 New Geographic Markets", type: "OBJECTIVE", status: "AT_RISK", progress: 42,
+      ...owner("James Park"), createdBy,
+    },
+  });
+}
+
 async function main(): Promise<void> {
   await seedSystemSettings();
   await seedRolesAndPolicies();
   await seedTestUsers();
   await seedNotificationTemplates();
+  await seedStrategyHierarchy();
 
   console.log("Database seed completed successfully");
 }

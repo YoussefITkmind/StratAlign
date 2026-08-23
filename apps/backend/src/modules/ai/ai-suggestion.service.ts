@@ -19,7 +19,7 @@ import {
 import type { LlmProvider } from "./llm.provider";
 import {
   extractJsonObject,
-  llmSuggestionResponseSchema,
+  parseLlmSuggestions,
   MAX_SUGGESTIONS,
   type LlmSuggestion,
 } from "./suggestion.schema";
@@ -48,7 +48,16 @@ const FLAG_SIMILARITY_THRESHOLD = 0.45;
  * explicitly acknowledges the collision. */
 const BLOCK_SIMILARITY_THRESHOLD = 0.9;
 
-const MAX_OUTPUT_TOKENS = 4_096;
+/**
+ * Global mode's fan-out always asks for both kinds together (kpi + okr) so
+ * the ALL/OKR/KPI tabs can filter one fetch instead of re-generating — and a
+ * theme with real objectives can return up to `maxSuggestions` OKRs, each
+ * with several bilingual key results, which is far more verbose than a KPI.
+ * 4,096 was tight enough to truncate that combined output mid-JSON on a
+ * theme with real objective context, which the parser then rejects as
+ * malformed rather than as a length problem. Doubled for headroom.
+ */
+const MAX_OUTPUT_TOKENS = 8_192;
 const GENERATION_TEMPERATURE = 0.4;
 
 /**
@@ -216,19 +225,33 @@ export class AiSuggestionService {
       throw new AiMalformedOutputError();
     }
 
-    const result = llmSuggestionResponseSchema.safeParse(decoded);
+    const result = parseLlmSuggestions(decoded);
 
-    if (!result.success) {
-      this.logger.warn("AI response failed schema validation", {
+    if (!result) {
+      this.logger.warn("AI response envelope failed schema validation", {
         feature: SUGGESTION_FEATURE,
-        issueCount: result.error.issues.length,
-        // Paths only. Issue messages can quote the offending model output.
-        issuePaths: result.error.issues.map((issue) => issue.path.join(".")),
       });
       throw new AiMalformedOutputError();
     }
 
-    return result.data.suggestions;
+    if (result.droppedCount > 0) {
+      this.logger.warn("Dropped individually-malformed suggestions from AI response", {
+        feature: SUGGESTION_FEATURE,
+        droppedCount: result.droppedCount,
+        kept: result.suggestions.length,
+      });
+
+      // Every suggestion the model returned failed validation — not one bad
+      // item beside good ones, the whole completion was junk. That is worth
+      // surfacing as a failure the caller can retry, rather than silently
+      // returning an empty batch that reads the same as "nothing to suggest
+      // here."
+      if (result.suggestions.length === 0) {
+        throw new AiMalformedOutputError();
+      }
+    }
+
+    return result.suggestions;
   }
 
   private isApplicable(
