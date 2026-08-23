@@ -150,7 +150,7 @@ describe("CreateKpiModal AI Suggest", () => {
     expect(await screen.findByDisplayValue("Second suggestion.")).toBeTruthy();
   });
 
-  it("shows an inline error when generation fails", async () => {
+  it("shows an inline error only after a retry also fails", async () => {
     hooks.generate.mockRejectedValue(new Error("AI provider unavailable"));
     render(<CreateKpiModal onClose={() => {}} onCreate={() => {}} />);
     selectTheme();
@@ -158,6 +158,20 @@ describe("CreateKpiModal AI Suggest", () => {
 
     expect((await screen.findByTestId("kpi-ai-error")).textContent).toContain("AI provider unavailable");
     expect((screen.getByPlaceholderText("e.g. Revenue Growth (YoY)") as HTMLInputElement).value).toBe("");
+    expect(hooks.generate).toHaveBeenCalledTimes(2);
+  });
+
+  it("silently retries once and applies the suggestion if the retry succeeds", async () => {
+    hooks.generate
+      .mockRejectedValueOnce(new Error("The AI response could not be used. Try generating suggestions again."))
+      .mockResolvedValueOnce(batch([kpiSuggestion()]));
+    render(<CreateKpiModal onClose={() => {}} onCreate={() => {}} />);
+    selectTheme();
+    fireEvent.click(screen.getByTestId("kpi-ai-suggest"));
+
+    expect(await screen.findByDisplayValue("LTV to CAC Ratio")).toBeTruthy();
+    expect(hooks.generate).toHaveBeenCalledTimes(2);
+    expect(screen.queryByTestId("kpi-ai-error")).toBeNull();
   });
 
   it("shows a notice instead of an error when there is no suggestion for the theme", async () => {
