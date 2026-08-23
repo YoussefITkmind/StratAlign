@@ -3,6 +3,7 @@ export class ExecutionOperationError extends Error {
     readonly code:
       | "EXECUTION_INVALID_PLAY"
       | "EXECUTION_PLAY_OWNERSHIP_REQUIRED"
+      | "EXECUTION_INITIATIVE_OWNERSHIP_REQUIRED"
       | "EXECUTION_INITIATIVE_NOT_FOUND"
       | "EXECUTION_JIRA_LINK_NOT_FOUND"
       | "EXECUTION_FEED_LOCKED"
@@ -22,6 +23,10 @@ export const executionErrors = {
   playOwnershipRequired: () => new ExecutionOperationError(
     "EXECUTION_PLAY_OWNERSHIP_REQUIRED",
     "Only an owner of this strategic play or an SEO administrator may register an initiative",
+  ),
+  initiativeOwnershipRequired: () => new ExecutionOperationError(
+    "EXECUTION_INITIATIVE_OWNERSHIP_REQUIRED",
+    "Only the initiative owner, strategic play owner, or SEO administrator can modify the initiative",
   ),
   initiativeNotFound: () => new ExecutionOperationError(
     "EXECUTION_INITIATIVE_NOT_FOUND",

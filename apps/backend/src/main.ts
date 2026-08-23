@@ -49,6 +49,7 @@ import { ValueManagementService } from "./modules/value/value-management.service
 import { createLlmProvider } from "./modules/ai/llm.factory";
 import { ThemeContextBuilder } from "./modules/ai/theme-context.builder";
 import { AiSuggestionService } from "./modules/ai/ai-suggestion.service";
+import { TraceabilityReadService } from "./modules/traceability/traceability-read.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -74,6 +75,7 @@ async function bootstrap(): Promise<void> {
   const governanceEscalation = new GovernanceEscalationService(prisma, eventBus);
   const strategy = new StrategyService(prisma);
   const strategyTraversal = new StrategyTraversalService(environment.DATABASE_URL);
+  const traceabilityRead = new TraceabilityReadService(prisma);
   const strategyNodeBridge = new StrategyNodeBridgeService(prisma);
   const strategyHierarchy = new StrategyHierarchyService(prisma, strategyNodeBridge);
   const approvalGateway = new GovernanceApprovalGateway(governance);
@@ -97,7 +99,7 @@ async function bootstrap(): Promise<void> {
   );
   const scorecard = new ScorecardService(prisma, governance, rules, measurements);
   const execution = new StageAwareExecutionService(prisma, prisma, eventBus);
-  const portfolio = new PortfolioService(prisma, rules);
+  const portfolio = new PortfolioService(prisma, rules, governance, strategy);
   const schedulerRead = new SchedulerReadService(prisma);
   const scheduler = new SchedulerService(
     prisma,
@@ -142,7 +144,7 @@ async function bootstrap(): Promise<void> {
       return {
         health, credentials, loginRateLimiter, clientIp: req.socket.remoteAddress ?? "unknown",
         session: await sessions.getSession({ headers }), oidcIdentities, authenticationFreshness,
-        authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal,
+        authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
         strategyHierarchy,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
         aiSuggestion,

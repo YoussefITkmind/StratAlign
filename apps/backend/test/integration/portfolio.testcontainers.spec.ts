@@ -186,6 +186,43 @@ describe.sequential("Portfolio module with PostgreSQL Testcontainers", () => {
       },
     });
 
+    await prisma.ruleDefinition.create({
+      data: {
+        ruleKey: "scorecard-rag",
+        ruleType: "RAG_AGGREGATION",
+        name: "Unrelated RAG",
+        documentJson: {
+          ruleType: "rag_aggregation",
+          method: "weighted_count",
+          watchThreshold: 0.1,
+          offTrackThreshold: 0.3,
+        },
+        version: 99,
+        status: "PUBLISHED",
+        isCurrent: true,
+        publishedAt: new Date(),
+        createdById: userId,
+      },
+    });
+
+    await prisma.ruleDefinition.create({
+      data: {
+        ruleKey: "portfolio-rag",
+        ruleType: "RAG_AGGREGATION",
+        name: "Portfolio RAG draft",
+        documentJson: {
+          ruleType: "rag_aggregation",
+          method: "weighted_count",
+          watchThreshold: 0.1,
+          offTrackThreshold: 0.3,
+        },
+        version: 2,
+        status: "DRAFT",
+        isCurrent: true,
+        createdById: userId,
+      },
+    });
+
     const statuses = ["ON_TRACK", "AT_RISK", "OFF_TRACK"] as const;
     for (const [index, status] of statuses.entries()) {
       const initiative = await prisma.initiative.create({
