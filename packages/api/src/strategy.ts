@@ -106,6 +106,61 @@ export interface StrategyFullTraceOutput {
   cascade: StrategyTraversalNodeOutput[];
 }
 
+export interface CrossDomainFullTraceOutput {
+  objective: { id: string; nameEn: string; nameAr: string; planVersionId: string };
+  plays: Array<{
+    id: string;
+    nameEn: string;
+    nameAr: string;
+    initiatives: Array<{
+      id: string;
+      nameEn: string;
+      nameAr: string;
+      strategicPlayNodeId: string;
+      ownerUserId: string;
+      stage: "design" | "pilot" | "execute" | "scale" | "done";
+      createdAt: Date;
+      updatedAt: Date;
+      jiraLink: null | {
+        id: string;
+        jiraProjectKey: string;
+        jiraProjectUrl: string;
+        lastSyncedAt: Date | null;
+        createdAt: Date;
+        updatedAt: Date;
+      };
+      milestones: Array<{
+        id: string;
+        nameEn: string;
+        nameAr: string;
+        dueDate: Date;
+        forecastDate: Date | null;
+        health: "on_time" | "at_risk" | "late";
+        source: "manual" | "jira";
+        createdAt: Date;
+      }>;
+    }>;
+  }>;
+  kpis: Array<{
+    kpiDefinitionId: string;
+    alignmentType: "objective" | "play" | "sector" | "project" | "theme";
+    activeVersion: null | {
+      versionId: string;
+      version: number;
+      nameEn: string;
+      nameAr: string;
+      unit: string;
+      polarity: "higher_is_better" | "lower_is_better";
+      frequency: "monthly" | "quarterly";
+    };
+    latestStatus: null | { id: string; period: string; status: string; computedAt: Date };
+  }>;
+}
+
+export interface TraceabilityReadServiceContract {
+  getFullTrace(nodeId: string): Promise<CrossDomainFullTraceOutput>;
+}
+
 export interface StrategyTraversalServiceContract {
   getCascade(
     nodeId: string,
@@ -125,6 +180,7 @@ declare module "./index" {
   interface TrpcContext {
     strategy?: StrategyServiceContract;
     strategyTraversal?: StrategyTraversalServiceContract;
+    traceabilityRead?: TraceabilityReadServiceContract;
   }
 }
 
@@ -152,6 +208,15 @@ const traversal = (
   return ctx.strategyTraversal;
 };
 
+const traceability = (
+  ctx: { traceabilityRead?: TraceabilityReadServiceContract },
+): TraceabilityReadServiceContract => {
+  if (!ctx.traceabilityRead) {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Traceability read service unavailable" });
+  }
+  return ctx.traceabilityRead;
+};
+
 const portfolio = (ctx: { portfolio?: PortfolioServiceContract }): PortfolioServiceContract => {
   if (!ctx.portfolio) {
     throw new TRPCError({
@@ -163,6 +228,13 @@ const portfolio = (ctx: { portfolio?: PortfolioServiceContract }): PortfolioServ
 };
 
 export const strategyRouter = router({
+  query: router({
+    getFullTrace: protectedProcedure
+      .input(z.object({ nodeId: id }).strict())
+      .query(async ({ ctx, input }) => {
+        try { return await traceability(ctx).getFullTrace(input.nodeId); } catch (e) { return fail(e); }
+      }),
+  }),
   node: router({
     list: protectedProcedure
       .query(async ({ ctx }) => {
