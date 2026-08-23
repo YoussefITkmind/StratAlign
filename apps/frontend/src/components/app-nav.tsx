@@ -23,6 +23,7 @@ export function AppNav({
 
   const links = [
     { href: "/dashboard", label: t("nav.dashboard") },
+    { href: "/sync-logs", label: t("nav.syncLogs") },
     { href: "/audit", label: t("nav.auditLog") },
     ...(role === "platform_administrator"
       ? [

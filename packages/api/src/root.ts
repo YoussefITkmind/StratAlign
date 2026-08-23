@@ -7,6 +7,7 @@ import { portfolioRouter } from "./portfolio";
 import { schedulerRouter } from "./scheduler";
 import { valueRouter } from "./value";
 import { aiSuggestionRouter } from "./ai-suggestion";
+import { syncLogRouter } from "./sync-log";
 
 export const rootRouter = mergeRouters(
   appRouter,
@@ -19,6 +20,7 @@ export const rootRouter = mergeRouters(
     scheduler: schedulerRouter,
     value: valueRouter,
     aiSuggestion: aiSuggestionRouter,
+    syncLog: syncLogRouter,
   }),
 );
 

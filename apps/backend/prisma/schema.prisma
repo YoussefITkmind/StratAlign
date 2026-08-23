@@ -6,7 +6,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "strategy_hierarchy", "registry", "performance", "scorecard", "execution", "value"]
+  schemas  = ["public", "iam", "rules", "audit", "governance", "scheduling", "strategy", "strategy_hierarchy", "registry", "performance", "scorecard", "execution", "value", "integrations"]
 }
 
 model SystemSetting {
@@ -1732,4 +1732,48 @@ model GateReview {
   @@index([initiativeId, stage, createdAt])
   @@map("gate_reviews")
   @@schema("value")
+}
+
+// ---------------------------------------------------------------------------
+// Sync Logs (Task 5 minimal scaffold)
+//
+// Deliberately the smallest model that can represent a real sync outcome: no
+// Integration/connector management, no raw per-record log table. Each row is
+// one sync attempt for one source, identified by a caller-supplied source key
+// rather than a foreign key to an integration entity that does not exist yet
+// — the future Data & Integrations module can introduce that relationship
+// without this table changing shape.
+// ---------------------------------------------------------------------------
+
+enum SyncRunStatus {
+  SUCCESS @map("success")
+  FAILED  @map("failed")
+  PARTIAL @map("partial")
+  RUNNING @map("running")
+  @@schema("integrations")
+}
+
+model SyncRun {
+  id                String        @id @default(uuid()) @db.Uuid
+  sourceKey         String        @map("source_key")
+  sourceName        String        @map("source_name")
+  status            SyncRunStatus
+  startedAt         DateTime      @map("started_at")
+  completedAt       DateTime?     @map("completed_at")
+  /// Primary volume metric used for historical comparison and anomaly detection.
+  recordsProcessed  Int?          @map("records_processed")
+  recordsCreated    Int?          @map("records_created")
+  recordsUpdated    Int?          @map("records_updated")
+  recordsFailed     Int?          @map("records_failed")
+  errorCode         String?       @map("error_code")
+  errorMessage      String?       @map("error_message")
+  /// A short excerpt of the raw sync log, if the source captured one. Not a
+  /// full log store — this scaffold has no per-line log table.
+  logExcerpt        String?       @map("log_excerpt")
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  @@index([sourceKey, startedAt])
+  @@index([status, startedAt])
+  @@map("sync_runs")
+  @@schema("integrations")
 }

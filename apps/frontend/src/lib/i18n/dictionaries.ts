@@ -52,6 +52,7 @@ export const dictionaries = {
       admin: "Admin",
       auditLog: "Audit log",
       approvals: "Approvals",
+      syncLogs: "Sync Logs",
     },
     brand: {
       headlinePrefix: "Strategy",
@@ -311,6 +312,7 @@ export const dictionaries = {
       admin: "الإدارة",
       auditLog: "سجل التدقيق",
       approvals: "الموافقات",
+      syncLogs: "سجلات المزامنة",
     },
     brand: {
       headlinePrefix: "الاستراتيجية",

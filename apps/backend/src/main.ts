@@ -48,6 +48,8 @@ import { ValueManagementService } from "./modules/value/value-management.service
 import { createLlmProvider } from "./modules/ai/llm.factory";
 import { ThemeContextBuilder } from "./modules/ai/theme-context.builder";
 import { AiSuggestionService } from "./modules/ai/ai-suggestion.service";
+import { SyncLogService } from "./modules/sync-logs/sync-log.service";
+import { SyncInvestigationService } from "./modules/sync-investigation/sync-investigation.service";
 
 async function bootstrap(): Promise<void> {
   const environment = validateEnvironment(process.env);
@@ -130,6 +132,17 @@ async function bootstrap(): Promise<void> {
     logger.child("ai-suggestion"),
   );
 
+  // Sync Logs / Task 5 investigation. `SyncLogService` is the domain reader
+  // and also implements `SyncRunReader`, so the investigation service reads
+  // sync history through the same contract `syncLog.list`/`syncLog.get` use —
+  // no parallel query path, and the same `llm` instance every AI feature shares.
+  const syncLog = new SyncLogService(prisma);
+  const syncInvestigation = new SyncInvestigationService(
+    syncLog,
+    llm,
+    logger.child("sync-investigation"),
+  );
+
   const server = createHTTPServer({
     router: rootRouter,
     basePath: "/trpc/",
@@ -143,7 +156,7 @@ async function bootstrap(): Promise<void> {
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal,
         strategyHierarchy,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
-        aiSuggestion,
+        aiSuggestion, syncLog, syncInvestigation,
       };
     },
     middleware(request, response, next) {
