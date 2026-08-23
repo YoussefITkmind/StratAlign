@@ -89,14 +89,10 @@ export class PortfolioService {
 
     if (statuses.length === 0) throw portfolioErrors.noInitiativeStatuses();
 
-    const rule = await this.prisma.ruleDefinition.findFirst({
-      where: {
-        ruleType: "RAG_AGGREGATION",
-        status: "PUBLISHED",
-      },
-      orderBy: [{ isCurrent: "desc" }, { version: "desc" }],
-    });
-    if (!rule) throw portfolioErrors.ragRuleNotFound();
+    const rule = await this.rules.getPublished("portfolio-rag");
+    if (!rule || rule.ruleType !== "rag_aggregation") {
+      throw portfolioErrors.ragRuleNotFound();
+    }
 
     const result = await this.rules.evaluate(rule.id, {
       children: statuses.map((row) => ({
