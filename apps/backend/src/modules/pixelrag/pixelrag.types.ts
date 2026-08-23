@@ -1,16 +1,9 @@
 /**
- * Contracts used by the StratAlign backend when communicating with the
- * separately deployed PixelRAG document-intelligence service.
- *
- * These types deliberately mirror the Python service's JSON wire format.
- * PixelRAG remains isolated from StratAlign's persistence and business logic.
+ * Wire contracts for the independently deployed PixelRAG service.
+ * PixelRAG remains isolated from StratAlign persistence and business services.
  */
 
-export type PixelRagDocumentStatus =
-  | "uploaded"
-  | "processing"
-  | "ready"
-  | "failed";
+export type PixelRagDocumentStatus = "uploaded" | "processing" | "ready" | "failed";
 
 export interface PixelRagHealth {
   status: string;
@@ -82,13 +75,7 @@ export interface PixelRagObjective {
   evidence: PixelRagEvidenceRef[];
 }
 
-export type PixelRagKpiCategory =
-  | "kpi"
-  | "financial"
-  | "risk"
-  | "operational"
-  | "people"
-  | "other";
+export type PixelRagKpiCategory = "kpi" | "financial" | "risk" | "operational" | "people" | "other";
 
 export interface PixelRagKpi {
   name: string | null;
@@ -110,6 +97,22 @@ export interface PixelRagInitiative {
   planned_completion: string | null;
   confidence: number | null;
   evidence: PixelRagEvidenceRef[];
+}
+
+export interface PixelRagExtractedDocument {
+  reporting_period: string | null;
+  objectives: PixelRagObjective[];
+  kpis: PixelRagKpi[];
+  initiatives: PixelRagInitiative[];
+  extracted_at: string | null;
+  source_document_id: string | null;
+  source_document_name: string | null;
+  extraction_version: string;
+}
+
+export interface PixelRagReanalysisResult {
+  cached: boolean;
+  extraction: PixelRagExtractedDocument;
 }
 
 export interface PixelRagProposedObjective extends PixelRagObjective {
@@ -155,12 +158,7 @@ export interface PixelRagKpiUpdateMatch {
   source_document_id: string | null;
   source_document_name: string | null;
   evidence: PixelRagEvidenceRef[];
-  match_status:
-    | "matched"
-    | "unmatched"
-    | "ambiguous"
-    | "missing_actual"
-    | "low_confidence";
+  match_status: "matched" | "unmatched" | "ambiguous" | "missing_actual" | "low_confidence";
   matched_index: number | null;
   selected: boolean;
 }
@@ -188,4 +186,122 @@ export interface PixelRagIntelligenceResult {
   answer: string;
   evidence: string[];
   document_id: string | null;
+}
+
+export interface PixelRagForecastPoint {
+  period: string;
+  actual: number;
+}
+
+export interface PixelRagForecastResult {
+  kpi_name: string;
+  unit: string | null;
+  history: PixelRagForecastPoint[];
+  forecast_period: string;
+  forecast_value: number | null;
+  method: string;
+  note: string | null;
+}
+
+export interface PixelRagKpiMeasurement {
+  id: string;
+  kpi_name: string;
+  period: string;
+  actual: string;
+  source_document_id: string | null;
+  source_document_name: string | null;
+  confidence: number | null;
+  evidence: PixelRagEvidenceRef[];
+  recorded_at: string;
+}
+
+export interface PixelRagLineageResult {
+  kpi_name: string;
+  measurements: PixelRagKpiMeasurement[];
+}
+
+export interface PixelRagAlert {
+  id: string;
+  severity: "info" | "warning" | "critical";
+  kind: string;
+  title: string;
+  message: string;
+  kpi_name: string | null;
+  document_id: string | null;
+  created_at: string;
+  acknowledged: boolean;
+}
+
+export interface PixelRagGovernanceSettings {
+  require_human_approval: boolean;
+  minimum_extraction_confidence: number;
+  minimum_match_confidence: number;
+  allow_automatic_writes: boolean;
+  retain_evidence: boolean;
+  retain_audit_history: boolean;
+  allowed_apply_roles: string[];
+  max_multi_document_sources: number;
+}
+
+export interface PixelRagAuditEvent {
+  id: string;
+  at: string;
+  actor: string;
+  role: string;
+  action: string;
+  resource: string;
+  resource_id: string | null;
+  detail: Record<string, unknown>;
+}
+
+export interface PixelRagWorkflowJob {
+  id: string;
+  kind: "smart_import" | "data_capture";
+  document_id: string;
+  document_name: string;
+  status: "awaiting_review" | "approved" | "applied" | "rejected";
+  created_at: string;
+  updated_at: string;
+  actor: string;
+  role: string;
+  extraction_version: string;
+  proposal: Record<string, unknown>;
+}
+
+export interface PixelRagIngestionSettings {
+  enabled: boolean;
+  poll_seconds: number;
+  watched_folder: string;
+}
+
+export interface PixelRagIngestionScanItem {
+  name?: string;
+  status: string;
+  reason?: string;
+  document_id?: string;
+  original_name?: string;
+  message?: string;
+  error?: string;
+}
+
+export interface PixelRagIngestionScanResult {
+  results: PixelRagIngestionScanItem[];
+  supported_types: string[];
+}
+
+export interface PixelRagConnector {
+  id: string;
+  name: string;
+  status: string;
+}
+
+export interface PixelRagConnectorCatalog {
+  active: PixelRagConnector[];
+  adapter_ready: PixelRagConnector[];
+  note: string;
+}
+
+export interface PixelRagEvidenceImage {
+  mediaType: string;
+  dataBase64: string;
 }
