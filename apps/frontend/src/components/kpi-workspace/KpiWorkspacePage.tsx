@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Rocket, Target, ClipboardList, SlidersHorizontal } from "lucide-react";
 import CaptureTaskList from "@/components/capture/CaptureTaskList";
 import CaptureSessionView from "@/components/capture/CaptureSessionView";
@@ -8,6 +8,10 @@ import OkrLibraryTable, { OkrLibraryStats, OkrLibraryActions } from "@/component
 import { RuleBuilderPanel } from "@/components/rule-builder/RuleBuilderPanel";
 import KpiLibraryTable, { KpiStatusBadge, KpiLibraryActions } from "@/components/kpi-workspace/KpiLibraryTable";
 import { kpiStatusCounts } from "@/data/mockKpiLibrary";
+import { trpc } from "@/lib/trpc/client";
+import { usePublishAssistantContext } from "@/lib/assistant/assistant-context";
+
+const MAX_ASSISTANT_CONTEXT_ITEMS = 25;
 
 type TopTab = "okr" | "library" | "rules" | "capture";
 
@@ -20,6 +24,47 @@ type View =
 
 export default function KpiWorkspacePage() {
   const [view, setView] = useState<View>({ type: "library" });
+
+  // Real registry data, fetched independently of the (still mock-backed)
+  // library tables below — this, not the demo tables, is what grounds the
+  // assistant, so it never presents placeholder rows as genuine KPIs/OKRs.
+  const kpiListQuery = trpc.registry.kpi.list.useQuery();
+  const okrListQuery = trpc.registry.okr.list.useQuery();
+  const assistantData = useMemo(() => {
+    if (!kpiListQuery.data && !okrListQuery.data) return null;
+    const kpis = kpiListQuery.data ?? [];
+    const okrs = okrListQuery.data ?? [];
+    return {
+      totalKpis: kpis.length,
+      activeKpis: kpis.filter((kpi) => kpi.definition.status === "active").length,
+      draftKpis: kpis.filter((kpi) => kpi.definition.status === "draft").length,
+      kpis: kpis.slice(0, MAX_ASSISTANT_CONTEXT_ITEMS).map((kpi) => ({
+        name: kpi.version.nameEn,
+        unit: kpi.version.unit,
+        polarity: kpi.version.polarity,
+        frequency: kpi.version.frequency,
+        status: kpi.definition.status,
+      })),
+      totalOkrs: okrs.length,
+      okrs: okrs.slice(0, MAX_ASSISTANT_CONTEXT_ITEMS).map((okr) => ({
+        name: okr.nameEn,
+        keyResultCount: okr.keyResults.length,
+      })),
+      keyResults: okrs
+        .flatMap((okr) =>
+          okr.keyResults.map((keyResult) => ({
+            okr: okr.nameEn,
+            title: keyResult.titleEn ?? null,
+            target: keyResult.targetValue,
+            current: keyResult.currentValue,
+            progressPercent: keyResult.progressPercent,
+            unit: keyResult.unit,
+          })),
+        )
+        .slice(0, MAX_ASSISTANT_CONTEXT_ITEMS),
+    };
+  }, [kpiListQuery.data, okrListQuery.data]);
+  usePublishAssistantContext("kpis_okrs", null, assistantData);
 
   // which top-level tab reads as "active" even while drilled into a session view
   const activeTab: TopTab =

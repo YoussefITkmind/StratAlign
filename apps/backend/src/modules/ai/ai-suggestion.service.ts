@@ -76,7 +76,10 @@ export interface GenerateSuggestionsInput {
 
 export interface AcceptKeyResultInput {
   titleEn: string;
-  titleAr: string;
+  /** Optional: `OkrService.create` already accepts `titleAr?: string | null`
+   * for key results with no non-empty requirement — unlike the OKR's own
+   * name, nothing downstream needs this to be present. */
+  titleAr?: string | null;
   type: "quantitative" | "milestone";
   targetValue: number;
   unit: string;
@@ -86,6 +89,12 @@ export interface AcceptKeyResultInput {
  * What the reviewer sends back. It is the proposal's shape, not a reference to
  * a stored one: nothing is persisted between generation and accept, so the
  * accepted values are whatever the reviewer edited them into.
+ *
+ * `titleAr` stays required here even though AI generation is English-only:
+ * `KpiRegistryService.createDraft`/`OkrService.create` genuinely refuse to
+ * persist a KPI/OKR without a non-empty Arabic name (a NOT NULL Prisma
+ * column backed by an explicit guard in both services). Generation leaves
+ * this field empty; the reviewer fills it in before accepting.
  */
 export interface AcceptSuggestionInput {
   suggestionId: string;
@@ -275,7 +284,10 @@ export class AiSuggestionService {
       themeNameEn: context.theme.nameEn,
       kind: suggestion.type,
       titleEn: suggestion.titleEn,
-      titleAr: suggestion.titleAr,
+      // The model no longer supplies this (English-only generation) — left
+      // null for the reviewer to fill in, never invented or duplicated from
+      // titleEn.
+      titleAr: suggestion.titleAr ?? null,
       descriptionEn: suggestion.descriptionEn ?? null,
       descriptionAr: suggestion.descriptionAr ?? null,
       confidence: suggestion.confidence,
@@ -296,7 +308,7 @@ export class AiSuggestionService {
               objectiveNodeId: suggestion.objectiveNodeId as string,
               keyResults: (suggestion.keyResults ?? []).map((keyResult) => ({
                 titleEn: keyResult.titleEn,
-                titleAr: keyResult.titleAr,
+                titleAr: keyResult.titleAr ?? null,
                 type: keyResult.type,
                 targetValue: keyResult.targetValue,
                 unit: keyResult.unit,
