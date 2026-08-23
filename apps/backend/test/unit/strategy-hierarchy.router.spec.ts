@@ -27,6 +27,7 @@ const createNode = vi.fn();
 const updateNode = vi.fn();
 const deleteNode = vi.fn();
 const backfillBridge = vi.fn();
+const draftDescription = vi.fn();
 
 function context(sessionOverride: typeof session | null = session) {
   return {
@@ -43,7 +44,7 @@ function context(sessionOverride: typeof session | null = session) {
     rules: {},
     audit: {},
     registry: {},
-    strategyHierarchy: { getTree, createNode, updateNode, deleteNode, backfillBridge },
+    strategyHierarchy: { getTree, createNode, updateNode, deleteNode, backfillBridge, draftDescription },
   };
 }
 
@@ -87,6 +88,7 @@ describe("strategyHierarchy tRPC surface", () => {
     updateNode.mockResolvedValue(nodeOutput);
     deleteNode.mockResolvedValue({ deleted: true });
     backfillBridge.mockResolvedValue({ perspectives: 2, objectives: 5 });
+    draftDescription.mockResolvedValue({ draft: "A generated description." });
   });
 
   describe("authentication", () => {
@@ -98,6 +100,9 @@ describe("strategyHierarchy tRPC surface", () => {
       await expect(caller.strategyHierarchy.update({ id: nodeId, progress: 10 })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
       await expect(caller.strategyHierarchy.delete({ id: nodeId })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
       await expect(caller.strategyHierarchy.backfillBridge()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+      await expect(
+        caller.strategyHierarchy.draftDescription({ name: "Increase sales", type: "objective" }),
+      ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     });
   });
 
@@ -117,20 +122,27 @@ describe("strategyHierarchy tRPC surface", () => {
       await expect(caller.strategyHierarchy.update({ id: nodeId, progress: 10 })).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(caller.strategyHierarchy.delete({ id: nodeId })).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(caller.strategyHierarchy.backfillBridge()).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(
+        caller.strategyHierarchy.draftDescription({ name: "Increase sales", type: "objective" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
 
       expect(createNode).not.toHaveBeenCalled();
       expect(updateNode).not.toHaveBeenCalled();
       expect(deleteNode).not.toHaveBeenCalled();
       expect(backfillBridge).not.toHaveBeenCalled();
+      expect(draftDescription).not.toHaveBeenCalled();
     });
 
-    it("allows create/update/delete/backfillBridge for seo_administrator", async () => {
+    it("allows create/update/delete/backfillBridge/draftDescription for seo_administrator", async () => {
       const caller = rootRouter.createCaller(context() as never);
 
       await expect(caller.strategyHierarchy.create(validCreateInput)).resolves.toEqual(nodeOutput);
       await expect(caller.strategyHierarchy.update({ id: nodeId, progress: 10 })).resolves.toEqual(nodeOutput);
       await expect(caller.strategyHierarchy.delete({ id: nodeId })).resolves.toEqual({ deleted: true });
       await expect(caller.strategyHierarchy.backfillBridge()).resolves.toEqual({ perspectives: 2, objectives: 5 });
+      await expect(
+        caller.strategyHierarchy.draftDescription({ name: "Increase sales", type: "objective" }),
+      ).resolves.toEqual({ draft: "A generated description." });
     });
   });
 

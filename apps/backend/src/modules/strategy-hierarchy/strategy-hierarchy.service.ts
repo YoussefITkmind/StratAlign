@@ -4,6 +4,8 @@ import {
   StrategyHierarchyNodeType as PrismaNodeType,
   StrategyHierarchyNodeStatus as PrismaNodeStatus,
 } from "../../generated/prisma/enums";
+import { AiMalformedOutputError } from "../ai/ai.errors";
+import type { LlmProvider } from "../ai/llm.provider";
 import type { StrategyNodeBridgeService } from "./strategy-node-bridge.service";
 
 export type NodeType = "plan" | "perspective" | "objective" | "initiative" | "project";
@@ -138,6 +140,28 @@ function colorForInitials(seed: string): string {
   return OWNER_PALETTE[hash % OWNER_PALETTE.length];
 }
 
+const DRAFT_DESCRIPTION_FEATURE = "strategy_hierarchy.draft_description";
+const DRAFT_MAX_OUTPUT_TOKENS = 300;
+const DRAFT_TEMPERATURE = 0.6;
+
+const DRAFT_DESCRIPTION_SYSTEM_PROMPT =
+  "You write a single concise paragraph (2-3 sentences) describing a node in an " +
+  "enterprise strategy execution platform. Return plain text only: no markdown, " +
+  "no headings, no surrounding quotes.";
+
+const NODE_TYPE_LABEL: Record<NodeType, string> = {
+  plan: "strategic plan",
+  perspective: "strategic perspective",
+  objective: "strategic objective",
+  initiative: "initiative",
+  project: "project",
+};
+
+function buildDraftDescriptionPrompt(input: { name: string; type: NodeType; parentName?: string }): string {
+  const parentLine = input.parentName ? ` It sits under the parent node "${input.parentName}".` : "";
+  return `Write a description for a ${NODE_TYPE_LABEL[input.type]} named "${input.name}".${parentLine}`;
+}
+
 function deriveInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "";
@@ -210,6 +234,7 @@ export class StrategyHierarchyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly bridge: StrategyNodeBridgeService,
+    private readonly llm: LlmProvider,
   ) {}
 
   async getTree(): Promise<StrategyHierarchyNodeRecord | null> {
@@ -217,6 +242,24 @@ export class StrategyHierarchyService {
       include: { activity: true },
     });
     return buildTree(rows.map(mapRow));
+  }
+
+  async draftDescription(input: { name: string; type: NodeType; parentName?: string }): Promise<{ draft: string }> {
+    const completion = await this.llm.complete({
+      system: DRAFT_DESCRIPTION_SYSTEM_PROMPT,
+      prompt: buildDraftDescriptionPrompt(input),
+      maxOutputTokens: DRAFT_MAX_OUTPUT_TOKENS,
+      temperature: DRAFT_TEMPERATURE,
+      feature: DRAFT_DESCRIPTION_FEATURE,
+      responseFormat: "text",
+    });
+
+    const draft = completion.text.trim();
+    if (!draft) {
+      throw new AiMalformedOutputError("The AI service returned no content");
+    }
+
+    return { draft };
   }
 
   private async requireNode(id: string) {

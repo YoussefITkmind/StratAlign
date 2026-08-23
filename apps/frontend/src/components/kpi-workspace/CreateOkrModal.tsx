@@ -89,7 +89,12 @@ export default function CreateOkrModal({
     setAiError(null);
     setAiNotice(null);
     try {
-      const result = await generate.mutateAsync({ themeNodeId, kinds: ["okr"], maxSuggestions: 1 });
+      // Ask for a small pool, not just one: an OKR suggestion is only usable if
+      // the model's chosen objectiveNodeId matches a real objective under this
+      // theme, so requesting a single candidate makes "nothing came back usable"
+      // (and, separately, "every candidate was malformed") far likelier than
+      // they need to be.
+      const result = await generate.mutateAsync({ themeNodeId, kinds: ["okr"], maxSuggestions: 5 });
       const suggestion = result.suggestions[0];
       if (!suggestion) {
         setAiNotice("No suggestion available for this theme — continue manually.");

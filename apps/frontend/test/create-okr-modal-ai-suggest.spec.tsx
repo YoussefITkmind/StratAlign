@@ -97,7 +97,7 @@ describe("CreateOkrModal AI Suggest", () => {
     fireEvent.click(screen.getByTestId("okr-ai-suggest"));
 
     await waitFor(() => expect(hooks.generate).toHaveBeenCalledTimes(1));
-    expect(hooks.generate).toHaveBeenCalledWith({ themeNodeId: THEME_ID, kinds: ["okr"], maxSuggestions: 1 });
+    expect(hooks.generate).toHaveBeenCalledWith({ themeNodeId: THEME_ID, kinds: ["okr"], maxSuggestions: 5 });
 
     expect(await screen.findByDisplayValue("Expand into enterprise accounts")).toBeTruthy();
     expect(screen.getByDisplayValue("Sign 20 enterprise logos")).toBeTruthy();

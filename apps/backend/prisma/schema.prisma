@@ -43,6 +43,7 @@ model User {
   strategyOwnerAssignments          OwnerAssignment[]         @relation("StrategyOwner")
   strategyOwnerAssignmentsAssigned  OwnerAssignment[]         @relation("StrategyAssigner")
   strategyStagedChangesRequested    StagedChange[]            @relation("StrategyStagedChangeRequester")
+  portfolioHierarchyImportsCreated  PortfolioHierarchyImport[] @relation("PortfolioHierarchyImportCreator")
   kpiVersionsOwned                  KpiVersion[]              @relation("KpiVersionOwner")
   kpiVersionsStewarded              KpiVersion[]              @relation("KpiVersionSteward")
   measurementsSubmitted             Measurement[]             @relation("MeasurementSubmitter")
@@ -311,6 +312,7 @@ model ApprovalCase {
   approvalParticipant User?              @relation("ApprovalCaseParticipant", fields: [approvalParticipantId], references: [id], onDelete: Restrict)
   escalations         EscalationCase[]
   decisionLog         DecisionLogEntry[]
+  portfolioHierarchyImports PortfolioHierarchyImport[] @relation("PortfolioHierarchyImportApprovalCase")
 
   @@index([workflowDefinitionId])
   @@index([entityType, entityId])
@@ -447,6 +449,22 @@ enum StagedChangeKind {
   NODE_RETIRE @map("node_retire")
   EDGE_LINK   @map("edge_link")
   EDGE_UNLINK @map("edge_unlink")
+  HIERARCHY_IMPORT @map("hierarchy_import")
+
+  @@schema("strategy")
+}
+
+enum PortfolioHierarchyImportFormat {
+  CSV  @map("csv")
+  JSON @map("json")
+
+  @@schema("strategy")
+}
+
+enum PortfolioHierarchyImportStatus {
+  DRY_RUN   @map("dry_run")
+  SUBMITTED @map("submitted")
+  APPLIED   @map("applied")
 
   @@schema("strategy")
 }
@@ -471,6 +489,7 @@ model PlanVersion {
   nodes                  StrategyNode[]
   edges                  StrategyEdge[]
   stagedChanges          StagedChange[]
+  portfolioHierarchyImports PortfolioHierarchyImport[] @relation("PortfolioHierarchyImportPlanVersion")
 
   performanceTargets TargetSeries[] @relation("PerformanceTargetPlan")
 
@@ -572,10 +591,39 @@ model StagedChange {
   appliedAt      DateTime?          @map("applied_at")
   planVersion    PlanVersion        @relation(fields: [planVersionId], references: [id], onDelete: Cascade, onUpdate: Cascade)
   requester      User               @relation("StrategyStagedChangeRequester", fields: [requestedBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  portfolioHierarchyImport PortfolioHierarchyImport? @relation("PortfolioHierarchyImportStagedChange")
 
   @@index([approvalCaseId, status])
   @@index([planVersionId, status])
   @@map("staged_changes")
+  @@schema("strategy")
+}
+
+model PortfolioHierarchyImport {
+  id              String                         @id @default(uuid()) @db.Uuid
+  planVersionId   String                         @map("plan_version_id") @db.Uuid
+  sourceFormat    PortfolioHierarchyImportFormat @map("source_format")
+  sourceFileName  String?                        @map("source_file_name")
+  sourceChecksum  String                         @map("source_checksum")
+  normalizedInput Json                           @map("normalized_input")
+  initialDiff     Json                           @map("initial_diff")
+  resolutions     Json                           @default("{}")
+  status          PortfolioHierarchyImportStatus @default(DRY_RUN)
+  stagedChangeId  String?                        @unique @map("staged_change_id") @db.Uuid
+  approvalCaseId  String?                        @map("approval_case_id") @db.Uuid
+  createdBy       String                         @map("created_by")
+  createdAt       DateTime                       @default(now()) @map("created_at")
+  submittedAt     DateTime?                      @map("submitted_at")
+  appliedAt       DateTime?                      @map("applied_at")
+  planVersion     PlanVersion                    @relation("PortfolioHierarchyImportPlanVersion", fields: [planVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  stagedChange    StagedChange?                  @relation("PortfolioHierarchyImportStagedChange", fields: [stagedChangeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  approvalCase    ApprovalCase?                  @relation("PortfolioHierarchyImportApprovalCase", fields: [approvalCaseId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  creator         User                           @relation("PortfolioHierarchyImportCreator", fields: [createdBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([planVersionId, status])
+  @@index([createdBy, createdAt])
+  @@index([approvalCaseId])
+  @@map("portfolio_hierarchy_imports")
   @@schema("strategy")
 }
 
