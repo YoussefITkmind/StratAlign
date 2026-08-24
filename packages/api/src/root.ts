@@ -9,6 +9,7 @@ import { valueRouter } from "./value";
 import { aiSuggestionRouter } from "./ai-suggestion";
 import { assistantRouter } from "./assistant";
 import { audioBriefRouter } from "./audio-brief";
+import { integrationsRouter } from "./integrations";
 
 export const rootRouter = mergeRouters(
   appRouter,
@@ -23,6 +24,7 @@ export const rootRouter = mergeRouters(
     aiSuggestion: aiSuggestionRouter,
     assistant: assistantRouter,
     audioBrief: audioBriefRouter,
+    integrations: integrationsRouter,
   }),
 );
 

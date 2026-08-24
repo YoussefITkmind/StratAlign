@@ -52,6 +52,10 @@ import { AiSuggestionService } from "./modules/ai/ai-suggestion.service";
 import { ContextAwareAssistantService } from "./modules/ai/assistant.service";
 import { AiAudioBriefService } from "./modules/ai/audio-brief.service";
 import { OpenAiTtsProvider, UnconfiguredTtsProvider } from "./modules/ai/openai-tts.provider";
+import { ConnectionsService } from "./modules/integrations/connections.service";
+import { SyncLogsService } from "./modules/integrations/sync-logs.service";
+import { ApiKeysService } from "./modules/integrations/api-keys.service";
+import { WebhooksService } from "./modules/integrations/webhooks.service";
 import { TraceabilityReadService } from "./modules/traceability/traceability-read.service";
 
 async function bootstrap(): Promise<void> {
@@ -127,6 +131,12 @@ async function bootstrap(): Promise<void> {
     logger.child("value-checkin-scheduler"),
   );
   const value = new ValueManagementService(prisma, governance, governanceEscalation, rules, scheduler);
+  const integrations = {
+    connections: new ConnectionsService(prisma),
+    syncLogs: new SyncLogsService(prisma),
+    apiKeys: new ApiKeysService(prisma),
+    webhooks: new WebhooksService(prisma),
+  };
 
   const aiSuggestion = new AiSuggestionService(
     prisma,
@@ -188,7 +198,7 @@ async function bootstrap(): Promise<void> {
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
         strategyHierarchy,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
-        aiSuggestion, assistant, audioBrief,
+        aiSuggestion, assistant, integrations, audioBrief,
       };
     },
     middleware(request, response, next) {
