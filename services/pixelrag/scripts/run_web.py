@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 
 from spm_poc.demo_seed import ensure_demo_baseline
 from spm_poc.document_lifecycle import register_document_lifecycle_routes
+from spm_poc.multi_visual import install_multi_visual_route
 from spm_poc.visual_documents import VisualDocumentLibrary
 from spm_poc.web import WebRuntime, create_app
 
@@ -37,6 +38,7 @@ if __name__ == "__main__":
 
     app = create_app(runtime)
     register_document_lifecycle_routes(app, runtime)
+    install_multi_visual_route(app, runtime)
     service_token = os.getenv("PIXELRAG_SERVICE_TOKEN", "").strip()
 
     @app.middleware("http")
