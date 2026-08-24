@@ -34,6 +34,8 @@ export interface AssistantModuleContext {
   entity: AssistantEntityRef | null;
   data: Record<string, AssistantContextValue> | null;
   capabilities: string[];
+  /** Static "how do I…" facts about this module's own UI. Never business data. */
+  helpContent: string[];
   /** False for a module with no registered context provider (yet). */
   hasProvider: boolean;
 }

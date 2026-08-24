@@ -47,6 +47,13 @@ export interface AssistantModuleContext {
   data: Record<string, AssistantContextValue> | null;
   /** What the assistant may help with here, e.g. "analyze_kpis". Informational only. */
   capabilities: string[];
+  /**
+   * Static, developer-authored "how do I…" facts about this module's own UI
+   * (button labels, required fields, navigation) — never business data. Lets
+   * the assistant answer procedural questions honestly instead of treating
+   * every non-data question as insufficient context.
+   */
+  helpContent: string[];
 }
 
 export type AssistantMessageRole = "user" | "assistant";

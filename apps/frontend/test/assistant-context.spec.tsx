@@ -111,6 +111,9 @@ describe("AssistantProvider", () => {
     const sentPayload = hooks.ask.mock.calls[0][0];
     expect(sentPayload.context.module).toBe("balanced_scorecards");
     expect(sentPayload.context.data).toEqual({ onTrack: 3 });
+    expect(sentPayload.context.helpContent).toEqual([
+      'Click "New Scorecard" to open the scorecard setup dialog and create one.',
+    ]);
   });
 
   it("preserves the conversation and appends a switch event when the module changes", async () => {
