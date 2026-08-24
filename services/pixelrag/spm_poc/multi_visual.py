@@ -43,6 +43,12 @@ def install_multi_visual_route(app: FastAPI, runtime: WebRuntime) -> None:
         blocks: list[str] = []
         sources: list[dict[str, Any]] = []
 
+        source_question = (
+            payload.question
+            + "\n\nFor this source only: do not infer a fiscal year, quarter, date, or chronology from the filename or from other reports. "
+            "Mention a reporting period only when it is explicitly visible in this source evidence."
+        )
+
         for position, document_id in enumerate(ids, start=1):
             try:
                 document = runtime.documents.get(document_id)
@@ -50,12 +56,10 @@ def install_multi_visual_route(app: FastAPI, runtime: WebRuntime) -> None:
                 raise HTTPException(status_code=404, detail="Document not found") from error
 
             answer = runtime.document_service_for(document_id).ask(
-                payload.question,
+                source_question,
                 payload.top_k_per_document,
             )
 
-            # Source order and source name are explicit so synthesis does not
-            # invent chronology or fiscal periods that are absent from evidence.
             blocks.append(
                 f"SOURCE {position}: {document.name}\n"
                 f"ANSWER: {answer.answer}\n"
