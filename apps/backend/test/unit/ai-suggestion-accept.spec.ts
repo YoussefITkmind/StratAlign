@@ -162,6 +162,8 @@ function makeService() {
   const createOkr = vi.fn().mockResolvedValue({ id: CREATED_OKR_ID, keyResults: [] });
   const setAlignments = vi.fn().mockResolvedValue([]);
   const build = vi.fn().mockResolvedValue(context);
+  const createDefinition = vi.fn().mockResolvedValue({ id: "cadence-definition-1" });
+  const materialize = vi.fn().mockResolvedValue({ created: 1, skipped: 0, nextOccurrenceAt: null });
 
   const service = new AiSuggestionService(
     prisma as never,
@@ -171,6 +173,8 @@ function makeService() {
     { create: createOkr } as never,
     { set: setAlignments } as never,
     { publishWithin, nudgeRelay } as never,
+    { createDefinition } as never,
+    { materialize } as never,
     createLogger("error"),
   );
 
@@ -186,6 +190,8 @@ function makeService() {
     setAlignments,
     build,
     publishWithin,
+    createDefinition,
+    materialize,
     prisma,
   };
 }
@@ -237,6 +243,33 @@ describe("accepting an AI suggestion", () => {
       expect(setAlignments).toHaveBeenCalledWith({
         kpiDefinitionId: CREATED_KPI_ID,
         alignments: [{ strategyNodeId: THEME_ID, alignmentType: "theme" }],
+      });
+    });
+
+    it("stands up a Data Capture cadence for the new KPI so it shows up immediately", async () => {
+      const { service, createDefinition, materialize } = makeService();
+
+      await service.accept(kpiInput, ACTOR_ID);
+
+      expect(createDefinition).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subjectType: "performance_kpi",
+          subjectId: "version-1",
+          payload: { scopeNodeId: THEME_ID },
+        }),
+      );
+      expect(materialize).toHaveBeenCalledWith("cadence-definition-1");
+    });
+
+    it("still creates the KPI even if standing up its capture cadence fails", async () => {
+      const { service, createDefinition } = makeService();
+      createDefinition.mockRejectedValue(new Error("scheduler unavailable"));
+
+      const result = await service.accept(kpiInput, ACTOR_ID);
+
+      expect(result).toMatchObject({
+        subjectType: "kpi_definition",
+        subjectId: CREATED_KPI_ID,
       });
     });
 

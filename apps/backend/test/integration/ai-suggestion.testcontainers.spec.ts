@@ -116,6 +116,10 @@ describe.sequential(
               .then((result) => result.count),
           nudgeRelay: () => Promise.resolve(),
         } as never,
+        // Data Capture cadence wiring is exercised by its own unit tests;
+        // this integration suite is about AI accept, not scheduling.
+        { createDefinition: vi.fn().mockRejectedValue(new Error("scheduler not configured in test")) } as never,
+        { materialize: vi.fn() } as never,
         createLogger("error"),
       );
     }, 240_000);
