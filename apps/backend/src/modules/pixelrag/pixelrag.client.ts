@@ -221,6 +221,24 @@ export class PixelRagClient {
     });
   }
 
+  askAcrossDocumentsVisual(input: {
+    question: string;
+    documentIds: string[];
+    topKPerDocument?: number;
+    actor?: string;
+    role?: string;
+  }): Promise<unknown> {
+    return this.request<unknown>("/api/qa/multi-visual", {
+      method: "POST",
+      body: {
+        question: input.question,
+        document_ids: input.documentIds,
+        top_k_per_document: input.topKPerDocument ?? 3,
+      },
+      headers: this.actorHeaders(input),
+    });
+  }
+
   async evidenceImage(input: {
     documentId: string;
     articleId: number;
