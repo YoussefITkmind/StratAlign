@@ -164,13 +164,23 @@ describe("integrations tRPC surface", () => {
       }
     });
 
-    it("rejects every other role", async () => {
+    it("lets any authenticated role read connections, sync logs, api keys, and webhooks", async () => {
       resolve.mockResolvedValue(authorization(["executive_viewer"]));
       const caller = rootRouter.createCaller(context() as never);
 
-      await expect(caller.integrations.connections.list()).rejects.toMatchObject({
-        code: "FORBIDDEN",
-      });
+      await expect(caller.integrations.connections.list()).resolves.toEqual([connectionOutput]);
+      await expect(caller.integrations.syncLogs.list()).resolves.toEqual([]);
+      await expect(caller.integrations.apiKeys.list()).resolves.toEqual([apiKeyOutput]);
+      await expect(caller.integrations.webhooks.list()).resolves.toEqual([webhookOutput]);
+    });
+
+    it("rejects mutations from every role except platform_administrator and data_steward", async () => {
+      resolve.mockResolvedValue(authorization(["executive_viewer"]));
+      const caller = rootRouter.createCaller(context() as never);
+
+      await expect(
+        caller.integrations.connections.toggle({ id: connectionId }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
       await expect(
         caller.integrations.webhooks.create({ name: "x", url: "https://example.test", events: [] }),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -207,12 +217,34 @@ describe("integrations tRPC surface", () => {
       expect(connectionsToggle).not.toHaveBeenCalled();
     });
 
-    it("maps a thrown service error to BAD_REQUEST", async () => {
+    it("maps an unrecognized thrown service error to BAD_REQUEST", async () => {
       connectionsToggle.mockRejectedValueOnce(new Error("Connection was not found"));
       const caller = rootRouter.createCaller(context() as never);
       await expect(
         caller.integrations.connections.toggle({ id: connectionId }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "Connection was not found" });
+    });
+
+    it("maps a not-found service error to NOT_FOUND", async () => {
+      connectionsToggle.mockRejectedValueOnce({
+        code: "INTEGRATIONS_CONNECTION_NOT_FOUND",
+        message: "Connection was not found",
+      });
+      const caller = rootRouter.createCaller(context() as never);
+      await expect(
+        caller.integrations.connections.toggle({ id: connectionId }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: "Connection was not found" });
+    });
+
+    it("maps a concurrent-update service error to CONFLICT", async () => {
+      connectionsToggle.mockRejectedValueOnce({
+        code: "INTEGRATIONS_CONCURRENT_UPDATE",
+        message: "This item was just changed by another request — please retry",
+      });
+      const caller = rootRouter.createCaller(context() as never);
+      await expect(
+        caller.integrations.connections.toggle({ id: connectionId }),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
     });
   });
 

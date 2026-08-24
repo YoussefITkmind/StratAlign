@@ -10,6 +10,7 @@ const STATUS_META: Record<string, { label: string; dot: string; text: string }> 
   DISCONNECTED: { label: "Disconnected", dot: "bg-slate-400", text: "text-slate-500" },
   PENDING: { label: "Pending", dot: "bg-orange-500", text: "text-orange-600" },
 };
+const UNKNOWN_STATUS_META = { label: "Unknown", dot: "bg-slate-400", text: "text-slate-500" };
 
 function fmt(n: number) {
   return n.toLocaleString("en-US");
@@ -21,7 +22,7 @@ export default function ConnectionsTab({ search }: { search: string }) {
   const connections = useMemo(() => query.data ?? [], [query.data]);
 
   const toggleMutation = trpc.integrations.connections.toggle.useMutation({
-    onSuccess: () => utils.integrations.connections.list.invalidate(),
+    onSettled: () => utils.integrations.connections.list.invalidate(),
   });
   const syncMutation = trpc.integrations.connections.syncNow.useMutation({
     onSuccess: () => utils.integrations.connections.list.invalidate(),
@@ -109,7 +110,7 @@ export default function ConnectionsTab({ search }: { search: string }) {
           </div>
         )}
         {filtered.map((c) => {
-          const meta = STATUS_META[c.status];
+          const meta = STATUS_META[c.status] ?? UNKNOWN_STATUS_META;
           const syncing = syncMutation.isPending && syncMutation.variables?.id === c.id;
           return (
             <div
