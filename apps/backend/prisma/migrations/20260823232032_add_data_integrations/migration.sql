@@ -99,3 +99,4 @@ CREATE INDEX "api_keys_owner_id_idx" ON "integrations"."api_keys"("owner_id");
 
 -- CreateIndex
 CREATE INDEX "api_keys_disabled_idx" ON "integrations"."api_keys"("disabled");
+

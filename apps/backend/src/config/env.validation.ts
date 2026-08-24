@@ -291,6 +291,29 @@ const environmentSchema = z.object({
     .default(2),
 
   /**
+   * PixelRAG document-intelligence service.
+   *
+   * Optional so the rest of StratAlign can start and operate normally when
+   * the separately deployed PixelRAG service is not configured.
+   */
+  PIXELRAG_SERVICE_URL: z
+    .string()
+    .url()
+    .optional(),
+
+  PIXELRAG_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(600_000)
+    .default(300_000),
+
+  PIXELRAG_SERVICE_TOKEN: z
+    .string()
+    .min(1)
+    .optional(),
+
+  /**
    * OpenAI credentials for the Executive Audio Brief feature specifically.
    *
    * Separate from `AI_*` above on purpose: audio brief script generation and

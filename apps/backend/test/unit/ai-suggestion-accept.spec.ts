@@ -162,6 +162,8 @@ function makeService() {
   const createOkr = vi.fn().mockResolvedValue({ id: CREATED_OKR_ID, keyResults: [] });
   const setAlignments = vi.fn().mockResolvedValue([]);
   const build = vi.fn().mockResolvedValue(context);
+  const createCadenceDefinition = vi.fn().mockResolvedValue({ id: "cadence-def-1" });
+  const materializeCadence = vi.fn().mockResolvedValue({ created: 0, skipped: 0, nextOccurrenceAt: null });
 
   const service = new AiSuggestionService(
     prisma as never,
@@ -171,6 +173,8 @@ function makeService() {
     { create: createOkr } as never,
     { set: setAlignments } as never,
     { publishWithin, nudgeRelay } as never,
+    { createDefinition: createCadenceDefinition } as never,
+    { materialize: materializeCadence } as never,
     createLogger("error"),
   );
 
