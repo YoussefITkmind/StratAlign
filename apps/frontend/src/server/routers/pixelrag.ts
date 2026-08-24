@@ -101,11 +101,11 @@ export const pixelRagRouter = router({
   compare: authenticatedProcedure
     .input(z.object({
       question: z.string().trim().min(1).max(1000),
-      documentIds: z.array(documentId).min(1).max(3),
+      documentIds: z.array(documentId).min(2).max(3),
       topKPerDocument: z.number().int().min(1).max(5).default(3),
     }).strict())
     .mutation(({ ctx, input }) =>
-      forward(() => backend(ctx).pixelrag.compare.mutate(input)),
+      forward(() => backend(ctx).pixelragVisual.compare.mutate(input)),
     ),
 
   evidenceImage: authenticatedProcedure
