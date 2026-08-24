@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, Download, Plus, Search, Sparkles } from "lucide-react";
-import { objectives as initialObjectives, okrDepartments, type OkrStatus } from "@/data/mockOkrLibrary";
+import { objectives as initialObjectives, okrDepartments, type Objective, type OkrStatus } from "@/data/mockOkrLibrary";
 import AiSuggestModal from "./AiSuggestModal";
 import CreateOkrModal from "./CreateOkrModal";
 
@@ -61,7 +61,7 @@ function OwnerAvatar({ initials, color, className = "h-7 w-7 text-[10px]" }: { i
 }
 
 export default function OkrLibraryTable() {
-  const allObjectives = initialObjectives;
+  const [allObjectives, setAllObjectives] = useState<Objective[]>(initialObjectives);
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("all");
   const [status, setStatus] = useState("all");
@@ -194,7 +194,16 @@ export default function OkrLibraryTable() {
         {filtered.length === 0 && <p className="p-10 text-center text-sm text-gray-400">No objectives match these filters.</p>}
       </div>
 
-      {showCreate && <CreateOkrModal onClose={() => setShowCreate(false)} />}
+      {showCreate && (
+        <CreateOkrModal
+          onClose={() => setShowCreate(false)}
+          onCreate={(objective) => {
+            setAllObjectives((current) => [objective, ...current]);
+            setExpanded((current) => ({ ...current, [objective.id]: true }));
+            setShowCreate(false);
+          }}
+        />
+      )}
     </div>
   );
 }

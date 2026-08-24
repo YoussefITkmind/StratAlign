@@ -64,8 +64,6 @@ export const registryRouter = router({
         type: z.enum(["quantitative", "milestone"]),
         targetValue: z.number().finite(),
         unit: z.string().trim().min(1).max(50),
-        titleEn: z.string().trim().min(1).max(300).nullish(),
-        titleAr: z.string().trim().min(1).max(300).nullish(),
       }).strict()).min(1).max(20),
     }).strict()).mutation(({ ctx, input }) =>
       forward(() => backend(ctx).registry.okr.create.mutate(input))),

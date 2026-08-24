@@ -4,20 +4,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 
 const hooks = vi.hoisted(() => ({
   generate: vi.fn(),
-  createDraft: vi.fn(),
   nodes: vi.fn(),
-  me: vi.fn(),
   state: {
     generatePending: false,
-    createPending: false,
-    createError: null as { message: string } | null,
   },
 }));
 
 vi.mock("@/lib/trpc/client", () => ({
   trpc: {
-    useUtils: () => ({ registry: { kpi: { list: { invalidate: vi.fn() } } } }),
-    auth: { me: { useQuery: () => hooks.me() } },
     strategy: { nodes: { useQuery: () => hooks.nodes() } },
     aiSuggestion: {
       generate: {
@@ -25,17 +19,6 @@ vi.mock("@/lib/trpc/client", () => ({
           mutateAsync: hooks.generate,
           isPending: hooks.state.generatePending,
         }),
-      },
-    },
-    registry: {
-      kpi: {
-        createDraft: {
-          useMutation: () => ({
-            mutate: hooks.createDraft,
-            isPending: hooks.state.createPending,
-            error: hooks.state.createError,
-          }),
-        },
       },
     },
   },
@@ -46,7 +29,6 @@ import CreateKpiModal from "@/components/kpi-workspace/CreateKpiModal";
 const THEME_ID = "11111111-1111-4111-8111-111111111111";
 const GENERATION_ID = "22222222-2222-4222-8222-222222222222";
 const SUGGESTION_ID = "33333333-3333-4333-8333-333333333333";
-const USER_ID = "44444444-4444-4444-8444-444444444444";
 
 function kpiSuggestion(overrides: Record<string, unknown> = {}) {
   return {
@@ -90,12 +72,9 @@ function selectTheme() {
 beforeEach(() => {
   vi.clearAllMocks();
   hooks.state.generatePending = false;
-  hooks.state.createPending = false;
-  hooks.state.createError = null;
   hooks.nodes.mockReturnValue({
     data: [{ id: THEME_ID, type: "theme", state: "active", nameEn: "Revenue & Growth" }],
   });
-  hooks.me.mockReturnValue({ data: { id: USER_ID, email: "member@example.test", name: "Member" } });
   hooks.generate.mockResolvedValue(batch([kpiSuggestion()]));
 });
 
@@ -103,14 +82,14 @@ afterEach(() => cleanup());
 
 describe("CreateKpiModal AI Suggest", () => {
   it("keeps the AI Suggest button disabled until a theme is picked", () => {
-    render(<CreateKpiModal onClose={() => {}} />);
+    render(<CreateKpiModal onClose={() => {}} onCreate={() => {}} />);
     expect((screen.getByTestId("kpi-ai-suggest") as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByTestId("kpi-ai-suggest"));
     expect(hooks.generate).not.toHaveBeenCalled();
   });
 
-  it("fills Name, Description, and Frequency, but leaves Unit/Polarity untouched", async () => {
-    render(<CreateKpiModal onClose={() => {}} />);
+  it("fills Name, Description, and Frequency, but leaves Perspective/Actual/Target untouched", async () => {
+    render(<CreateKpiModal onClose={() => {}} onCreate={() => {}} />);
     selectTheme();
     fireEvent.click(screen.getByTestId("kpi-ai-suggest"));
 
@@ -121,11 +100,13 @@ describe("CreateKpiModal AI Suggest", () => {
     expect(screen.getByDisplayValue("Acquisition efficiency.")).toBeTruthy();
     expect(screen.getByDisplayValue("Quarterly")).toBeTruthy();
 
-    expect((screen.getByPlaceholderText("e.g. %") as HTMLInputElement).value).toBe("");
+    expect((screen.getByPlaceholderText("e.g. 38%") as HTMLInputElement).value).toBe("");
+    expect((screen.getByPlaceholderText("e.g. 40%") as HTMLInputElement).value).toBe("");
+    expect(screen.getByRole("button", { name: /Financial/ }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("does not overwrite a Name the user already typed", async () => {
-    render(<CreateKpiModal onClose={() => {}} />);
+    render(<CreateKpiModal onClose={() => {}} onCreate={() => {}} />);
     fireEvent.change(screen.getByPlaceholderText("e.g. Revenue Growth (YoY)"), { target: { value: "My Own KPI Name" } });
     selectTheme();
     fireEvent.click(screen.getByTestId("kpi-ai-suggest"));
@@ -136,7 +117,7 @@ describe("CreateKpiModal AI Suggest", () => {
   });
 
   it("discard suggestion restores the fields to what they were before", async () => {
-    render(<CreateKpiModal onClose={() => {}} />);
+    render(<CreateKpiModal onClose={() => {}} onCreate={() => {}} />);
     fireEvent.change(screen.getByPlaceholderText("Describe this KPI..."), { target: { value: "Original description" } });
     selectTheme();
     fireEvent.click(screen.getByTestId("kpi-ai-suggest"));
@@ -150,7 +131,7 @@ describe("CreateKpiModal AI Suggest", () => {
   });
 
   it("warns before replacing a hand-edited suggestion, and only overwrites after confirming", async () => {
-    render(<CreateKpiModal onClose={() => {}} />);
+    render(<CreateKpiModal onClose={() => {}} onCreate={() => {}} />);
     selectTheme();
     fireEvent.click(screen.getByTestId("kpi-ai-suggest"));
     await waitFor(() => expect(hooks.generate).toHaveBeenCalledTimes(1));
@@ -171,7 +152,7 @@ describe("CreateKpiModal AI Suggest", () => {
 
   it("shows an inline error only after a retry also fails", async () => {
     hooks.generate.mockRejectedValue(new Error("AI provider unavailable"));
-    render(<CreateKpiModal onClose={() => {}} />);
+    render(<CreateKpiModal onClose={() => {}} onCreate={() => {}} />);
     selectTheme();
     fireEvent.click(screen.getByTestId("kpi-ai-suggest"));
 
@@ -184,7 +165,7 @@ describe("CreateKpiModal AI Suggest", () => {
     hooks.generate
       .mockRejectedValueOnce(new Error("The AI response could not be used. Try generating suggestions again."))
       .mockResolvedValueOnce(batch([kpiSuggestion()]));
-    render(<CreateKpiModal onClose={() => {}} />);
+    render(<CreateKpiModal onClose={() => {}} onCreate={() => {}} />);
     selectTheme();
     fireEvent.click(screen.getByTestId("kpi-ai-suggest"));
 
@@ -195,36 +176,11 @@ describe("CreateKpiModal AI Suggest", () => {
 
   it("shows a notice instead of an error when there is no suggestion for the theme", async () => {
     hooks.generate.mockResolvedValue(batch([]));
-    render(<CreateKpiModal onClose={() => {}} />);
+    render(<CreateKpiModal onClose={() => {}} onCreate={() => {}} />);
     selectTheme();
     fireEvent.click(screen.getByTestId("kpi-ai-suggest"));
 
     expect((await screen.findByTestId("kpi-ai-notice")).textContent).toContain("No suggestion available");
     expect(screen.queryByTestId("kpi-ai-error")).toBeNull();
-  });
-
-  it("submits the real registry mutation with the current user as owner", () => {
-    render(<CreateKpiModal onClose={() => {}} />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. Revenue Growth (YoY)"), { target: { value: "Revenue Growth" } });
-    fireEvent.change(screen.getByPlaceholderText("e.g. نمو الإيرادات"), { target: { value: "نمو الإيرادات" } });
-    fireEvent.change(screen.getByPlaceholderText("e.g. %"), { target: { value: "%" } });
-
-    fireEvent.click(screen.getByRole("button", { name: "Create KPI" }));
-
-    expect(hooks.createDraft).toHaveBeenCalledWith(
-      expect.objectContaining({
-        nameEn: "Revenue Growth",
-        nameAr: "نمو الإيرادات",
-        unit: "%",
-        ownerUserId: USER_ID,
-        dataSourceType: "manual",
-      }),
-    );
-  });
-
-  it("shows the mutation's error message when creation fails", () => {
-    hooks.state.createError = { message: "You do not have permission to create KPIs." };
-    render(<CreateKpiModal onClose={() => {}} />);
-    expect(screen.getByTestId("kpi-create-error").textContent).toContain("You do not have permission");
   });
 });
