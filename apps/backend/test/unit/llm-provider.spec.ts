@@ -5,7 +5,8 @@ import {
   UnconfiguredLlmProvider,
 } from "../../src/modules/ai/anthropic.provider";
 import { AiTimeoutError, AiUnavailableError } from "../../src/modules/ai/ai.errors";
-import { createLlmProvider } from "../../src/modules/ai/llm.factory";
+import { createLlmProvider, createOpenAiOnlyProvider } from "../../src/modules/ai/llm.factory";
+import { OpenAiLlmProvider } from "../../src/modules/ai/openai.provider";
 import { createLogger } from "../../src/logging/logger";
 
 /**
@@ -230,5 +231,48 @@ describe("LLM provider factory", () => {
     await expect(new UnconfiguredLlmProvider().complete()).rejects.toBeInstanceOf(
       AiUnavailableError,
     );
+  });
+});
+
+describe("OpenAI-only provider factory (Executive Audio Brief)", () => {
+  it("degrades to the refusing placeholder when OPENAI_API_KEY is missing", () => {
+    // The Audio Brief feature must not stop the platform from booting or
+    // serving every other route when it has no OpenAI credentials.
+    const created = createOpenAiOnlyProvider(
+      { timeoutMs: 1000, maxRetries: 0 },
+      logger,
+    );
+
+    expect(created).toBeInstanceOf(UnconfiguredLlmProvider);
+    expect(created.isConfigured).toBe(false);
+  });
+
+  it("always builds an OpenAI provider, independent of the platform's chosen AI_PROVIDER", () => {
+    const created = createOpenAiOnlyProvider(
+      { apiKey: "test-key", timeoutMs: 1000, maxRetries: 2 },
+      logger,
+    );
+
+    expect(created).toBeInstanceOf(OpenAiLlmProvider);
+    expect(created.isConfigured).toBe(true);
+    expect(created.name).toBe("openai");
+  });
+
+  it("falls back to the OpenAI provider default model when none is configured", () => {
+    const created = createOpenAiOnlyProvider(
+      { apiKey: "test-key", timeoutMs: 1000, maxRetries: 0 },
+      logger,
+    );
+
+    expect(created.model).toBe("gpt-4o-mini");
+  });
+
+  it("uses a configured model when one is supplied", () => {
+    const created = createOpenAiOnlyProvider(
+      { apiKey: "test-key", model: "gpt-4.1-mini", timeoutMs: 1000, maxRetries: 0 },
+      logger,
+    );
+
+    expect(created.model).toBe("gpt-4.1-mini");
   });
 });

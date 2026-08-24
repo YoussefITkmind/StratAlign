@@ -290,6 +290,37 @@ const environmentSchema = z.object({
     .max(5)
     .default(2),
 
+  /**
+   * OpenAI credentials for the Executive Audio Brief feature specifically.
+   *
+   * Separate from `AI_*` above on purpose: audio brief script generation and
+   * text-to-speech both require OpenAI regardless of which vendor `AI_PROVIDER`
+   * selects for the rest of the platform (TTS has no Anthropic equivalent).
+   * Optional for the same reason `AI_API_KEY` is — the platform must still
+   * boot and serve every non-audio-brief route with this unset.
+   */
+  OPENAI_API_KEY: z
+    .string()
+    .min(1)
+    .optional(),
+
+  /** Falls back to a fixed default (see `llm.factory.ts`) when unset. */
+  OPENAI_MODEL: z
+    .string()
+    .min(1)
+    .optional(),
+
+  /** OpenAI TTS model. Falls back to "tts-1" when unset. */
+  OPENAI_TTS_MODEL: z
+    .string()
+    .min(1)
+    .default("tts-1"),
+
+  /** One of OpenAI's built-in TTS voices. "onyx" reads as a measured, professional voice suited to an executive briefing. */
+  OPENAI_TTS_VOICE: z
+    .enum(["alloy", "echo", "fable", "onyx", "nova", "shimmer"])
+    .default("onyx"),
+
   AUTH_SECRET: z
     .string()
     .min(32, "AUTH_SECRET must be at least 32 characters"),

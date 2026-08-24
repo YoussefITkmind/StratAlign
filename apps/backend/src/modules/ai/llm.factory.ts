@@ -62,3 +62,46 @@ export function createLlmProvider(
     ? new OpenAiLlmProvider(options, logger)
     : new AnthropicLlmProvider(options, logger);
 }
+
+export interface OpenAiOnlyProviderConfig {
+  readonly apiKey?: string;
+  /** Falls back to the OpenAI provider default when unset. */
+  readonly model?: string;
+  /** Falls back to the OpenAI provider default when unset. */
+  readonly baseUrl?: string;
+  readonly timeoutMs: number;
+  readonly maxRetries: number;
+}
+
+/**
+ * Constructs an OpenAI-only LLM client, bypassing `createLlmProvider`'s
+ * vendor switch.
+ *
+ * The Executive Audio Brief feature (Task 6) is the one caller: its script
+ * generation must always use OpenAI, because its second stage — OpenAI
+ * text-to-speech — has no Anthropic equivalent, regardless of which vendor
+ * the platform-wide `AI_PROVIDER` is set to. Every other AI feature keeps
+ * going through `createLlmProvider` and must not learn this function exists.
+ */
+export function createOpenAiOnlyProvider(
+  config: OpenAiOnlyProviderConfig,
+  logger: Logger,
+): LlmProvider {
+  if (!config.apiKey) {
+    logger.warn(
+      "OpenAI API key not configured; the Executive Audio Brief feature will refuse",
+    );
+    return new UnconfiguredLlmProvider();
+  }
+
+  return new OpenAiLlmProvider(
+    {
+      apiKey: config.apiKey,
+      model: config.model ?? PROVIDER_DEFAULTS.openai.model,
+      baseUrl: config.baseUrl ?? PROVIDER_DEFAULTS.openai.baseUrl,
+      timeoutMs: config.timeoutMs,
+      maxRetries: config.maxRetries,
+    },
+    logger,
+  );
+}

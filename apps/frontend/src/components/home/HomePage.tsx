@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import type { PlatformRole } from "@spm/domain-iam";
 import { trpc } from "@/lib/trpc/client";
 import type { WidgetKey } from "@/lib/roleWidgetConfig";
+import { AudioBriefPanel } from "@/components/home/AudioBriefPanel";
 
 interface HomeKpi {
   id: string;
@@ -280,6 +281,7 @@ export function HomePage({ resolvedRole: role, resolvedWidgets: widgets }: {
         {role && <span data-testid="home-role-label" className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">{role.replaceAll("_", " ")}</span>}
       </div>
       {snapshotQuery.error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{snapshotQuery.error.message}</p>}
+      <AudioBriefPanel />
       <div data-testid="home-widgets" className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {widgets.map((key) => <div key={key} data-testid={`widget-slot-${key}`} className={WIDGET_SPAN[key]}>{renderWidget(key)}</div>)}
       </div>

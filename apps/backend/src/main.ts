@@ -46,10 +46,12 @@ import { SchedulerReadService } from "./modules/scheduler/scheduler-read.service
 import { SchedulerService } from "./modules/scheduler/scheduler.service";
 import { CadenceEngine } from "./modules/cadence/cadence.engine";
 import { ValueManagementService } from "./modules/value/value-management.service";
-import { createLlmProvider } from "./modules/ai/llm.factory";
+import { createLlmProvider, createOpenAiOnlyProvider } from "./modules/ai/llm.factory";
 import { ThemeContextBuilder } from "./modules/ai/theme-context.builder";
 import { AiSuggestionService } from "./modules/ai/ai-suggestion.service";
 import { ContextAwareAssistantService } from "./modules/ai/assistant.service";
+import { AiAudioBriefService } from "./modules/ai/audio-brief.service";
+import { OpenAiTtsProvider, UnconfiguredTtsProvider } from "./modules/ai/openai-tts.provider";
 import { TraceabilityReadService } from "./modules/traceability/traceability-read.service";
 
 async function bootstrap(): Promise<void> {
@@ -138,6 +140,41 @@ async function bootstrap(): Promise<void> {
   );
   const assistant = new ContextAwareAssistantService(llm, logger.child("assistant"));
 
+  // Always OpenAI, independent of `AI_PROVIDER` above — see
+  // `llm.factory.ts#createOpenAiOnlyProvider` for why the Audio Brief
+  // feature cannot share the platform's vendor-agnostic `llm` instance.
+  const audioBriefLlm = createOpenAiOnlyProvider(
+    {
+      apiKey: environment.OPENAI_API_KEY,
+      model: environment.OPENAI_MODEL,
+      timeoutMs: environment.AI_TIMEOUT_MS,
+      maxRetries: environment.AI_MAX_RETRIES,
+    },
+    logger.child("audio-brief-llm"),
+  );
+  const audioBriefTts = environment.OPENAI_API_KEY
+    ? new OpenAiTtsProvider(
+        {
+          apiKey: environment.OPENAI_API_KEY,
+          baseUrl: "https://api.openai.com",
+          timeoutMs: environment.AI_TIMEOUT_MS,
+          maxRetries: environment.AI_MAX_RETRIES,
+        },
+        logger.child("audio-brief-tts"),
+      )
+    : new UnconfiguredTtsProvider();
+  const audioBrief = new AiAudioBriefService(
+    registry.kpi,
+    registry.okr,
+    execution,
+    performance,
+    audioBriefLlm,
+    audioBriefTts,
+    environment.OPENAI_TTS_MODEL,
+    environment.OPENAI_TTS_VOICE,
+    logger.child("audio-brief"),
+  );
+
   const server = createHTTPServer({
     router: rootRouter,
     basePath: "/trpc/",
@@ -151,7 +188,7 @@ async function bootstrap(): Promise<void> {
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
         strategyHierarchy,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
-        aiSuggestion, assistant,
+        aiSuggestion, assistant, audioBrief,
       };
     },
     middleware(request, response, next) {
