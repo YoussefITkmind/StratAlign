@@ -56,6 +56,7 @@ import { SyncLogsService } from "./modules/integrations/sync-logs.service";
 import { ApiKeysService } from "./modules/integrations/api-keys.service";
 import { WebhooksService } from "./modules/integrations/webhooks.service";
 import { ContextAwareAssistantService } from "./modules/ai/assistant.service";
+import { PixelRagClient } from "./modules/pixelrag/pixelrag.client";
 import { TraceabilityReadService } from "./modules/traceability/traceability-read.service";
 
 async function bootstrap(): Promise<void> {
@@ -167,6 +168,14 @@ async function bootstrap(): Promise<void> {
   );
   const assistant = new ContextAwareAssistantService(llm, logger.child("assistant"));
 
+  const pixelrag = environment.PIXELRAG_SERVICE_URL
+    ? new PixelRagClient(
+        environment.PIXELRAG_SERVICE_URL,
+        environment.PIXELRAG_TIMEOUT_MS,
+        environment.PIXELRAG_SERVICE_TOKEN,
+      )
+    : undefined;
+
   const server = createHTTPServer({
     router: rootRouter,
     basePath: "/trpc/",
@@ -180,7 +189,7 @@ async function bootstrap(): Promise<void> {
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
         strategyHierarchy,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
-        aiSuggestion, assistant, integrations,
+        aiSuggestion, assistant, integrations, pixelrag,
       };
     },
     middleware(request, response, next) {

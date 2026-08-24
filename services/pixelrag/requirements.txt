@@ -1,0 +1,17 @@
+# PixelRAG indexing, PDF rendering, and local search API.
+pixelrag[index,pdf,serve]==0.3.0
+
+# PDF generation/validation plus normalization for additional office/image inputs.
+reportlab>=4.2,<5
+PyMuPDF>=1.24,<2
+python-docx>=1.1,<2
+python-pptx>=1.0,<2
+openpyxl>=3.1,<4
+Pillow>=10,<12
+
+# Application/API.
+pydantic>=2.10,<3
+fastapi>=0.115,<1
+uvicorn>=0.34,<1
+httpx>=0.28,<1
+python-multipart>=0.0.9,<1

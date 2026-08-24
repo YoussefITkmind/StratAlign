@@ -15,6 +15,7 @@ import { valueGateRouter } from "@/server/routers/value-gate";
 import { aiSuggestionRouter } from "@/server/routers/ai-suggestion";
 import { integrationsRouter } from "@/server/routers/integrations";
 import { assistantRouter } from "@/server/routers/assistant";
+import { pixelRagRouter } from "@/server/routers/pixelrag";
 
 export const appRouter = router({
   auth: authRouter,
@@ -33,6 +34,7 @@ export const appRouter = router({
   aiSuggestion: aiSuggestionRouter,
   integrations: integrationsRouter,
   assistant: assistantRouter,
+  pixelrag: pixelRagRouter,
 });
 
 export type AppRouter = typeof appRouter;

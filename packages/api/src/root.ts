@@ -9,6 +9,9 @@ import { valueRouter } from "./value";
 import { aiSuggestionRouter } from "./ai-suggestion";
 import { integrationsRouter } from "./integrations";
 import { assistantRouter } from "./assistant";
+import { pixelRagRouter } from "./pixelrag";
+import { pixelRagDocumentManagementRouter } from "./pixelrag-document-management";
+import { pixelRagVisualRouter } from "./pixelrag-visual";
 
 export const rootRouter = mergeRouters(
   appRouter,
@@ -23,6 +26,9 @@ export const rootRouter = mergeRouters(
     aiSuggestion: aiSuggestionRouter,
     integrations: integrationsRouter,
     assistant: assistantRouter,
+    pixelrag: pixelRagRouter,
+    pixelragDocuments: pixelRagDocumentManagementRouter,
+    pixelragVisual: pixelRagVisualRouter,
   }),
 );
 

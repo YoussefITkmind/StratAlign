@@ -19,6 +19,7 @@ import {
   LogOut,
   CalendarDays,
   Sparkles,
+  BrainCircuit,
 } from 'lucide-react';
 import { LogoutButton } from '@/components/auth/logout-button';
 import { getInitials } from '@/lib/user';
@@ -71,6 +72,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Dashboards', href: '/dashboards', icon: LayoutDashboard },
       { label: 'Reports', href: '/reports', icon: BarChart2 },
+      { label: 'AI Intelligence', href: '/ai-intelligence', icon: BrainCircuit },
     ],
   },
   {

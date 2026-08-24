@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.env
+
+# PixelRAG runtime/generated data
+document-storage/
+indexes/
+ingestion-drop/
+demo-documents/
+mock-data/
