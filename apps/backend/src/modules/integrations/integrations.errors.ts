@@ -15,9 +15,4 @@ export const integrationsErrors = {
     new IntegrationsError("INTEGRATIONS_API_KEY_NOT_FOUND", "API key was not found"),
   webhookNotFound: () =>
     new IntegrationsError("INTEGRATIONS_WEBHOOK_NOT_FOUND", "Webhook was not found"),
-  concurrentUpdate: () =>
-    new IntegrationsError(
-      "INTEGRATIONS_CONCURRENT_UPDATE",
-      "This item was just changed by another request — please retry",
-    ),
 };
