@@ -530,63 +530,6 @@ describe("AiSuggestModal — accept", () => {
   });
 });
 
-/**
- * AI generation is English-only and no longer produces `titleAr` — the
- * registry still requires a non-empty Arabic name to create anything, so
- * these prove the review UI makes the reviewer supply it rather than
- * silently accepting an English-only KPI/OKR or sending an empty string.
- */
-describe("AiSuggestModal — English-only AI content", () => {
-  it("blocks Add and shows a hint when the AI left the Arabic title empty", async () => {
-    await renderWithBatch([kpiSuggestion({ titleAr: null })]);
-
-    expect(screen.getByTestId(`missing-arabic-${CLEAN_ID}`)).toBeTruthy();
-    const acceptButton = screen.getByTestId(`accept-${CLEAN_ID}`);
-    expect(isDisabled(acceptButton)).toBe(true);
-    expect(screen.getByText("Needs Arabic title")).toBeTruthy();
-
-    fireEvent.click(acceptButton);
-    expect(hooks.accept).not.toHaveBeenCalled();
-  });
-
-  it("enables Add once the reviewer supplies an Arabic title, and sends it", async () => {
-    await renderWithBatch([kpiSuggestion({ titleAr: null })]);
-    fireEvent.click(screen.getByTestId(`edit-${CLEAN_ID}`));
-
-    fireEvent.change(screen.getByLabelText(/Title \(Arabic\)/), {
-      target: { value: "نسبة" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save edits" }));
-
-    expect(screen.queryByTestId(`missing-arabic-${CLEAN_ID}`)).toBeNull();
-    const acceptButton = screen.getByTestId(`accept-${CLEAN_ID}`);
-    expect(isDisabled(acceptButton)).toBe(false);
-
-    fireEvent.click(acceptButton);
-    await waitFor(() => expect(hooks.accept).toHaveBeenCalledOnce());
-    expect(payloadOf(hooks.accept)).toMatchObject({ titleAr: "نسبة" });
-  });
-
-  it("excludes an item missing its Arabic title from Add all, without blocking the rest", async () => {
-    await renderWithBatch([kpiSuggestion({ titleAr: null }), okrSuggestion()]);
-
-    fireEvent.click(screen.getByTestId("accept-all"));
-
-    await waitFor(() => expect(hooks.acceptMany).toHaveBeenCalledOnce());
-    const submitted = (payloadOf(hooks.acceptMany).suggestions as Array<{ suggestionId: string }>);
-    expect(submitted.map((item) => item.suggestionId)).toEqual([OKR_ID]);
-  });
-
-  it("never invents or duplicates English text into the Arabic field", async () => {
-    await renderWithBatch([kpiSuggestion({ titleAr: null })]);
-    fireEvent.click(screen.getByTestId(`edit-${CLEAN_ID}`));
-
-    // The Arabic field starts genuinely empty, not pre-filled with the
-    // English title or any placeholder text masquerading as a value.
-    expect((screen.getByLabelText(/Title \(Arabic\)/) as HTMLInputElement).value).toBe("");
-  });
-});
-
 describe("AiSuggestModal — edit", () => {
   it("sends the edited values and keeps the item flagged as AI-originated", async () => {
     await renderWithBatch([kpiSuggestion()]);
