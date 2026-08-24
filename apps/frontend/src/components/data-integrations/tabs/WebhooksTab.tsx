@@ -35,7 +35,7 @@ export default function WebhooksTab({ search }: { search: string }) {
     },
   });
   const toggleActiveMutation = trpc.integrations.webhooks.toggleActive.useMutation({
-    onSettled: () => utils.integrations.webhooks.list.invalidate(),
+    onSuccess: () => utils.integrations.webhooks.list.invalidate(),
   });
   const deleteMutation = trpc.integrations.webhooks.delete.useMutation({
     onSuccess: () => {

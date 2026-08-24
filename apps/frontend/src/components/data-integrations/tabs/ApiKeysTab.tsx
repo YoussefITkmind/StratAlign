@@ -48,7 +48,7 @@ export default function ApiKeysTab({ search }: { search: string }) {
     },
   });
   const toggleDisabledMutation = trpc.integrations.apiKeys.toggleDisabled.useMutation({
-    onSettled: () => utils.integrations.apiKeys.list.invalidate(),
+    onSuccess: () => utils.integrations.apiKeys.list.invalidate(),
   });
   const revokeMutation = trpc.integrations.apiKeys.revoke.useMutation({
     onSuccess: () => {
@@ -64,8 +64,7 @@ export default function ApiKeysTab({ search }: { search: string }) {
   }
 
   function copyKey(k: ApiKeyRow) {
-    const value = justCreatedSecrets[k.id];
-    if (!value) return;
+    const value = justCreatedSecrets[k.id] ?? k.keyPreview;
     navigator.clipboard?.writeText(value);
     setCopiedId(k.id);
     setTimeout(() => setCopiedId(null), 1500);
@@ -96,9 +95,8 @@ export default function ApiKeysTab({ search }: { search: string }) {
 
       <div className="mt-4 flex flex-col gap-3">
         {filtered.map((k) => {
-          const knownSecret = justCreatedSecrets[k.id];
-          const isRevealed = Boolean(knownSecret) && revealed.includes(k.id);
-          const displayValue = knownSecret ?? k.keyPreview;
+          const isRevealed = revealed.includes(k.id);
+          const displayValue = justCreatedSecrets[k.id] ?? k.keyPreview;
           return (
             <div
               key={k.id}
@@ -125,20 +123,16 @@ export default function ApiKeysTab({ search }: { search: string }) {
                     <code className="rounded-md bg-slate-50 px-2 py-1 text-xs text-slate-500">
                       {isRevealed ? displayValue : k.keyPreview}
                     </code>
-                    {knownSecret && (
-                      <button
-                        onClick={() => toggleReveal(k.id)}
-                        className="text-slate-400 hover:text-slate-600"
-                        title={isRevealed ? "Hide key" : "Show key"}
-                      >
-                        {isRevealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      </button>
-                    )}
+                    <button
+                      onClick={() => toggleReveal(k.id)}
+                      className="text-slate-400 hover:text-slate-600"
+                      title={isRevealed ? "Hide key" : "Show key"}
+                    >
+                      {isRevealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </button>
                     <button
                       onClick={() => copyKey(k)}
-                      disabled={!knownSecret}
-                      title={knownSecret ? undefined : "The full key is only available when it's created — this can't be retrieved afterward"}
-                      className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+                      className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
                     >
                       {copiedId === k.id ? (
                         <Check className="h-3 w-3 text-emerald-600" />
@@ -148,7 +142,7 @@ export default function ApiKeysTab({ search }: { search: string }) {
                       {copiedId === k.id ? "Copied" : "Copy"}
                     </button>
                   </div>
-                  {knownSecret && (
+                  {justCreatedSecrets[k.id] && (
                     <p className="mt-1 text-[11px] text-amber-600">
                       This is the only time the full key is shown — copy it now.
                     </p>

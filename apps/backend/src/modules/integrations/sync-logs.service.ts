@@ -13,7 +13,6 @@ export interface SyncLogView {
   message: string;
   color: string;
   icon: string;
-  createdAt: Date;
 }
 
 function toView(row: SyncLogRow): SyncLogView {
@@ -29,7 +28,6 @@ function toView(row: SyncLogRow): SyncLogView {
     message: row.message,
     color: row.color,
     icon: row.icon,
-    createdAt: row.createdAt,
   };
 }
 
