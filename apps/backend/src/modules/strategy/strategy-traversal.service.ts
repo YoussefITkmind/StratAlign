@@ -56,9 +56,17 @@ export class StrategyTraversalService {
   private readonly db: Kysely<StrategyDatabase>;
 
   constructor(connectionString: string) {
+    const pool = new Pool({ connectionString, max: 4 });
+    // node-postgres requires a listener here: an idle client terminated by the
+    // backend (e.g. the database shutting down while a pooled connection sits
+    // idle) otherwise surfaces as an unhandled error and crashes the process
+    // instead of just failing the query in flight.
+    pool.on("error", (error) => {
+      console.error("[StrategyTraversalService] idle pool client error", error);
+    });
     this.db = new Kysely<StrategyDatabase>({
       dialect: new PostgresDialect({
-        pool: new Pool({ connectionString, max: 4 }),
+        pool,
       }),
     });
   }

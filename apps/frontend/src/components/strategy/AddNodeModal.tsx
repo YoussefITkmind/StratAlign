@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 import { StrategyNode, NodeType, NodeStatus } from "@/types/strategy";
 import { TYPE_CONFIG, STATUS_CONFIG } from "@/lib/strategyConfig";
 import { flatten } from "@/lib/treeUtils";
+import { trpc } from "@/lib/trpc/client";
 
 export interface NodeFormValues {
   name: string;
@@ -50,7 +51,31 @@ export default function AddNodeModal({ tree, defaultParentId, editNode, onClose,
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [isGenerated, setIsGenerated] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const draftDescription = trpc.strategyHierarchy.draftDescription.useMutation();
+
   const allNodes = flatten(tree);
+
+  const handleDraftDescription = async () => {
+    if (!name.trim()) return;
+    if (!isGenerated && description.trim() && !window.confirm("Replace your current description with an AI draft?")) {
+      return;
+    }
+    setDraftError(null);
+    try {
+      const parentNode = allNodes.find((n) => n.node.id === parentId)?.node;
+      const { draft } = await draftDescription.mutateAsync({
+        name: name.trim(),
+        type,
+        parentName: parentNode?.name,
+      });
+      setDescription(draft);
+      setIsGenerated(true);
+    } catch (e) {
+      setDraftError(e instanceof Error ? e.message : "Failed to generate a draft. Please try again.");
+    }
+  };
 
   const submit = async () => {
     if (!name.trim() || !ownerName.trim()) return;
@@ -198,14 +223,59 @@ export default function AddNodeModal({ tree, defaultParentId, editNode, onClose,
           </div>
 
           <div>
-            <label className={labelClass}>Description</label>
+            <div className="mb-1 flex items-center justify-between">
+              <label className={labelClass}>Description</label>
+              {!isGenerated ? (
+                <button
+                  type="button"
+                  onClick={handleDraftDescription}
+                  disabled={!name.trim() || draftDescription.isPending}
+                  className="flex items-center gap-1.5 rounded bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  {draftDescription.isPending ? (
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3 w-3" />
+                  )}
+                  {draftDescription.isPending ? "Drafting..." : "Draft with AI"}
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDraftDescription}
+                    disabled={draftDescription.isPending}
+                    className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${draftDescription.isPending ? "animate-spin" : ""}`} />
+                    Regenerate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDescription("");
+                      setIsGenerated(false);
+                      setDraftError(null);
+                    }}
+                    className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Reject
+                  </button>
+                </div>
+              )}
+            </div>
             <textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => {
+                setDescription(e.target.value);
+                setIsGenerated(false);
+              }}
               rows={3}
               placeholder="What is this node about?"
               className={inputClass}
             />
+            {draftError && <p className="mt-1 text-xs text-red-600">{draftError}</p>}
           </div>
 
           <div>

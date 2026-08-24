@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { PrismaService } from "../../database/prisma.service";
+import type { Prisma } from "../../generated/prisma/client";
+import { hierarchyImportPayloadSchema, type HierarchyImportPayload } from "./strategy-hierarchy-import.schema";
 
 export type StrategyNodeType = "corporate_strategy" | "theme" | "objective" | "strategic_play" | "portfolio" | "area_of_focus";
 export type StrategyNodeState = "draft" | "active" | "retired";
 export type StrategyEdgeType = "contains" | "executed_by" | "belongs_to_portfolio" | "aligns_to";
 export type PlanVersionStatus = "draft" | "active" | "closed";
-export type StagedChangeKind = "node_create" | "node_update" | "node_retire" | "edge_link" | "edge_unlink";
+export type StagedChangeKind = "node_create" | "node_update" | "node_retire" | "edge_link" | "edge_unlink" | "hierarchy_import";
 
 export interface PlanVersionRecord { id: string; name: string; status: PlanVersionStatus; opensAt: Date | null; closesAt: Date | null; sourcePlanVersionId: string | null; }
 export interface StrategyNodeRecord { id: string; type: StrategyNodeType; nameEn: string; nameAr: string; planVersionId: string; state: StrategyNodeState; createdBy: string; createdAt: Date; }
@@ -81,6 +84,53 @@ export class StrategyService {
     return mapOwner(rows[0]!);
   }
 
+  async stageHierarchyImport(input: {
+    stagedChangeId: string;
+    approvalCaseId: string;
+    planVersionId: string;
+    diffId: string;
+    nodes: HierarchyImportPayload["nodes"];
+    edges: HierarchyImportPayload["edges"];
+    actorUserId: string;
+  }): Promise<StagedChangeRecord> {
+    return this.stageHierarchyImportWithClient(this.prisma, input);
+  }
+
+  async stageHierarchyImportInTransaction(
+    tx: Prisma.TransactionClient,
+    input: Parameters<StrategyService["stageHierarchyImport"]>[0],
+  ): Promise<StagedChangeRecord> {
+    return this.stageHierarchyImportWithClient(tx, input);
+  }
+
+  private async stageHierarchyImportWithClient(
+    client: PrismaService | Prisma.TransactionClient,
+    input: Parameters<StrategyService["stageHierarchyImport"]>[0],
+  ): Promise<StagedChangeRecord> {
+    const planRows = await client.$queryRaw<PlanRow[]>`SELECT * FROM strategy.plan_versions WHERE id=${input.planVersionId}::uuid`;
+    if (planRows[0]?.status !== "active") throw new Error("Hierarchy imports require an active plan version");
+    const payload = hierarchyImportPayloadSchema.parse({ diffId: input.diffId, nodes: input.nodes, edges: input.edges });
+    const existingRows = await client.$queryRaw<StageRow[]>`SELECT * FROM strategy.staged_changes WHERE id=${input.stagedChangeId}::uuid`;
+    const existing = existingRows[0];
+    if (existing) {
+      const persistedPayload = hierarchyImportPayloadSchema.safeParse(existing.payload);
+      if (
+        existing.kind !== "hierarchy_import" ||
+        existing.approval_case_id !== input.approvalCaseId ||
+        existing.plan_version_id !== input.planVersionId ||
+        existing.requested_by !== input.actorUserId ||
+        existing.status !== "pending" ||
+        !persistedPayload.success ||
+        !isDeepStrictEqual(persistedPayload.data, payload)
+      ) {
+        throw new Error("Existing staged change conflicts with the requested hierarchy import");
+      }
+      return mapStage(existing);
+    }
+    const inserted = await client.$queryRaw<StageRow[]>`INSERT INTO strategy.staged_changes (id,approval_case_id,plan_version_id,kind,target_id,payload,requested_by) VALUES (${input.stagedChangeId}::uuid,${input.approvalCaseId}::uuid,${input.planVersionId}::uuid,'hierarchy_import'::strategy."StagedChangeKind",NULL,${JSON.stringify(payload)}::jsonb,${input.actorUserId}) RETURNING *`;
+    return mapStage(inserted[0]!);
+  }
+
   async openPlanVersion(planVersionId: string, opensAt = new Date()): Promise<PlanVersionRecord> {
     const plan = await this.requirePlan(planVersionId); this.assertDraft(plan); await this.validateMinimumCardinality(planVersionId);
     return this.prisma.$transaction(async (tx) => {
@@ -119,6 +169,7 @@ export class StrategyService {
         else if(c.kind==="node_retire") await tx.$executeRaw`UPDATE strategy.strategy_nodes SET state='retired' WHERE id=${c.target_id}::uuid`;
         else if(c.kind==="edge_link") await tx.$executeRaw`INSERT INTO strategy.strategy_edges (id,from_node_id,to_node_id,edge_type,plan_version_id) VALUES (${randomUUID()}::uuid,${String(p.fromNodeId)}::uuid,${String(p.toNodeId)}::uuid,${String(p.edgeType)}::strategy."StrategyEdgeType",${c.plan_version_id}::uuid)`;
         else if(c.kind==="edge_unlink") await tx.$executeRaw`DELETE FROM strategy.strategy_edges WHERE id=${c.target_id}::uuid`;
+        else if(c.kind==="hierarchy_import") throw new Error("Hierarchy imports must be activated through StrategyActivationService");
       }
       await tx.$executeRaw`UPDATE strategy.staged_changes SET status='applied',applied_at=CURRENT_TIMESTAMP WHERE approval_case_id=${approvalCaseId}::uuid AND status='pending'`; return changes.length;
     });

@@ -13,6 +13,7 @@ const hooks = vi.hoisted(() => ({
   createNode: vi.fn(),
   updateNode: vi.fn(),
   deleteNode: vi.fn(),
+  draftDescription: vi.fn(),
   invalidate: vi.fn(),
   treeData: undefined as unknown,
   treeLoading: false,
@@ -26,8 +27,16 @@ vi.mock("@/lib/trpc/client", () => ({
       createNode: { useMutation: () => ({ mutateAsync: hooks.createNode }) },
       updateNode: { useMutation: () => ({ mutateAsync: hooks.updateNode }) },
       deleteNode: { useMutation: () => ({ mutateAsync: hooks.deleteNode }) },
+      draftDescription: { useMutation: () => ({ mutateAsync: hooks.draftDescription, isPending: false }) },
     },
   },
+}));
+
+// This page publishes its tree to the global assistant (see
+// `usePublishAssistantContext` in StrategyHierarchyPage) — stubbed here so
+// these tests don't need a full AssistantProvider tree just to render.
+vi.mock("@/lib/assistant/assistant-context", () => ({
+  usePublishAssistantContext: () => {},
 }));
 
 import StrategyHierarchyPage from "@/components/strategy/StrategyHierarchyPage";

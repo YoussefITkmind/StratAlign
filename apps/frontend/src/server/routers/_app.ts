@@ -13,6 +13,8 @@ import { homeRouter } from "@/server/routers/home";
 import { executionRouter } from "@/server/routers/execution";
 import { valueGateRouter } from "@/server/routers/value-gate";
 import { aiSuggestionRouter } from "@/server/routers/ai-suggestion";
+import { integrationsRouter } from "@/server/routers/integrations";
+import { assistantRouter } from "@/server/routers/assistant";
 import { pixelRagRouter } from "@/server/routers/pixelrag";
 
 export const appRouter = router({
@@ -30,6 +32,8 @@ export const appRouter = router({
   execution: executionRouter,
   valueGate: valueGateRouter,
   aiSuggestion: aiSuggestionRouter,
+  integrations: integrationsRouter,
+  assistant: assistantRouter,
   pixelrag: pixelRagRouter,
 });
 

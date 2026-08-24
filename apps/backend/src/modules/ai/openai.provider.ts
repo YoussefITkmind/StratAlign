@@ -139,7 +139,11 @@ export class OpenAiLlmProvider implements LlmProvider {
             // guarantee at the API level instead of a convention the model can
             // drift from (a markdown fence or a leading sentence otherwise
             // reaches the parser as malformed output, not as a wrong answer).
-            response_format: { type: "json_object" },
+            // Only applied for JSON callers: the OpenAI API rejects a
+            // json_object request outright with a 400 unless the prompt text
+            // itself mentions "json", which a plain-prose caller has no
+            // reason to do.
+            ...(request.responseFormat === "text" ? {} : { response_format: { type: "json_object" } }),
             messages: [
               { role: "system", content: request.system },
               { role: "user", content: request.prompt },

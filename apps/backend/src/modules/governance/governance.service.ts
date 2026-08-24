@@ -128,7 +128,13 @@ export class GovernanceService {
   ) {}
 
   async ensureDefaultWorkflowDefinition() {
-    return this.prisma.workflowDefinition.upsert({
+    return this.ensureDefaultWorkflowDefinitionWithClient(this.prisma);
+  }
+
+  private async ensureDefaultWorkflowDefinitionWithClient(
+    client: PrismaService | Prisma.TransactionClient,
+  ) {
+    return client.workflowDefinition.upsert({
       where: {
         workflowKey_version: {
           workflowKey: DEFAULT_WORKFLOW_KEY,
@@ -165,15 +171,29 @@ export class GovernanceService {
   async createCase(
     input: CreateApprovalCaseInput,
   ) {
+    return this.createCaseWithClient(this.prisma, input);
+  }
+
+  async createCaseInTransaction(
+    tx: Prisma.TransactionClient,
+    input: CreateApprovalCaseInput,
+  ) {
+    return this.createCaseWithClient(tx, input);
+  }
+
+  private async createCaseWithClient(
+    client: PrismaService | Prisma.TransactionClient,
+    input: CreateApprovalCaseInput,
+  ) {
     const workflowKey =
       input.workflowKey ?? DEFAULT_WORKFLOW_KEY;
 
     if (workflowKey === DEFAULT_WORKFLOW_KEY) {
-      await this.ensureDefaultWorkflowDefinition();
+      await this.ensureDefaultWorkflowDefinitionWithClient(client);
     }
 
     const definition =
-      await this.prisma.workflowDefinition.findFirst({
+      await client.workflowDefinition.findFirst({
         where: {
           workflowKey,
           isCurrent: true,
@@ -211,7 +231,7 @@ export class GovernanceService {
     const persisted =
       actor.getPersistedSnapshot();
 
-    return this.prisma.approvalCase.create({
+    return client.approvalCase.create({
       data: {
         workflowDefinitionId: definition.id,
         entityType: input.entityType,

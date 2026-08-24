@@ -97,7 +97,10 @@ export default function CreateKpiModal({
     setAiError(null);
     setAiNotice(null);
     try {
-      const result = await generate.mutateAsync({ themeNodeId, kinds: ["kpi"], maxSuggestions: 1 });
+      // Ask for a small pool, not just one: the backend only returns suggestions
+      // that pass its own applicability checks, so requesting a single candidate
+      // makes "nothing came back usable" far likelier than it needs to be.
+      const result = await generate.mutateAsync({ themeNodeId, kinds: ["kpi"], maxSuggestions: 5 });
       const suggestion = result.suggestions[0];
       if (!suggestion) {
         setAiNotice("No suggestion available for this theme — continue manually.");

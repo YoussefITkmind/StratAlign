@@ -14,6 +14,8 @@ export const strategyRouter = router({
     .query(({ ctx, input }) => forward(() => backend(ctx).strategy.node.get.query(input))),
   trace: authenticatedProcedure.input(z.object({ nodeId: id }).strict())
     .query(({ ctx, input }) => forward(() => backend(ctx).strategy.node.trace.query(input))),
+  fullTrace: authenticatedProcedure.input(z.object({ nodeId: id }).strict())
+    .query(({ ctx, input }) => forward(() => backend(ctx).strategy.query.getFullTrace.query(input))),
   plans: authenticatedProcedure.query(({ ctx }) => forward(() => backend(ctx).strategy.planVersion.list.query())),
   edges: authenticatedProcedure.input(z.object({ planVersionId: id }).strict())
     .query(({ ctx, input }) => forward(() => backend(ctx).strategy.edge.list.query(input))),

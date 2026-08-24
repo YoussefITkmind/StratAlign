@@ -23,11 +23,46 @@ export interface InitiativeListItemView {
   nameAr: string;
   strategicPlayNodeId: string;
   ownerUserId: string;
+  ownerDisplayName: string | null;
   stage: InitiativeStage;
   latestStatus: InitiativeStatus | null;
   latestConfidence: ConfidenceLevel | null;
   hasJiraLink: boolean;
+  linkedProjectCount: number;
   updatedAt: Date;
+}
+
+export interface InitiativeDetailView {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  strategicPlayNodeId: string;
+  ownerUserId: string;
+  stage: InitiativeStage;
+  createdAt: Date;
+  updatedAt: Date;
+  owner: { id: string; displayName: string | null };
+  strategicPlay: { id: string; nameEn: string; nameAr: string; planVersionId: string };
+  objectives: Array<{ id: string; nameEn: string; nameAr: string }>;
+  jiraLink: null | {
+    id: string;
+    jiraProjectKey: string;
+    jiraProjectUrl: string;
+    lastSyncedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+  };
+  milestones: Array<{
+    id: string;
+    nameEn: string;
+    nameAr: string;
+    dueDate: Date;
+    forecastDate: Date | null;
+    health: "on_time" | "at_risk" | "late";
+    source: "manual" | "jira";
+    createdAt: Date;
+  }>;
+  latestStatus: null | Omit<StatusUpdateView, "initiativeId">;
 }
 
 export interface StatusUpdateView {
@@ -59,11 +94,23 @@ interface InitiativeListRow {
   name_ar: string;
   strategic_play_node_id: string;
   owner_user_id: string;
+  owner_display_name: string | null;
   stage: InitiativeStage;
   updated_at: Date;
   latest_status: InitiativeStatus | null;
   latest_confidence: ConfidenceLevel | null;
   has_jira_link: boolean;
+  linked_project_count: number;
+  play_owned_by_actor: boolean;
+}
+
+interface InitiativeDetailRow extends InitiativeRow {
+  updated_at: Date;
+  owner_display_name: string | null;
+  play_id: string | null;
+  play_name_en: string | null;
+  play_name_ar: string | null;
+  play_plan_version_id: string | null;
 }
 
 interface StatusRow {
@@ -153,15 +200,23 @@ export class ExecutionService {
 
   async list(input: {
     status?: InitiativeStatus;
-    scope: "all" | "mine";
+    scope: "all" | "mine" | "my_plays";
     actorUserId: string;
   }): Promise<InitiativeListItemView[]> {
     const rows = await this.prisma.$queryRaw<InitiativeListRow[]>`
       SELECT
-        i.id, i.name_en, i.name_ar, i.strategic_play_node_id, i.owner_user_id, i.stage, i.updated_at,
+        i.id, i.name_en, i.name_ar, i.strategic_play_node_id, i.owner_user_id,
+        u.display_name AS owner_display_name, i.stage, i.updated_at,
         s.status AS latest_status, s.confidence AS latest_confidence,
-        (j.id IS NOT NULL) AS has_jira_link
+        (j.id IS NOT NULL) AS has_jira_link,
+        (CASE WHEN j.id IS NULL THEN 0 ELSE 1 END)::int AS linked_project_count,
+        EXISTS (
+          SELECT 1 FROM "strategy"."owner_assignments" oa
+          WHERE oa.node_id = i.strategic_play_node_id
+            AND oa.owner_user_id = ${input.actorUserId}
+        ) AS play_owned_by_actor
       FROM "execution"."initiatives" i
+      LEFT JOIN "iam"."users" u ON u.id = i.owner_user_id
       LEFT JOIN LATERAL (
         SELECT status, confidence
         FROM "execution"."status_updates" su
@@ -175,6 +230,7 @@ export class ExecutionService {
 
     return rows
       .filter((row) => input.scope !== "mine" || row.owner_user_id === input.actorUserId)
+      .filter((row) => input.scope !== "my_plays" || row.play_owned_by_actor)
       .filter((row) => !input.status || row.latest_status === input.status)
       .map((row) => ({
         id: row.id,
@@ -182,20 +238,149 @@ export class ExecutionService {
         nameAr: row.name_ar,
         strategicPlayNodeId: row.strategic_play_node_id,
         ownerUserId: row.owner_user_id,
+        ownerDisplayName: row.owner_display_name,
         stage: row.stage,
         latestStatus: row.latest_status,
         latestConfidence: row.latest_confidence,
         hasJiraLink: row.has_jira_link,
+        linkedProjectCount: row.linked_project_count,
         updatedAt: row.updated_at,
       }));
+  }
+
+  async getInitiative(initiativeId: string): Promise<InitiativeDetailView> {
+    const [initiative] = await this.prisma.$queryRaw<InitiativeDetailRow[]>`
+      SELECT
+        i.id, i.name_en, i.name_ar, i.strategic_play_node_id, i.owner_user_id,
+        i.stage, i.created_at, i.updated_at,
+        u.display_name AS owner_display_name,
+        sp.id AS play_id, sp.name_en AS play_name_en, sp.name_ar AS play_name_ar,
+        sp.plan_version_id AS play_plan_version_id
+      FROM "execution"."initiatives" i
+      LEFT JOIN "iam"."users" u ON u.id = i.owner_user_id
+      LEFT JOIN "strategy"."strategy_nodes" sp ON sp.id = i.strategic_play_node_id
+      WHERE i.id = ${initiativeId}::uuid
+    `;
+    if (!initiative) throw executionErrors.initiativeNotFound();
+    if (!initiative.play_id || !initiative.play_name_en || !initiative.play_name_ar || !initiative.play_plan_version_id) {
+      throw executionErrors.invalidOperation("Initiative strategic play could not be resolved");
+    }
+
+    const [objectives, jiraLinks, latestStatuses] = await Promise.all([
+      this.prisma.$queryRaw<Array<{ id: string; name_en: string; name_ar: string }>>`
+        SELECT objective.id, objective.name_en, objective.name_ar
+        FROM "strategy"."strategy_edges" edge
+        JOIN "strategy"."strategy_nodes" objective ON objective.id = edge.from_node_id
+        WHERE edge.to_node_id = ${initiative.strategic_play_node_id}::uuid
+          AND edge.edge_type = 'executed_by'::"strategy"."StrategyEdgeType"
+          AND edge.plan_version_id = ${initiative.play_plan_version_id}::uuid
+          AND objective.plan_version_id = ${initiative.play_plan_version_id}::uuid
+          AND objective.type = 'objective'::"strategy"."StrategyNodeType"
+        ORDER BY objective.name_en ASC, objective.id ASC
+      `,
+      this.prisma.$queryRaw<Array<{
+        id: string;
+        jira_project_key: string;
+        jira_project_url: string;
+        last_synced_at: Date | null;
+        created_at: Date;
+        updated_at: Date;
+      }>>`
+        SELECT id, jira_project_key, jira_project_url, last_synced_at, created_at, updated_at
+        FROM "execution"."jira_links"
+        WHERE initiative_id = ${initiativeId}::uuid
+      `,
+      this.prisma.$queryRaw<StatusRow[]>`
+        SELECT id, initiative_id, period, stage, status, confidence,
+               narrative_en, narrative_ar, submitted_by, created_at
+        FROM "execution"."status_updates"
+        WHERE initiative_id = ${initiativeId}::uuid
+        ORDER BY period DESC, created_at DESC, id DESC
+        LIMIT 1
+      `,
+    ]);
+
+    const jira = jiraLinks[0] ?? null;
+    const milestones = jira
+      ? await this.prisma.$queryRaw<Array<{
+          id: string;
+          name_en: string;
+          name_ar: string;
+          due_date: Date;
+          forecast_date: Date | null;
+          health: "on_time" | "at_risk" | "late";
+          source: "manual" | "jira";
+          created_at: Date;
+        }>>`
+          SELECT id, name_en, name_ar, due_date, forecast_date, health, source, created_at
+          FROM "execution"."milestone_flags"
+          WHERE jira_link_id = ${jira.id}::uuid
+          ORDER BY due_date ASC, id ASC
+        `
+      : [];
+    const latestStatus = latestStatuses[0] ? statusView(latestStatuses[0]) : null;
+
+    return {
+      id: initiative.id,
+      nameEn: initiative.name_en,
+      nameAr: initiative.name_ar,
+      strategicPlayNodeId: initiative.strategic_play_node_id,
+      ownerUserId: initiative.owner_user_id,
+      stage: initiative.stage,
+      createdAt: initiative.created_at,
+      updatedAt: initiative.updated_at,
+      owner: { id: initiative.owner_user_id, displayName: initiative.owner_display_name },
+      strategicPlay: {
+        id: initiative.play_id,
+        nameEn: initiative.play_name_en,
+        nameAr: initiative.play_name_ar,
+        planVersionId: initiative.play_plan_version_id,
+      },
+      objectives: objectives.map((row) => ({ id: row.id, nameEn: row.name_en, nameAr: row.name_ar })),
+      jiraLink: jira ? {
+        id: jira.id,
+        jiraProjectKey: jira.jira_project_key,
+        jiraProjectUrl: jira.jira_project_url,
+        lastSyncedAt: jira.last_synced_at,
+        createdAt: jira.created_at,
+        updatedAt: jira.updated_at,
+      } : null,
+      milestones: milestones.map((row) => ({
+        id: row.id,
+        nameEn: row.name_en,
+        nameAr: row.name_ar,
+        dueDate: row.due_date,
+        forecastDate: row.forecast_date,
+        health: row.health,
+        source: row.source,
+        createdAt: row.created_at,
+      })),
+      latestStatus: latestStatus ? {
+        id: latestStatus.id,
+        period: latestStatus.period,
+        stage: latestStatus.stage,
+        status: latestStatus.status,
+        confidence: latestStatus.confidence,
+        narrativeEn: latestStatus.narrativeEn,
+        narrativeAr: latestStatus.narrativeAr,
+        submittedBy: latestStatus.submittedBy,
+        createdAt: latestStatus.createdAt,
+      } : null,
+    };
   }
 
   async linkJira(input: {
     initiativeId: string;
     jiraProjectKey: string;
     jiraProjectUrl: string;
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
   }) {
-    await this.requireInitiative(input.initiativeId);
+    await this.authorizeInitiativeWrite(
+      input.initiativeId,
+      input.actorUserId,
+      input.actorIsSeoAdministrator,
+    );
     const [row] = await this.prisma.$queryRaw<Array<{
       id: string;
       initiative_id: string;
@@ -231,11 +416,19 @@ export class ExecutionService {
     forecastDate?: Date | null;
     health: "on_time" | "at_risk" | "late";
     source: "manual" | "jira";
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
   }) {
-    const link = await this.prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT id FROM "execution"."jira_links" WHERE id = ${input.jiraLinkId}::uuid
-    `;
-    if (!link[0]) throw executionErrors.jiraLinkNotFound();
+    const link = await this.prisma.jiraLink.findUnique({
+      where: { id: input.jiraLinkId },
+      select: { initiativeId: true },
+    });
+    if (!link) throw executionErrors.jiraLinkNotFound();
+    await this.authorizeInitiativeWrite(
+      link.initiativeId,
+      input.actorUserId,
+      input.actorIsSeoAdministrator,
+    );
 
     const [row] = await this.prisma.$queryRaw<Array<{
       id: string;
@@ -265,14 +458,19 @@ export class ExecutionService {
     confidence: ConfidenceLevel;
     narrativeEn?: string | null;
     narrativeAr?: string | null;
-    submittedBy: string;
+    actorUserId: string;
+    actorIsSeoAdministrator: boolean;
   }): Promise<StatusUpdateView> {
-    await this.requireInitiative(input.initiativeId);
+    await this.authorizeInitiativeWrite(
+      input.initiativeId,
+      input.actorUserId,
+      input.actorIsSeoAdministrator,
+    );
     const [row] = await this.prisma.$queryRaw<StatusRow[]>`
       INSERT INTO "execution"."status_updates"
         ("initiative_id", "period", "stage", "status", "confidence", "narrative_en", "narrative_ar", "submitted_by")
       VALUES
-        (${input.initiativeId}::uuid, ${input.period}, ${input.stage}::"execution"."InitiativeStage", ${input.status}::"execution"."InitiativeStatus", ${input.confidence}::"execution"."ConfidenceLevel", ${input.narrativeEn ?? null}, ${input.narrativeAr ?? null}, ${input.submittedBy})
+        (${input.initiativeId}::uuid, ${input.period}, ${input.stage}::"execution"."InitiativeStage", ${input.status}::"execution"."InitiativeStatus", ${input.confidence}::"execution"."ConfidenceLevel", ${input.narrativeEn ?? null}, ${input.narrativeAr ?? null}, ${input.actorUserId})
       RETURNING id, initiative_id, period, stage, status, confidence, narrative_en, narrative_ar, submitted_by, created_at
     `;
     if (!row) throw executionErrors.invalidOperation();
@@ -349,5 +547,34 @@ export class ExecutionService {
       SELECT id FROM "execution"."initiatives" WHERE id = ${initiativeId}::uuid
     `;
     if (!rows[0]) throw executionErrors.initiativeNotFound();
+  }
+
+  private async authorizeInitiativeWrite(
+    initiativeId: string,
+    actorUserId: string,
+    actorIsSeoAdministrator: boolean,
+  ): Promise<void> {
+    if (actorIsSeoAdministrator) {
+      await this.requireInitiative(initiativeId);
+      return;
+    }
+
+    const initiative = await this.prisma.initiative.findUnique({
+      where: { id: initiativeId },
+      select: { ownerUserId: true, strategicPlayNodeId: true },
+    });
+    if (!initiative) throw executionErrors.initiativeNotFound();
+    if (initiative.ownerUserId === actorUserId) return;
+
+    const playOwnership = await this.prisma.ownerAssignment.findUnique({
+      where: {
+        nodeId_ownerUserId: {
+          nodeId: initiative.strategicPlayNodeId,
+          ownerUserId: actorUserId,
+        },
+      },
+      select: { id: true },
+    });
+    if (!playOwnership) throw executionErrors.initiativeOwnershipRequired();
   }
 }

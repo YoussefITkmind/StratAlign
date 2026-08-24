@@ -84,6 +84,22 @@ type EditDraft = {
   keyResultTargets: number[];
 };
 
+/**
+ * AI generation is English-only (see `suggestion.prompt.ts`) — the model
+ * never fills `titleAr`. The registry still requires a non-empty Arabic
+ * name to create anything (`KpiRegistryService.createDraft`/`OkrService
+ * .create` both refuse an empty one), so a reviewer must supply it here
+ * before accepting. This never falls back to inventing or duplicating
+ * English text into the Arabic field.
+ */
+function effectiveTitleAr(suggestion: DisplaySuggestion, draft: EditDraft | undefined): string {
+  return (draft?.titleAr ?? suggestion.titleAr ?? "").trim();
+}
+
+function missingArabicTitle(suggestion: DisplaySuggestion, draft: EditDraft | undefined): boolean {
+  return effectiveTitleAr(suggestion, draft).length === 0;
+}
+
 export default function AiSuggestModal({
   onClose,
   initialMode = "global",
@@ -163,10 +179,11 @@ export default function AiSuggestModal({
 
   const busy = isGenerating || generate.isPending || accept.isPending || acceptMany.isPending;
 
-  /** What "Accept all" would actually submit — strong duplicates excluded. */
+  /** What "Accept all" would actually submit — strong duplicates and items missing a required Arabic title excluded. */
   const acceptAllCount = reviewable.filter(
     (suggestion) =>
-      !isStrongDuplicate(suggestion) || confirmedDuplicates[suggestion.suggestionId],
+      (!isStrongDuplicate(suggestion) || confirmedDuplicates[suggestion.suggestionId]) &&
+      !missingArabicTitle(suggestion, edits[suggestion.suggestionId]),
   ).length;
 
   /** Keeps the one-by-one cursor inside the list as items are resolved. */
@@ -187,7 +204,10 @@ export default function AiSuggestModal({
       themeNodeId: suggestion.themeNodeId,
       kind: suggestion.kind,
       titleEn: draft?.titleEn ?? suggestion.titleEn,
-      titleAr: draft?.titleAr ?? suggestion.titleAr,
+      // Never null/undefined here — the Add action is disabled until this
+      // is non-empty (see `missingArabicTitle`), so this always resolves to
+      // whatever the reviewer actually supplied.
+      titleAr: effectiveTitleAr(suggestion, draft),
       descriptionEn: draft?.descriptionEn ?? suggestion.descriptionEn,
       descriptionAr: suggestion.descriptionAr,
       confidence: suggestion.confidence,
@@ -301,6 +321,15 @@ export default function AiSuggestModal({
   }, [mode, nodes.isLoading, nodes.isError, themes.length]);
 
   const acceptOne = async (suggestion: DisplaySuggestion) => {
+    // AI generation is English-only and never fills titleAr, but the
+    // registry still requires a non-empty Arabic name to create anything —
+    // block here rather than let the reviewer hit a raw backend rejection.
+    if (missingArabicTitle(suggestion, edits[suggestion.suggestionId])) {
+      setNotice(null);
+      setError("Add an Arabic title before adding this suggestion — use Edit to supply one.");
+      return;
+    }
+
     // A strong duplicate needs a second, deliberate action. Returning here
     // means no mutation is issued at all, so the reviewer cannot create a
     // near-identical record by clicking the same button they use for
@@ -330,21 +359,39 @@ export default function AiSuggestModal({
   const acceptAll = async () => {
     setError(null);
 
+    // AI generation never fills titleAr (English-only) — these need a
+    // reviewer-supplied Arabic name before they can be created, same as
+    // acceptOne. Never swept into a batch submission unfilled.
+    const missingArabic = reviewable.filter((suggestion) =>
+      missingArabicTitle(suggestion, edits[suggestion.suggestionId]),
+    );
     // Unconfirmed strong duplicates are never swept up by a batch action. They
     // stay listed for individual review, which is the whole point of flagging
     // them.
     const withheld = reviewable.filter(
       (suggestion) =>
-        isStrongDuplicate(suggestion) && !confirmedDuplicates[suggestion.suggestionId],
+        !missingArabic.includes(suggestion) &&
+        isStrongDuplicate(suggestion) &&
+        !confirmedDuplicates[suggestion.suggestionId],
     );
-    const submittable = reviewable.filter((suggestion) => !withheld.includes(suggestion));
+    const submittable = reviewable.filter(
+      (suggestion) => !withheld.includes(suggestion) && !missingArabic.includes(suggestion),
+    );
     const payloads = submittable.map(toAcceptPayload);
+
+    // Additive, not a replacement for the existing duplicate-withheld
+    // messaging below — kept as its own sentence so that copy stays
+    // unchanged for reviewers who never hit the Arabic-title case.
+    const missingArabicNote =
+      missingArabic.length > 0 ? ` ${missingArabic.length} still need an Arabic title.` : "";
 
     if (payloads.length === 0) {
       setNotice(
         withheld.length > 0
-          ? `Nothing was created. ${withheld.length} possible duplicate(s) need individual review.`
-          : null,
+          ? `Nothing was created. ${withheld.length} possible duplicate(s) need individual review.${missingArabicNote}`
+          : missingArabicNote
+            ? `Nothing was created.${missingArabicNote}`
+            : null,
       );
       return;
     }
@@ -358,9 +405,9 @@ export default function AiSuggestModal({
       });
       setCursor(0);
       const withheldNote =
-        withheld.length > 0
+        (withheld.length > 0
           ? ` ${withheld.length} possible duplicate(s) were left for individual review.`
-          : "";
+          : "") + missingArabicNote;
       setNotice(
         (result.failed.length === 0
           ? `Created ${result.accepted.length} item(s).`
@@ -545,6 +592,7 @@ export default function AiSuggestModal({
               const strongDuplicate = isStrongDuplicate(suggestion);
               const isConfirmed = confirmedDuplicates[suggestion.suggestionId] === true;
               const isConfirming = confirming === suggestion.suggestionId;
+              const missingArabic = missingArabicTitle(suggestion, draft);
 
               return (
                 <div key={suggestion.suggestionId} className="rounded-xl border border-gray-200 p-4">
@@ -618,6 +666,19 @@ export default function AiSuggestModal({
                             </ul>
                           )}
                         </>
+                      )}
+
+                      {!isEditing && missingArabic && (
+                        <div
+                          data-testid={`missing-arabic-${suggestion.suggestionId}`}
+                          className="mt-3 flex items-start gap-1.5 rounded-lg border border-blue-200 bg-blue-50 p-2.5 text-xs text-blue-800"
+                        >
+                          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                          <span>
+                            The AI writes English only. Use Edit to add the Arabic title required
+                            before this can be added.
+                          </span>
+                        </div>
                       )}
 
                       {suggestion.duplicateMatches.length > 0 && (
@@ -697,7 +758,8 @@ export default function AiSuggestModal({
                       <button
                         data-testid={`accept-${suggestion.suggestionId}`}
                         onClick={() => void acceptOne(suggestion)}
-                        disabled={busy || isEditing}
+                        disabled={busy || isEditing || missingArabic}
+                        title={missingArabic ? "Use Edit to add the required Arabic title first" : undefined}
                         className={`flex items-center gap-1 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 ${
                           strongDuplicate && !isConfirmed ? "bg-amber-600 hover:bg-amber-700" : tone.accent
                         }`}
@@ -705,6 +767,10 @@ export default function AiSuggestModal({
                         {strongDuplicate && !isConfirmed ? (
                           <>
                             <AlertTriangle className="h-3.5 w-3.5" /> Review duplicate
+                          </>
+                        ) : missingArabic ? (
+                          <>
+                            <Info className="h-3.5 w-3.5" /> Needs Arabic title
                           </>
                         ) : (
                           <>
@@ -754,7 +820,9 @@ function EditForm({
   const [value, setValue] = useState<EditDraft>(
     draft ?? {
       titleEn: suggestion.titleEn,
-      titleAr: suggestion.titleAr,
+      // The AI never fills this (English-only generation) — starts empty
+      // unless the reviewer previously edited it.
+      titleAr: suggestion.titleAr ?? "",
       descriptionEn: suggestion.descriptionEn ?? "",
       unit: suggestion.kpi?.unit ?? "",
       frequency: suggestion.kpi?.frequency ?? "monthly",
@@ -773,8 +841,9 @@ function EditForm({
         onChange={(event) => setValue({ ...value, titleEn: event.target.value })}
       />
       <input
-        aria-label="Title (Arabic)"
+        aria-label="Title (Arabic) — required before adding"
         dir="rtl"
+        placeholder="العنوان بالعربية (مطلوب)"
         className={field}
         value={value.titleAr}
         onChange={(event) => setValue({ ...value, titleAr: event.target.value })}

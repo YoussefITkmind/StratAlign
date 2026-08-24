@@ -9,11 +9,41 @@ import { Scorecard, Filters } from "@/types/scorecard";
 import { SCORECARD_STATUS_CONFIG, scoreColor } from "@/lib/scorecardConfig";
 import { initialScorecards } from "@/data/mockScorecardData";
 import { filterScorecards, groupByDepartment, statusCounts, totalKpis, isFiltering } from "@/lib/scorecardUtils";
+import { trpc } from "@/lib/trpc/client";
+import { usePublishAssistantContext } from "@/lib/assistant/assistant-context";
 import ScorecardRow from "./ScorecardRow";
 import NewScorecardModal from "./NewScorecardModal";
 
+const MAX_ASSISTANT_CONTEXT_SCORECARDS = 30;
+
+/** Backend shape is intentionally `unknown` at this contract layer — narrowed here. */
+function toScorecardSummary(row: unknown): { id: string; nameEn: string } | null {
+  if (typeof row !== "object" || row === null) return null;
+  const { id, nameEn } = row as Record<string, unknown>;
+  return typeof id === "string" && typeof nameEn === "string" ? { id, nameEn } : null;
+}
+
 export default function BalancedScorecardsPage() {
   const [scorecards, setScorecards] = useState<Scorecard[]>(initialScorecards);
+
+  // Real backend data, fetched independently of the (still mock-backed) tree
+  // above — this is what the assistant is told about, so it never presents
+  // demo fixtures as if they were genuine scorecards.
+  const scorecardListQuery = trpc.scorecard.list.useQuery();
+  const assistantData = useMemo(() => {
+    const rows = (scorecardListQuery.data ?? [])
+      .map(toScorecardSummary)
+      .filter((row): row is { id: string; nameEn: string } => row !== null);
+    return {
+      totalScorecards: rows.length,
+      scorecards: rows.slice(0, MAX_ASSISTANT_CONTEXT_SCORECARDS).map((row) => ({ name: row.nameEn })),
+    };
+  }, [scorecardListQuery.data]);
+  usePublishAssistantContext(
+    "balanced_scorecards",
+    null,
+    scorecardListQuery.data ? assistantData : null,
+  );
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(["sc-corporate", "sc-corporate-financial"]));
   const [view, setView] = useState<"tree" | "list">("tree");
   const [filters, setFilters] = useState<Filters>({ search: "", department: "all", status: "all" });

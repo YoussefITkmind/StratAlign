@@ -553,4 +553,120 @@ describe("AI suggestion generation", () => {
       ).rejects.toBeInstanceOf(AiTimeoutError);
     });
   });
+
+  /**
+   * Generation is English-only: the model is told not to write Arabic, and
+   * is no longer required to. `titleEn` (and key-result `titleEn`) remain
+   * mandatory — only the `...Ar` fields moved from required to optional.
+   * The domain's own bilingual requirement is untouched: see
+   * `ai-suggestion-accept.spec.ts` for proof that accept still requires a
+   * reviewer-supplied Arabic title before a KPI/OKR can be created.
+   */
+  describe("English-only generation", () => {
+    it("instructs the model to answer in English only and to omit Arabic fields", async () => {
+      const { service, complete } = makeService();
+
+      await service.generate({ themeNodeId: THEME_ID, kinds: ["kpi", "okr"], maxSuggestions: 8 });
+
+      const request = complete.mock.calls[0][0];
+      expect(request.system).toContain("English only");
+      expect(request.system).not.toContain("both English");
+      expect(request.prompt).not.toContain('"titleAr"');
+    });
+
+    it("accepts a KPI suggestion with every `...Ar` field omitted", async () => {
+      const englishOnlyKpi = {
+        type: validKpi.type,
+        titleEn: validKpi.titleEn,
+        descriptionEn: validKpi.descriptionEn,
+        confidence: validKpi.confidence,
+        rationale: validKpi.rationale,
+        unit: validKpi.unit,
+        frequency: validKpi.frequency,
+        polarity: validKpi.polarity,
+      };
+      const { service } = makeService({
+        complete: vi.fn().mockResolvedValue(completion({ suggestions: [englishOnlyKpi] })),
+      });
+
+      const batch = await service.generate({
+        themeNodeId: THEME_ID,
+        kinds: ["kpi"],
+        maxSuggestions: 8,
+      });
+
+      expect(batch.suggestions).toHaveLength(1);
+      expect(batch.suggestions[0].titleEn).toBe(validKpi.titleEn);
+      expect(batch.suggestions[0].titleAr).toBeNull();
+    });
+
+    it("accepts an OKR suggestion whose key results omit titleAr", async () => {
+      const englishOnlyOkr = {
+        ...validOkr,
+        titleAr: undefined,
+        keyResults: validOkr.keyResults.map((keyResult) => ({
+          titleEn: keyResult.titleEn,
+          type: keyResult.type,
+          targetValue: keyResult.targetValue,
+          unit: keyResult.unit,
+        })),
+      };
+      const { service } = makeService({
+        complete: vi.fn().mockResolvedValue(completion({ suggestions: [englishOnlyOkr] })),
+      });
+
+      const batch = await service.generate({
+        themeNodeId: THEME_ID,
+        kinds: ["okr"],
+        maxSuggestions: 8,
+      });
+
+      expect(batch.suggestions).toHaveLength(1);
+      expect(batch.suggestions[0].titleAr).toBeNull();
+      expect(batch.suggestions[0].okr?.keyResults[0]).toMatchObject({
+        titleEn: validOkr.keyResults[0].titleEn,
+        titleAr: null,
+      });
+    });
+
+    it("still rejects a KPI suggestion missing the required English title", async () => {
+      const noEnglishTitle = {
+        type: validKpi.type,
+        titleAr: validKpi.titleAr,
+        descriptionEn: validKpi.descriptionEn,
+        descriptionAr: validKpi.descriptionAr,
+        confidence: validKpi.confidence,
+        rationale: validKpi.rationale,
+        unit: validKpi.unit,
+        frequency: validKpi.frequency,
+        polarity: validKpi.polarity,
+      };
+      const { service } = makeService({
+        complete: vi.fn().mockResolvedValue(completion({ suggestions: [noEnglishTitle] })),
+      });
+
+      await expect(
+        service.generate({ themeNodeId: THEME_ID, kinds: ["kpi"], maxSuggestions: 8 }),
+      ).rejects.toBeInstanceOf(AiMalformedOutputError);
+    });
+
+    it("still rejects an OKR key result missing the required English title", async () => {
+      const noEnglishKeyResultTitle = {
+        ...validOkr,
+        keyResults: validOkr.keyResults.map((keyResult) => ({
+          titleAr: keyResult.titleAr,
+          type: keyResult.type,
+          targetValue: keyResult.targetValue,
+          unit: keyResult.unit,
+        })),
+      };
+      const { service } = makeService({
+        complete: vi.fn().mockResolvedValue(completion({ suggestions: [noEnglishKeyResultTitle] })),
+      });
+
+      await expect(
+        service.generate({ themeNodeId: THEME_ID, kinds: ["okr"], maxSuggestions: 8 }),
+      ).rejects.toBeInstanceOf(AiMalformedOutputError);
+    });
+  });
 });
