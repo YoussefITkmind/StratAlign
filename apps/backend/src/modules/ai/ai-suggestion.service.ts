@@ -6,7 +6,10 @@ import type { EventBusService } from "../../events/event-bus.service";
 import type { Logger } from "../../logging/logger";
 import type { AlignmentService } from "../registry/alignment.service";
 import type { KpiRegistryService } from "../registry/kpi-registry.service";
+import type { KpiVersionView } from "../registry/registry.types";
 import type { OkrService } from "../registry/okr.service";
+import type { CadenceGeneratorService } from "../scheduler/cadence-generator.service";
+import type { SchedulerService } from "../scheduler/scheduler.service";
 
 import { isUniqueConstraintViolation } from "../../errors/app.errors";
 import {
@@ -141,6 +144,8 @@ export class AiSuggestionService {
     private readonly okrs: OkrService,
     private readonly alignments: AlignmentService,
     private readonly eventBus: EventBusService,
+    private readonly scheduler: SchedulerService,
+    private readonly cadenceGenerator: CadenceGeneratorService,
     private readonly logger: Logger,
   ) {}
 
@@ -510,6 +515,12 @@ export class AiSuggestionService {
           { strategyNodeId: context.theme.id, alignmentType: "theme" },
         ],
       });
+
+      // Best-effort: the KPI itself is already created and aligned by this
+      // point, so a failure standing up its capture cadence must not fail
+      // the whole accept. Worst case the reviewer sees the KPI in the
+      // library but not yet in Data Capture, rather than losing the KPI.
+      await this.createCaptureCadence(created.version, context.theme.id);
     } catch (error) {
       // Nothing was created, so the claim is released and the reviewer can try
       // again. If the KPI already exists the claim is settled instead, because
@@ -531,6 +542,63 @@ export class AiSuggestionService {
       alreadyAccepted: false,
       edited: input.edited,
     };
+  }
+
+  /**
+   * Stands up the recurring schedule that makes a freshly-created KPI appear
+   * in Data Capture (`CaptureWorkspaceService.listTasks` joins on a
+   * `CadenceInstance` for `subjectType: "performance_kpi"`, keyed by KPI
+   * version id — see the Performance module README).
+   *
+   * A monthly/quarterly definition anchored to *today* so its first
+   * occurrence is today's date rather than next month's/quarter's — an
+   * accepted suggestion must be immediately capturable, not first visible on
+   * its next natural cycle. `materialize` then runs inline rather than
+   * waiting for the worker's next tick, so the instance exists in the
+   * database before this request returns.
+   */
+  private async createCaptureCadence(
+    version: KpiVersionView,
+    scopeNodeId: string,
+  ): Promise<void> {
+    const startsAt = new Date();
+    startsAt.setUTCHours(0, 0, 0, 0);
+
+    const cadence =
+      version.frequency === "quarterly"
+        ? ({
+            type: "QUARTERLY" as const,
+            atTime: "00:00:00",
+            monthOffsetInQuarter: 0,
+            onDayOfMonth: startsAt.getUTCDate(),
+          })
+        : ({
+            type: "MONTHLY" as const,
+            atTime: "00:00:00",
+            onDayOfMonth: startsAt.getUTCDate(),
+          });
+
+    try {
+      const definition = await this.scheduler.createDefinition({
+        key: `kpi-capture-${version.id}`,
+        name: `Data capture — ${version.nameEn}`,
+        subjectType: "performance_kpi",
+        subjectId: version.id,
+        payload: { scopeNodeId },
+        cadence,
+        timezone: "UTC",
+        startsAt,
+        anchorAt: startsAt,
+      });
+
+      await this.cadenceGenerator.materialize(definition.id);
+    } catch (error) {
+      this.logger.warn("Could not stand up a capture cadence for an accepted KPI", {
+        feature: SUGGESTION_FEATURE,
+        kpiVersionId: version.id,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async acceptOkr(
