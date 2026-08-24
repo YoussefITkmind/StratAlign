@@ -32,6 +32,13 @@ vi.mock("@/lib/trpc/client", () => ({
   },
 }));
 
+// This page publishes its tree to the global assistant (see
+// `usePublishAssistantContext` in StrategyHierarchyPage) — stubbed here so
+// these tests don't need a full AssistantProvider tree just to render.
+vi.mock("@/lib/assistant/assistant-context", () => ({
+  usePublishAssistantContext: () => {},
+}));
+
 import StrategyHierarchyPage from "@/components/strategy/StrategyHierarchyPage";
 import type { StrategyNode } from "@/types/strategy";
 

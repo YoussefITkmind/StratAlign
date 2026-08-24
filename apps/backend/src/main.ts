@@ -53,6 +53,7 @@ import { ConnectionsService } from "./modules/integrations/connections.service";
 import { SyncLogsService } from "./modules/integrations/sync-logs.service";
 import { ApiKeysService } from "./modules/integrations/api-keys.service";
 import { WebhooksService } from "./modules/integrations/webhooks.service";
+import { ContextAwareAssistantService } from "./modules/ai/assistant.service";
 import { TraceabilityReadService } from "./modules/traceability/traceability-read.service";
 
 async function bootstrap(): Promise<void> {
@@ -145,6 +146,7 @@ async function bootstrap(): Promise<void> {
     eventBus,
     logger.child("ai-suggestion"),
   );
+  const assistant = new ContextAwareAssistantService(llm, logger.child("assistant"));
 
   const server = createHTTPServer({
     router: rootRouter,
@@ -159,7 +161,7 @@ async function bootstrap(): Promise<void> {
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
         strategyHierarchy,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
-        aiSuggestion, integrations,
+        aiSuggestion, assistant, integrations,
       };
     },
     middleware(request, response, next) {
