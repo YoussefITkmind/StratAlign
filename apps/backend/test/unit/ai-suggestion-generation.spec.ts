@@ -112,6 +112,8 @@ function makeService(overrides: {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
+    {} as never,
     createLogger("error"),
   );
 

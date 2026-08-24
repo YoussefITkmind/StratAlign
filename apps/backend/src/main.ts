@@ -44,7 +44,9 @@ import { StageAwareExecutionService } from "./modules/execution/stage-aware-exec
 import { PortfolioService } from "./modules/portfolio/portfolio.service";
 import { SchedulerReadService } from "./modules/scheduler/scheduler-read.service";
 import { SchedulerService } from "./modules/scheduler/scheduler.service";
+import { CadenceGeneratorService } from "./modules/scheduler/cadence-generator.service";
 import { CadenceEngine } from "./modules/cadence/cadence.engine";
+import { PeriodCalendarEngine } from "./modules/cadence/period-calendar.engine";
 import { ValueManagementService } from "./modules/value/value-management.service";
 import { createLlmProvider } from "./modules/ai/llm.factory";
 import { ThemeContextBuilder } from "./modules/ai/theme-context.builder";
@@ -122,11 +124,26 @@ async function bootstrap(): Promise<void> {
   const execution = new StageAwareExecutionService(prisma, prisma, eventBus);
   const portfolio = new PortfolioService(prisma, rules, governance, strategy);
   const schedulerRead = new SchedulerReadService(prisma);
+  const cadenceEngine = new CadenceEngine();
   const scheduler = new SchedulerService(
     prisma,
-    new CadenceEngine(),
+    cadenceEngine,
     { defaultTimezone: environment.SCHEDULER_DEFAULT_TIMEZONE, defaultLookaheadSeconds: environment.SCHEDULER_LOOKAHEAD_SECONDS },
     logger.child("value-checkin-scheduler"),
+  );
+  // Materialises a definition's first instance synchronously at request time
+  // (see AiSuggestionService.acceptKpi), rather than waiting on the worker's
+  // next tick, so a just-accepted KPI's capture task is visible immediately.
+  const cadenceGenerator = new CadenceGeneratorService(
+    prisma,
+    cadenceEngine,
+    new PeriodCalendarEngine(),
+    queueService,
+    {
+      maxCatchUpOccurrences: environment.SCHEDULER_MAX_CATCHUP_OCCURRENCES,
+      tickIntervalMs: environment.SCHEDULER_TICK_INTERVAL_MS,
+    },
+    logger.child("cadence-generator"),
   );
   const value = new ValueManagementService(prisma, governance, governanceEscalation, rules, scheduler);
   const integrations = {
@@ -144,6 +161,8 @@ async function bootstrap(): Promise<void> {
     registry.okr,
     registry.alignment,
     eventBus,
+    scheduler,
+    cadenceGenerator,
     logger.child("ai-suggestion"),
   );
   const assistant = new ContextAwareAssistantService(llm, logger.child("assistant"));
