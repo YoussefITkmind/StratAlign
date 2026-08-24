@@ -88,6 +88,7 @@ export default function PixelRagAskPanel({
         documentIds: selectedIds,
         topKPerDocument: 3,
       });
+      await utils.pixelrag.audit.invalidate();
     } catch {
       // Mutation state renders the backend error below.
     }
@@ -217,30 +218,43 @@ export default function PixelRagAskPanel({
       )}
 
       {compare.data && (
-        <div className="mt-6 space-y-4 border-t border-gray-100 pt-5">
+        <div className="mt-6 space-y-5 border-t border-gray-100 pt-5">
           <div>
             <h3 className="text-sm font-semibold text-gray-900">Synthesised answer</h3>
             <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">{compare.data.answer}</p>
           </div>
-          {compare.data.evidence.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900">Evidence</h3>
-              <ul className="mt-2 space-y-2">
-                {compare.data.evidence.map((item, index) => (
-                  <li key={`${index}-${item}`} className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700">{item}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          <div className="grid gap-3 lg:grid-cols-2">
+
+          <div className="space-y-5">
             {compare.data.sources.map((source) => (
               <article key={source.document_id} className="rounded-xl border border-gray-200 p-4">
                 <p className="text-sm font-semibold text-gray-900">{source.document_name}</p>
                 <p className="mt-2 text-sm leading-6 text-gray-700">{source.answer}</p>
+
+                {source.tiles.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Visual evidence</p>
+                    <div className="mt-2 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {source.tiles.map((tile) => (
+                        <PixelRagEvidenceImage
+                          key={`${source.document_id}-${tile.article_id}-${tile.tile_index}-${tile.chunk_index}`}
+                          documentId={source.document_id}
+                          articleId={tile.article_id}
+                          tileIndex={tile.tile_index}
+                          chunkIndex={tile.chunk_index}
+                          score={tile.score}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {source.evidence.length > 0 && (
-                  <ul className="mt-3 space-y-1 text-xs text-gray-500">
-                    {source.evidence.map((item, index) => <li key={`${index}-${item}`}>• {item}</li>)}
-                  </ul>
+                  <details className="mt-4 rounded-lg bg-gray-50 px-3 py-2">
+                    <summary className="cursor-pointer text-xs font-medium text-gray-600">Supporting extracted facts</summary>
+                    <ul className="mt-2 space-y-1 text-xs text-gray-500">
+                      {source.evidence.map((item, index) => <li key={`${index}-${item}`}>• {item}</li>)}
+                    </ul>
+                  </details>
                 )}
               </article>
             ))}
