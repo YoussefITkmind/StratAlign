@@ -57,9 +57,7 @@ export type SuggestionKind = "kpi" | "okr";
 
 export interface SuggestedKeyResult {
   titleEn: string;
-  /** Optional: the AI generation contract is English-only, and the domain
-   * layer (`OkrService.create`) never required a bilingual key-result title. */
-  titleAr: string | null;
+  titleAr: string;
   type: KeyResultTypeView;
   targetValue: number;
   unit: string;
@@ -97,11 +95,7 @@ export interface ThemeSuggestion {
   themeNameEn: string;
   kind: SuggestionKind;
   titleEn: string;
-  /** Optional: the AI generation contract is English-only (see
-   * `suggestion.prompt.ts`). A reviewer supplies this before accepting a
-   * KPI/OKR proposal — `AcceptSuggestionInput.titleAr` below is still
-   * required, matching the domain layer's genuine, unconditional need for it. */
-  titleAr: string | null;
+  titleAr: string;
   descriptionEn: string | null;
   descriptionAr: string | null;
   /** 0-1 model self-estimate. Never a correctness guarantee. */

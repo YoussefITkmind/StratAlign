@@ -25,9 +25,7 @@ export interface SuggestionDuplicateMatchOutput {
 
 export interface SuggestedKeyResultOutput {
   titleEn: string;
-  /** Optional: generation is English-only, and the domain layer
-   * (`OkrService.create`) never required a bilingual key-result title. */
-  titleAr?: string | null;
+  titleAr: string;
   type: "quantitative" | "milestone";
   targetValue: number;
   unit: string;
@@ -40,9 +38,7 @@ export interface ThemeSuggestionOutput {
   themeNameEn: string;
   kind: SuggestionKindOutput;
   titleEn: string;
-  /** Nullable: generation is English-only; a reviewer supplies this before
-   * accepting (see `AcceptSuggestionContractInput.titleAr`, still required). */
-  titleAr: string | null;
+  titleAr: string;
   descriptionEn: string | null;
   descriptionAr: string | null;
   confidence: number;
@@ -179,10 +175,7 @@ const service = (ctx: {
 const keyResultSchema = z
   .object({
     titleEn: z.string().trim().min(1).max(300),
-    // Optional: `OkrService.create` accepts `titleAr?: string | null` for
-    // key results with no non-empty requirement, unlike the OKR's own name
-    // just below — nothing downstream needs this to be present.
-    titleAr: z.string().trim().min(1).max(300).nullish(),
+    titleAr: z.string().trim().min(1).max(300),
     type: z.enum(["quantitative", "milestone"]),
     targetValue: z.number().finite(),
     unit: z.string().trim().min(1).max(50),
@@ -201,13 +194,6 @@ const acceptSuggestionSchema = z
     themeNodeId: id,
     kind: z.enum(["kpi", "okr"]),
     titleEn: z.string().trim().min(1).max(300),
-    // Required, unlike generation: AI suggestion generation is English-only
-    // (see `suggestion.prompt.ts`), so this is left for the reviewer to
-    // supply here. `KpiRegistryService.createDraft`/`OkrService.create`
-    // genuinely refuse to persist a KPI/OKR without a non-empty Arabic name
-    // (NOT NULL Prisma column, enforced with an explicit guard in both
-    // services) — this requirement is not an AI-layer artifact and must
-    // stay exactly as it is.
     titleAr: z.string().trim().min(1).max(300),
     descriptionEn: z.string().trim().max(2_000).nullish(),
     descriptionAr: z.string().trim().max(2_000).nullish(),
@@ -268,10 +254,7 @@ const suggestionOutputSchema = z
     themeNameEn: z.string(),
     kind: z.enum(["kpi", "okr"]),
     titleEn: z.string(),
-    // Nullable: generation is English-only, so this is null until a
-    // reviewer supplies it before accepting (see `acceptSuggestionSchema`,
-    // which still requires it — the domain layer genuinely needs it).
-    titleAr: z.string().nullable(),
+    titleAr: z.string(),
     descriptionEn: z.string().nullable(),
     descriptionAr: z.string().nullable(),
     confidence: z.number().min(0).max(1),

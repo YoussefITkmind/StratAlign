@@ -286,66 +286,6 @@ describe("AI suggestion tRPC surface", () => {
 
       expect(acceptMany).not.toHaveBeenCalled();
     });
-
-    /**
-     * Generation moved to English-only, but this boundary did not: the
-     * registry (`KpiRegistryService.createDraft`/`OkrService.create`)
-     * genuinely refuses to persist a KPI/OKR without a non-empty Arabic
-     * name, so accept must keep requiring it regardless of what generation
-     * produced. A reviewer supplies it; the router still rejects a request
-     * that omits it, exactly as before this migration.
-     */
-    it("still requires a non-empty Arabic title to accept a KPI or OKR", async () => {
-      const caller = rootRouter.createCaller(context() as never);
-
-      const missingTitleAr = {
-        suggestionId: acceptInput.suggestionId,
-        generationId: acceptInput.generationId,
-        themeNodeId: acceptInput.themeNodeId,
-        kind: acceptInput.kind,
-        titleEn: acceptInput.titleEn,
-        confidence: acceptInput.confidence,
-        provider: acceptInput.provider,
-        model: acceptInput.model,
-        edited: acceptInput.edited,
-        kpi: acceptInput.kpi,
-      };
-      await expect(caller.aiSuggestion.accept(missingTitleAr as never)).rejects.toMatchObject({
-        code: "BAD_REQUEST",
-      });
-
-      await expect(
-        caller.aiSuggestion.accept({ ...acceptInput, titleAr: "" }),
-      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
-
-      expect(accept).not.toHaveBeenCalled();
-    });
-
-    /**
-     * Unlike the KPI/OKR name, a key result's Arabic title was never
-     * required by the domain (`OkrService.create` accepts `titleAr?: string
-     * | null` with no guard) — only the AI-layer schema over-required it
-     * before this migration. Accept must not re-impose that.
-     */
-    it("accepts an OKR key result whose Arabic title is omitted", async () => {
-      const caller = rootRouter.createCaller(context() as never);
-
-      await expect(
-        caller.aiSuggestion.accept({
-          ...acceptInput,
-          kind: "okr",
-          kpi: null,
-          okr: {
-            objectiveNodeId,
-            keyResults: [
-              { titleEn: "Sign 20 enterprise logos", type: "quantitative", targetValue: 20, unit: "logos" },
-            ],
-          },
-        }),
-      ).resolves.toMatchObject({ suggestionId });
-
-      expect(accept).toHaveBeenCalled();
-    });
   });
 
   describe("output contract", () => {

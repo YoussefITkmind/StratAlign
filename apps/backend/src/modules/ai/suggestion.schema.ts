@@ -21,12 +21,7 @@ const longText = z.string().trim().max(2_000);
 const keyResultSchema = z
   .object({
     titleEn: shortText,
-    // Optional by design, not an oversight: the AI generation contract is
-    // English-only (see `suggestion.prompt.ts`), and the domain layer never
-    // required a bilingual key-result title either — `OkrService.create`
-    // treats `titleAr` as `string | null` with no non-empty guard, unlike
-    // the KPI/OKR name itself. Nothing downstream needs this to be present.
-    titleAr: shortText.nullish(),
+    titleAr: shortText,
     type: z.enum(["quantitative", "milestone"]),
     targetValue: z.number().finite(),
     unit: z.string().trim().min(1).max(50),
@@ -36,15 +31,7 @@ const keyResultSchema = z
 const baseSuggestionSchema = z.object({
   type: z.enum(["kpi", "okr"]),
   titleEn: shortText,
-  // Optional at generation time only: the model is English-only and no
-  // longer asked to produce this. `AiSuggestionService.acceptKpi`/`acceptOkr`
-  // still require a non-empty `titleAr` at accept time — that boundary is
-  // unchanged, because `KpiRegistryService.createDraft`/`OkrService.create`
-  // genuinely refuse to persist a KPI/OKR without one (see
-  // `kpi-registry.service.ts`/`okr.service.ts`, backed by a NOT NULL Prisma
-  // column). A reviewer supplies it before accepting; nothing here invents
-  // one or duplicates English into it.
-  titleAr: shortText.nullish(),
+  titleAr: shortText,
   descriptionEn: longText.nullish(),
   descriptionAr: longText.nullish(),
   // A self-estimate on a fixed 0-1 scale. Anything outside it means the model
