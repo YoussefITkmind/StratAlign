@@ -45,17 +45,20 @@ export class ConnectionsService {
     if (!existing) throw integrationsErrors.connectionNotFound();
 
     const connecting = existing.status !== "CONNECTED";
-    const { count } = await this.prisma.connection.updateMany({
-      where: { id, status: existing.status },
-      data: connecting
-        ? { status: "CONNECTED", lastSyncLabel: "Last: just now" }
-        : { status: "DISCONNECTED", lastSyncLabel: "Disconnected just now" },
-    });
-    if (count === 0) throw integrationsErrors.concurrentUpdate();
+    const data: Pick<ConnectionRow, "status" | "lastSyncLabel"> = connecting
+      ? { status: "CONNECTED", lastSyncLabel: "Last: just now" }
+      : { status: "DISCONNECTED", lastSyncLabel: "Disconnected just now" };
 
-    const updated = await this.prisma.connection.findUnique({ where: { id } });
-    if (!updated) throw integrationsErrors.connectionNotFound();
-    return toView(updated);
+    const { count } = await this.prisma.connection.updateMany({
+      where: { id, updatedAt: existing.updatedAt },
+      data,
+    });
+    if (count === 0) {
+      const stillExists = await this.prisma.connection.findUnique({ where: { id } });
+      throw stillExists ? integrationsErrors.concurrentUpdate() : integrationsErrors.connectionNotFound();
+    }
+
+    return toView({ ...existing, ...data });
   }
 
   async syncNow(id: string): Promise<ConnectionView> {

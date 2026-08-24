@@ -9,14 +9,6 @@ import SyncLogsTab from "@/components/data-integrations/tabs/SyncLogsTab";
 import ApiKeysTab from "@/components/data-integrations/tabs/ApiKeysTab";
 import WebhooksTab from "@/components/data-integrations/tabs/WebhooksTab";
 
-function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
 export default function DataIntegrationsPage() {
   const [tab, setTab] = useState<TabKey>("connections");
   const [search, setSearch] = useState("");
@@ -32,8 +24,9 @@ export default function DataIntegrationsPage() {
   const connectedCount = connections.filter((c) => c.status === "CONNECTED").length;
   const errorCount = connections.filter((c) => c.status === "ERROR").length;
   const activeWebhooks = webhooks.filter((w) => w.active).length;
+  const todayLabel = new Date().toDateString();
   const recordsToday = logs
-    .filter((l) => isSameDay(new Date(l.createdAt), new Date()))
+    .filter((l) => new Date(l.createdAt).toDateString() === todayLabel)
     .reduce((sum, l) => sum + (l.recordsIn ?? 0) + (l.recordsOut ?? 0), 0);
 
   const badges: Record<TabKey, number> = {

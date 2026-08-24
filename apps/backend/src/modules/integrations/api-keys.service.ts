@@ -89,15 +89,17 @@ export class ApiKeysService {
     const existing = await this.prisma.apiKey.findUnique({ where: { id } });
     if (!existing) throw integrationsErrors.apiKeyNotFound();
 
+    const data = { disabled: !existing.disabled };
     const { count } = await this.prisma.apiKey.updateMany({
       where: { id, disabled: existing.disabled },
-      data: { disabled: !existing.disabled },
+      data,
     });
-    if (count === 0) throw integrationsErrors.concurrentUpdate();
+    if (count === 0) {
+      const stillExists = await this.prisma.apiKey.findUnique({ where: { id } });
+      throw stillExists ? integrationsErrors.concurrentUpdate() : integrationsErrors.apiKeyNotFound();
+    }
 
-    const updated = await this.prisma.apiKey.findUnique({ where: { id } });
-    if (!updated) throw integrationsErrors.apiKeyNotFound();
-    return toView(updated);
+    return toView({ ...existing, ...data });
   }
 
   async revoke(id: string): Promise<{ id: string }> {
