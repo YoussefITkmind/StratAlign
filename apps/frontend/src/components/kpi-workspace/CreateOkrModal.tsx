@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Loader2, Plus, Sparkles, Trash2, X } from "lucide-react";
-import { newOwnerFromName, type KeyResult, type Objective } from "@/data/mockOkrLibrary";
 import { trpc } from "@/lib/trpc/client";
 
-type DraftKeyResult = { label: string; actual: string; target: string; dueDate: string };
+type KeyResultType = "quantitative" | "milestone";
 
-const emptyKeyResult = (): DraftKeyResult => ({ label: "", actual: "", target: "", dueDate: "" });
+type DraftKeyResult = { titleEn: string; type: KeyResultType; targetValue: string; unit: string };
+
+const emptyKeyResult = (): DraftKeyResult => ({ titleEn: "", type: "quantitative", targetValue: "", unit: "" });
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Could not generate a suggestion.";
@@ -16,46 +17,48 @@ function errorMessage(error: unknown): string {
 function keyResultsEqual(a: DraftKeyResult[], b: DraftKeyResult[]): boolean {
   return (
     a.length === b.length &&
-    a.every((kr, i) => kr.label === b[i].label && kr.actual === b[i].actual && kr.target === b[i].target && kr.dueDate === b[i].dueDate)
+    a.every((kr, i) => kr.titleEn === b[i].titleEn && kr.type === b[i].type && kr.targetValue === b[i].targetValue && kr.unit === b[i].unit)
   );
 }
 
-export default function CreateOkrModal({
-  onClose,
-  onCreate,
-}: {
-  onClose: () => void;
-  onCreate: (objective: Objective) => void;
-}) {
-  const [title, setTitle] = useState("");
-  const [department, setDepartment] = useState("");
-  const [quarter, setQuarter] = useState("Q3 2025");
-  const [ownerName, setOwnerName] = useState("");
+export default function CreateOkrModal({ onClose }: { onClose: () => void }) {
+  const [nameEn, setNameEn] = useState("");
+  const [nameAr, setNameAr] = useState("");
+  const [objectiveNodeId, setObjectiveNodeId] = useState("");
   const [keyResults, setKeyResults] = useState<DraftKeyResult[]>([emptyKeyResult()]);
 
   const [themeNodeId, setThemeNodeId] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
-  type AiFields = { title: string; keyResults: DraftKeyResult[] };
+  type AiFields = { nameEn: string; objectiveNodeId: string; keyResults: DraftKeyResult[] };
   /** Snapshot of the AI-touched fields right before the last suggestion was applied. */
   const [priorSnapshot, setPriorSnapshot] = useState<AiFields | null>(null);
   /** Snapshot of the AI-touched fields exactly as applied — used to detect hand-edits. */
   const [appliedSnapshot, setAppliedSnapshot] = useState<AiFields | null>(null);
   const [confirmingRegenerate, setConfirmingRegenerate] = useState(false);
 
+  const utils = trpc.useUtils();
   const nodes = trpc.strategy.nodes.useQuery();
-  const themes = useMemo(
-    () => (nodes.data ?? []).filter((node) => node.type === "theme" && node.state !== "retired"),
-    [nodes.data],
-  );
+  const themes = (nodes.data ?? []).filter((node) => node.type === "theme" && node.state !== "retired");
+  const objectiveNodes = (nodes.data ?? []).filter((node) => node.type === "objective" && node.state !== "retired");
   const generate = trpc.aiSuggestion.generate.useMutation();
+  const createOkr = trpc.registry.okr.create.useMutation({
+    onSuccess: () => {
+      void utils.registry.okr.list.invalidate();
+      onClose();
+    },
+  });
 
   const hasHandEdited =
     appliedSnapshot !== null &&
-    (title !== appliedSnapshot.title || !keyResultsEqual(keyResults, appliedSnapshot.keyResults));
+    (nameEn !== appliedSnapshot.nameEn ||
+      objectiveNodeId !== appliedSnapshot.objectiveNodeId ||
+      !keyResultsEqual(keyResults, appliedSnapshot.keyResults));
 
-  const validKeyResults = keyResults.filter((kr) => kr.label.trim());
-  const valid = title.trim().length > 0 && validKeyResults.length > 0;
+  const validKeyResults = keyResults.filter(
+    (kr) => kr.titleEn.trim() && kr.unit.trim() && kr.targetValue.trim() && Number.isFinite(Number(kr.targetValue)),
+  );
+  const valid = nameEn.trim().length > 0 && nameAr.trim().length > 0 && objectiveNodeId.length > 0 && validKeyResults.length > 0;
 
   const updateKeyResult = (index: number, patch: Partial<DraftKeyResult>) => {
     setKeyResults((current) => current.map((kr, i) => (i === index ? { ...kr, ...patch } : kr)));
@@ -63,20 +66,25 @@ export default function CreateOkrModal({
 
   const applySuggestion = (suggestion: {
     titleEn: string;
-    okr: { keyResults: { titleEn: string; targetValue: number; unit: string }[] } | null;
+    okr: {
+      objectiveNodeId: string;
+      keyResults: { titleEn: string; type: KeyResultType; targetValue: number; unit: string }[];
+    } | null;
   }) => {
-    setPriorSnapshot({ title, keyResults });
-    const nextTitle = title.trim().length > 0 ? title : suggestion.titleEn;
+    setPriorSnapshot({ nameEn, objectiveNodeId, keyResults });
+    const nextName = nameEn.trim().length > 0 ? nameEn : suggestion.titleEn;
+    const nextObjectiveNodeId = objectiveNodeId || suggestion.okr?.objectiveNodeId || objectiveNodeId;
     const suggestedKeyResults: DraftKeyResult[] = (suggestion.okr?.keyResults ?? []).map((kr) => ({
-      label: kr.titleEn,
-      actual: "",
-      target: `${kr.targetValue} ${kr.unit}`,
-      dueDate: "",
+      titleEn: kr.titleEn,
+      type: kr.type,
+      targetValue: String(kr.targetValue),
+      unit: kr.unit,
     }));
     const nextKeyResults = suggestedKeyResults.length > 0 ? suggestedKeyResults : keyResults;
-    setTitle(nextTitle);
+    setNameEn(nextName);
+    setObjectiveNodeId(nextObjectiveNodeId);
     setKeyResults(nextKeyResults);
-    setAppliedSnapshot({ title: nextTitle, keyResults: nextKeyResults });
+    setAppliedSnapshot({ nameEn: nextName, objectiveNodeId: nextObjectiveNodeId, keyResults: nextKeyResults });
   };
 
   const runAiSuggest = async (force = false, isRetry = false) => {
@@ -114,7 +122,8 @@ export default function CreateOkrModal({
 
   const discardSuggestion = () => {
     if (!priorSnapshot) return;
-    setTitle(priorSnapshot.title);
+    setNameEn(priorSnapshot.nameEn);
+    setObjectiveNodeId(priorSnapshot.objectiveNodeId);
     setKeyResults(priorSnapshot.keyResults);
     setPriorSnapshot(null);
     setAppliedSnapshot(null);
@@ -124,27 +133,16 @@ export default function CreateOkrModal({
 
   const handleCreate = () => {
     if (!valid) return;
-    const owner = newOwnerFromName(ownerName || "Unassigned");
-    const resolvedKeyResults: KeyResult[] = validKeyResults.map((kr, i) => ({
-      id: `kr-custom-${Date.now()}-${i}`,
-      label: kr.label.trim(),
-      actual: kr.actual.trim() || "—",
-      target: kr.target.trim() || "—",
-      progress: 0,
-      owner,
-      status: "on-track",
-      dueDate: kr.dueDate.trim() || "—",
-    }));
-    onCreate({
-      id: `okr-custom-${Date.now()}`,
-      title: title.trim(),
-      department: department.trim() || "Unassigned",
-      quarter,
-      owner,
-      status: "on-track",
-      approval: "draft",
-      progress: 0,
-      keyResults: resolvedKeyResults,
+    createOkr.mutate({
+      objectiveNodeId,
+      nameEn: nameEn.trim(),
+      nameAr: nameAr.trim(),
+      keyResults: validKeyResults.map((kr) => ({
+        type: kr.type,
+        targetValue: Number(kr.targetValue),
+        unit: kr.unit.trim(),
+        titleEn: kr.titleEn.trim(),
+      })),
     });
   };
 
@@ -221,31 +219,40 @@ export default function CreateOkrModal({
             )}
           </div>
 
-          <Field label="Objective Name" required>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Drive Revenue Growth 40% YoY"
-              className={inputClass}
-            />
-          </Field>
-
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Department">
-              <input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="e.g. Sales" className={inputClass} />
+            <Field label="Objective Name (English)" required>
+              <input
+                value={nameEn}
+                onChange={(e) => setNameEn(e.target.value)}
+                placeholder="e.g. Drive Revenue Growth 40% YoY"
+                className={inputClass}
+              />
             </Field>
-            <Field label="Quarter">
-              <select value={quarter} onChange={(e) => setQuarter(e.target.value)} className={inputClass}>
-                <option value="Q1 2025">Q1 2025</option>
-                <option value="Q2 2025">Q2 2025</option>
-                <option value="Q3 2025">Q3 2025</option>
-                <option value="Q4 2025">Q4 2025</option>
-              </select>
+            <Field label="Objective Name (Arabic)" required>
+              <input
+                value={nameAr}
+                onChange={(e) => setNameAr(e.target.value)}
+                placeholder="e.g. تحقيق نمو الإيرادات 40%"
+                dir="rtl"
+                className={inputClass}
+              />
             </Field>
           </div>
 
-          <Field label="Owner Name">
-            <input value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="e.g. Sarah Chen" className={inputClass} />
+          <Field label="Objective (strategy node)" required>
+            <select
+              value={objectiveNodeId}
+              onChange={(e) => setObjectiveNodeId(e.target.value)}
+              disabled={nodes.isLoading || nodes.isError}
+              className={inputClass}
+            >
+              <option value="">
+                {nodes.isLoading ? "Loading objectives…" : objectiveNodes.length === 0 ? "No objectives yet" : "Select an objective…"}
+              </option>
+              {objectiveNodes.map((node) => (
+                <option key={node.id} value={node.id}>{node.nameEn}</option>
+              ))}
+            </select>
           </Field>
 
           <div>
@@ -266,9 +273,9 @@ export default function CreateOkrModal({
                 <div key={index} className="rounded-lg border border-gray-200 p-3">
                   <div className="mb-2 flex items-start gap-2">
                     <input
-                      value={kr.label}
-                      onChange={(e) => updateKeyResult(index, { label: e.target.value })}
-                      placeholder={`e.g. Achieve $48M ARR by Dec 2025`}
+                      value={kr.titleEn}
+                      onChange={(e) => updateKeyResult(index, { titleEn: e.target.value })}
+                      placeholder="e.g. Achieve $48M ARR by Dec 2025"
                       className={`${inputClass} flex-1`}
                     />
                     {keyResults.length > 1 && (
@@ -282,22 +289,25 @@ export default function CreateOkrModal({
                     )}
                   </div>
                   <div className="grid grid-cols-3 gap-2">
+                    <select
+                      value={kr.type}
+                      onChange={(e) => updateKeyResult(index, { type: e.target.value as KeyResultType })}
+                      className={inputClass}
+                    >
+                      <option value="quantitative">Quantitative</option>
+                      <option value="milestone">Milestone</option>
+                    </select>
                     <input
-                      value={kr.actual}
-                      onChange={(e) => updateKeyResult(index, { actual: e.target.value })}
-                      placeholder="Actual"
+                      value={kr.targetValue}
+                      onChange={(e) => updateKeyResult(index, { targetValue: e.target.value })}
+                      placeholder="Target value"
+                      inputMode="decimal"
                       className={inputClass}
                     />
                     <input
-                      value={kr.target}
-                      onChange={(e) => updateKeyResult(index, { target: e.target.value })}
-                      placeholder="Target"
-                      className={inputClass}
-                    />
-                    <input
-                      value={kr.dueDate}
-                      onChange={(e) => updateKeyResult(index, { dueDate: e.target.value })}
-                      placeholder="Due date"
+                      value={kr.unit}
+                      onChange={(e) => updateKeyResult(index, { unit: e.target.value })}
+                      placeholder="Unit (e.g. %, USD)"
                       className={inputClass}
                     />
                   </div>
@@ -305,6 +315,12 @@ export default function CreateOkrModal({
               ))}
             </div>
           </div>
+
+          {createOkr.error && (
+            <p data-testid="okr-create-error" className="text-sm text-red-600">
+              {createOkr.error.message}
+            </p>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-gray-100 p-4">
@@ -312,10 +328,11 @@ export default function CreateOkrModal({
             Cancel
           </button>
           <button
-            disabled={!valid}
+            disabled={!valid || createOkr.isPending}
             onClick={handleCreate}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
+            {createOkr.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             Create Objective
           </button>
         </div>

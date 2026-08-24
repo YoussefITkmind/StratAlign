@@ -66,7 +66,7 @@ function HeaderCell({ label, className = "" }: { label: string; className?: stri
 }
 
 export default function KpiLibraryTable() {
-  const [allRows, setAllRows] = useState<KpiLibraryRow[]>(kpiLibraryRows);
+  const allRows = kpiLibraryRows;
   const [search, setSearch] = useState("");
   const [perspective, setPerspective] = useState<"all" | KpiPerspective>("all");
   const [department, setDepartment] = useState("all");
@@ -222,15 +222,7 @@ export default function KpiLibraryTable() {
 
       {selectedKpi && <KpiDetailDrawer row={selectedKpi} onClose={() => setSelectedKpi(null)} />}
 
-      {showCreate && (
-        <CreateKpiModal
-          onClose={() => setShowCreate(false)}
-          onCreate={(row) => {
-            setAllRows((current) => [row, ...current]);
-            setShowCreate(false);
-          }}
-        />
-      )}
+      {showCreate && <CreateKpiModal onClose={() => setShowCreate(false)} />}
     </div>
   );
 }

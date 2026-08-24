@@ -1,86 +1,73 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Loader2, Sparkles, X } from "lucide-react";
-import { PERSPECTIVE_META } from "./KpiLibraryTable";
-import type { KpiLibraryRow, KpiPerspective } from "@/data/mockKpiLibrary";
 import { trpc } from "@/lib/trpc/client";
 
-const PERSPECTIVES: KpiPerspective[] = ["financial", "customer", "internal", "learning"];
+type Frequency = "monthly" | "quarterly";
+type Polarity = "higher_is_better" | "lower_is_better";
+
+const FREQUENCY_LABEL: Record<Frequency, string> = { monthly: "Monthly", quarterly: "Quarterly" };
+const POLARITY_LABEL: Record<Polarity, string> = {
+  higher_is_better: "Higher is better",
+  lower_is_better: "Lower is better",
+};
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Could not generate a suggestion.";
 }
 
-const OWNER_COLOR_CYCLE = ["bg-blue-600", "bg-emerald-600", "bg-amber-600", "bg-rose-600", "bg-cyan-600", "bg-violet-600"];
-
-function initialsOf(name: string) {
-  return (
-    name
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? "")
-      .join("") || "?"
-  );
+function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
-function hashCode(value: string) {
-  let hash = 0;
-  for (let i = 0; i < value.length; i++) hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
-  return hash;
-}
-
-export default function CreateKpiModal({
-  onClose,
-  onCreate,
-}: {
-  onClose: () => void;
-  onCreate: (row: KpiLibraryRow) => void;
-}) {
+export default function CreateKpiModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
-  const [department, setDepartment] = useState("");
-  const [perspective, setPerspective] = useState<KpiPerspective>("financial");
-  const [actual, setActual] = useState("");
-  const [target, setTarget] = useState("");
-  const [freq, setFreq] = useState<"Weekly" | "Monthly" | "Quarterly">("Monthly");
-  const [ownerName, setOwnerName] = useState("");
+  const [nameAr, setNameAr] = useState("");
+  const [unit, setUnit] = useState("");
+  const [polarity, setPolarity] = useState<Polarity>("higher_is_better");
+  const [freq, setFreq] = useState<Frequency>("monthly");
+  const [activeFrom, setActiveFrom] = useState(todayIsoDate());
   const [description, setDescription] = useState("");
 
   const [themeNodeId, setThemeNodeId] = useState("");
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
-  type AiFields = { name: string; description: string; freq: typeof freq };
+  type AiFields = { name: string; description: string; freq: Frequency };
   /** Snapshot of the AI-touched fields right before the last suggestion was applied. */
   const [priorSnapshot, setPriorSnapshot] = useState<AiFields | null>(null);
   /** Snapshot of the AI-touched fields exactly as applied — used to detect hand-edits. */
   const [appliedSnapshot, setAppliedSnapshot] = useState<AiFields | null>(null);
   const [confirmingRegenerate, setConfirmingRegenerate] = useState(false);
 
+  const me = trpc.auth.me.useQuery();
+  const utils = trpc.useUtils();
   const nodes = trpc.strategy.nodes.useQuery();
-  const themes = useMemo(
-    () => (nodes.data ?? []).filter((node) => node.type === "theme" && node.state !== "retired"),
-    [nodes.data],
-  );
+  const themes = (nodes.data ?? []).filter((node) => node.type === "theme" && node.state !== "retired");
   const generate = trpc.aiSuggestion.generate.useMutation();
+  const createDraft = trpc.registry.kpi.createDraft.useMutation({
+    onSuccess: () => {
+      void utils.registry.kpi.list.invalidate();
+      onClose();
+    },
+  });
 
   const hasHandEdited =
     appliedSnapshot !== null &&
     (name !== appliedSnapshot.name || description !== appliedSnapshot.description || freq !== appliedSnapshot.freq);
 
-  const valid = name.trim().length > 0;
+  const valid =
+    name.trim().length > 0 && nameAr.trim().length > 0 && unit.trim().length > 0 && activeFrom.trim().length > 0;
 
   const applySuggestion = (suggestion: {
     titleEn: string;
     descriptionEn: string | null;
-    kpi: { frequency: "monthly" | "quarterly" } | null;
+    kpi: { frequency: Frequency } | null;
   }) => {
     setPriorSnapshot({ name, description, freq });
     const nextName = name.trim().length > 0 ? name : suggestion.titleEn;
     const nextDescription = suggestion.descriptionEn ?? description;
-    const nextFreq: typeof freq =
-      suggestion.kpi?.frequency === "quarterly" ? "Quarterly" : suggestion.kpi?.frequency === "monthly" ? "Monthly" : freq;
+    const nextFreq: Frequency = suggestion.kpi?.frequency ?? freq;
     setName(nextName);
     setDescription(nextDescription);
     setFreq(nextFreq);
@@ -130,28 +117,17 @@ export default function CreateKpiModal({
   };
 
   const handleCreate = () => {
-    if (!valid) return;
-    const owner = ownerName.trim();
-    onCreate({
-      id: `kpi-custom-${Date.now()}`,
-      name: name.trim(),
-      tag: category.trim() || "General",
-      perspective,
-      department: department.trim() || "Unassigned",
-      owner: {
-        initials: initialsOf(owner || "New Owner"),
-        name: owner || "Unassigned",
-        color: OWNER_COLOR_CYCLE[Math.abs(hashCode(name.trim())) % OWNER_COLOR_CYCLE.length],
-      },
-      actual: actual.trim() || "—",
-      target: target.trim() || "—",
-      variance: "—",
-      favorable: true,
-      trend: [0, 0, 0, 0, 0, 0],
-      freq,
-      approval: "draft",
-      status: "on-track",
-      description: description.trim() || undefined,
+    if (!valid || !me.data) return;
+    createDraft.mutate({
+      nameEn: name.trim(),
+      nameAr: nameAr.trim(),
+      unit: unit.trim(),
+      polarity,
+      frequency: freq,
+      dataSourceType: "manual",
+      ownerUserId: me.data.id,
+      activeFrom: new Date(activeFrom),
+      descriptionEn: description.trim() || undefined,
     });
   };
 
@@ -228,68 +204,53 @@ export default function CreateKpiModal({
             )}
           </div>
 
-          <Field label="KPI Name" required>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Revenue Growth (YoY)"
-              className={inputClass}
-            />
-          </Field>
-
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Category">
-              <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. Revenue" className={inputClass} />
+            <Field label="KPI Name (English)" required>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Revenue Growth (YoY)"
+                className={inputClass}
+              />
             </Field>
-            <Field label="Department">
-              <input value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="e.g. Sales" className={inputClass} />
+            <Field label="KPI Name (Arabic)" required>
+              <input
+                value={nameAr}
+                onChange={(e) => setNameAr(e.target.value)}
+                placeholder="e.g. نمو الإيرادات"
+                dir="rtl"
+                className={inputClass}
+              />
             </Field>
-          </div>
-
-          <div>
-            <span className="mb-1 block text-sm font-medium text-gray-700">
-              BSC Perspective <span className="text-red-500">*</span>
-            </span>
-            <div role="group" aria-label="BSC Perspective" className="grid grid-cols-4 gap-2">
-              {PERSPECTIVES.map((key) => {
-                const meta = PERSPECTIVE_META[key];
-                const Icon = meta.icon;
-                const active = perspective === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => setPerspective(key)}
-                    className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-3 text-xs font-medium transition ${
-                      active ? "border-blue-600 bg-blue-600 text-white" : "border-gray-200 text-gray-500 hover:bg-gray-50"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" /> {meta.label}
-                  </button>
-                );
-              })}
-            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
-            <Field label="Actual Value">
-              <input value={actual} onChange={(e) => setActual(e.target.value)} placeholder="e.g. 38%" className={inputClass} />
+            <Field label="Unit" required>
+              <input value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="e.g. %" className={inputClass} />
             </Field>
-            <Field label="Target Value">
-              <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="e.g. 40%" className={inputClass} />
+            <Field label="Polarity" required>
+              <select value={polarity} onChange={(e) => setPolarity(e.target.value as Polarity)} className={inputClass}>
+                {(Object.keys(POLARITY_LABEL) as Polarity[]).map((key) => (
+                  <option key={key} value={key}>{POLARITY_LABEL[key]}</option>
+                ))}
+              </select>
             </Field>
-            <Field label="Frequency">
-              <select value={freq} onChange={(e) => setFreq(e.target.value as typeof freq)} className={inputClass}>
-                <option value="Weekly">Weekly</option>
-                <option value="Monthly">Monthly</option>
-                <option value="Quarterly">Quarterly</option>
+            <Field label="Frequency" required>
+              <select value={freq} onChange={(e) => setFreq(e.target.value as Frequency)} className={inputClass}>
+                {(Object.keys(FREQUENCY_LABEL) as Frequency[]).map((key) => (
+                  <option key={key} value={key}>{FREQUENCY_LABEL[key]}</option>
+                ))}
               </select>
             </Field>
           </div>
 
-          <Field label="Owner Name">
-            <input value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="e.g. Sarah Chen" className={inputClass} />
+          <Field label="Active From" required>
+            <input
+              type="date"
+              value={activeFrom}
+              onChange={(e) => setActiveFrom(e.target.value)}
+              className={inputClass}
+            />
           </Field>
 
           <Field label="Description">
@@ -301,6 +262,12 @@ export default function CreateKpiModal({
               className={`${inputClass} resize-none`}
             />
           </Field>
+
+          {createDraft.error && (
+            <p data-testid="kpi-create-error" className="text-sm text-red-600">
+              {createDraft.error.message}
+            </p>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-gray-100 p-4">
@@ -308,10 +275,11 @@ export default function CreateKpiModal({
             Cancel
           </button>
           <button
-            disabled={!valid}
+            disabled={!valid || createDraft.isPending}
             onClick={handleCreate}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
           >
+            {createDraft.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             Create KPI
           </button>
         </div>
