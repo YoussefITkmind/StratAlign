@@ -45,8 +45,12 @@ def install_multi_visual_route(app: FastAPI, runtime: WebRuntime) -> None:
 
         source_question = (
             payload.question
-            + "\n\nFor this source only: do not infer a fiscal year, quarter, date, or chronology from the filename or from other reports. "
-            "Mention a reporting period only when it is explicitly visible in this source evidence."
+            + "\n\nPrepare a concise source brief from this report only for a later cross-report synthesis. "
+            "Extract the current value relevant to the question, any historical values explicitly visible in this report, the target/status when visible, "
+            "the documented causes, and whether this report itself explicitly describes improvement, deterioration, recovery, or forecast movement. "
+            "Do not say that other reports are unavailable or that only one report is visible. "
+            "Do not compare this source with unseen reports. "
+            "Do not infer a fiscal year, quarter, date, chronology, or value from the filename or from other reports; mention them only when explicitly visible in this source evidence."
         )
 
         for position, document_id in enumerate(ids, start=1):
@@ -93,8 +97,11 @@ def install_multi_visual_route(app: FastAPI, runtime: WebRuntime) -> None:
             "Use the SOURCE names as the canonical report labels. "
             "Do not invent fiscal years, quarters, dates, or chronology that are not explicitly stated in the source summaries/evidence. "
             "Do not reorder reports based on guessed dates. "
-            "When comparing numeric values, verify the arithmetic and direction before answering: a larger later value is an increase and a smaller later value is a decrease. "
-            "If chronology is not explicit, state the values by source/report name rather than claiming which occurred first."
+            "When chronology and numeric values are explicit, calculate each adjacent percentage-point change and verify the arithmetic and direction before answering. "
+            "A larger later value is an increase and a smaller later value is a decrease. "
+            "If the first and last periods are explicit, state the overall first-to-last percentage-point change as well. "
+            "If chronology is not explicit, state the values by source/report name rather than claiming which occurred first. "
+            "Separate actual observed changes from forecasts or possible future recovery."
         )
         synthesis = OpenAICompatibleVLMReader.from_env().synthesize_text(
             synthesis_question,
