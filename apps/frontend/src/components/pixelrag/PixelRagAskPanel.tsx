@@ -34,6 +34,8 @@ export default function PixelRagAskPanel({
 
   useEffect(() => {
     const readyIds = new Set(readyDocuments.map((document) => document.id));
+    // Keep local selection aligned with the set of ready documents and the active document.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedIds((current) => {
       const valid = current.filter((id) => readyIds.has(id)).slice(0, 3);
       if (valid.length > 0) return valid;
