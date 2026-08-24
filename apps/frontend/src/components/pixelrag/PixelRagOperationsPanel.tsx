@@ -38,10 +38,14 @@ export default function PixelRagOperationsPanel() {
   const [ingestionForm, setIngestionForm] = useState<IngestionForm | null>(null);
 
   useEffect(() => {
+    // Mirror query data into the editable local form without changing the underlying policy shape.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (governance.data) setGovernanceForm({ ...governance.data, allow_automatic_writes: false });
   }, [governance.data]);
 
   useEffect(() => {
+    // Mirror query data into the editable local form without changing ingestion settings semantics.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (ingestion.data) setIngestionForm(ingestion.data);
   }, [ingestion.data]);
 
