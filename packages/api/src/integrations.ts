@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { requireRole, router } from "./index";
+import { protectedProcedure, requireRole, router } from "./index";
 
 export type ConnectionStatusValue = "CONNECTED" | "ERROR" | "DISCONNECTED" | "PENDING";
 export type SyncLogStatusValue = "SUCCESS" | "FAILED" | "PARTIAL" | "RUNNING";
@@ -32,6 +32,7 @@ export interface SyncLogOutput {
   message: string;
   color: string;
   icon: string;
+  createdAt: Date;
 }
 
 export interface ApiKeyOutput {
@@ -104,7 +105,29 @@ const service = (ctx: { integrations?: IntegrationsServicesContract }): Integrat
   return ctx.integrations;
 };
 
+const INTEGRATIONS_ERROR_CODES = {
+  INTEGRATIONS_CONNECTION_NOT_FOUND: "NOT_FOUND",
+  INTEGRATIONS_API_KEY_NOT_FOUND: "NOT_FOUND",
+  INTEGRATIONS_WEBHOOK_NOT_FOUND: "NOT_FOUND",
+  INTEGRATIONS_CONCURRENT_UPDATE: "CONFLICT",
+} as const satisfies Record<string, TRPCError["code"]>;
+
+function isMappedIntegrationsError(
+  error: unknown,
+): error is { code: keyof typeof INTEGRATIONS_ERROR_CODES; message: string } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code: unknown }).code === "string" &&
+    (error as { code: string }).code in INTEGRATIONS_ERROR_CODES
+  );
+}
+
 const fail = (error: unknown): never => {
+  if (isMappedIntegrationsError(error)) {
+    throw new TRPCError({ code: INTEGRATIONS_ERROR_CODES[error.code], message: error.message });
+  }
   throw new TRPCError({
     code: "BAD_REQUEST",
     message: error instanceof Error ? error.message : "Integrations operation failed",
@@ -117,7 +140,7 @@ const id = z.string().uuid();
 
 export const integrationsRouter = router({
   connections: router({
-    list: manage().query(async ({ ctx }) => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       try {
         return await service(ctx).connections.list();
       } catch (error) {
@@ -144,7 +167,7 @@ export const integrationsRouter = router({
       }),
   }),
   syncLogs: router({
-    list: manage().query(async ({ ctx }) => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       try {
         return await service(ctx).syncLogs.list();
       } catch (error) {
@@ -153,7 +176,7 @@ export const integrationsRouter = router({
     }),
   }),
   apiKeys: router({
-    list: manage().query(async ({ ctx }) => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       try {
         return await service(ctx).apiKeys.list();
       } catch (error) {
@@ -199,7 +222,7 @@ export const integrationsRouter = router({
       }),
   }),
   webhooks: router({
-    list: manage().query(async ({ ctx }) => {
+    list: protectedProcedure.query(async ({ ctx }) => {
       try {
         return await service(ctx).webhooks.list();
       } catch (error) {

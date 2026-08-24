@@ -45,12 +45,16 @@ export class ConnectionsService {
     if (!existing) throw integrationsErrors.connectionNotFound();
 
     const connecting = existing.status !== "CONNECTED";
-    const updated = await this.prisma.connection.update({
-      where: { id },
+    const { count } = await this.prisma.connection.updateMany({
+      where: { id, status: existing.status },
       data: connecting
         ? { status: "CONNECTED", lastSyncLabel: "Last: just now" }
         : { status: "DISCONNECTED", lastSyncLabel: "Disconnected just now" },
     });
+    if (count === 0) throw integrationsErrors.concurrentUpdate();
+
+    const updated = await this.prisma.connection.findUnique({ where: { id } });
+    if (!updated) throw integrationsErrors.connectionNotFound();
     return toView(updated);
   }
 

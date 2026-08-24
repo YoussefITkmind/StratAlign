@@ -10,6 +10,7 @@ const LOG_STATUS_META: Record<string, { label: string; text: string; dot: string
   PARTIAL: { label: "Partial", text: "text-orange-600", dot: "bg-orange-500" },
   RUNNING: { label: "Running", text: "text-blue-600", dot: "bg-blue-500 animate-pulse" },
 };
+const UNKNOWN_LOG_STATUS_META = { label: "Unknown", text: "text-slate-500", dot: "bg-slate-400" };
 
 export default function SyncLogsTab({ search }: { search: string }) {
   const query = trpc.integrations.syncLogs.list.useQuery();
@@ -180,7 +181,7 @@ export default function SyncLogsTab({ search }: { search: string }) {
           </thead>
           <tbody>
             {filtered.map((l) => {
-              const meta = LOG_STATUS_META[l.status];
+              const meta = LOG_STATUS_META[l.status] ?? UNKNOWN_LOG_STATUS_META;
               return (
                 <tr key={l.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                   <td className="px-4 py-3">
