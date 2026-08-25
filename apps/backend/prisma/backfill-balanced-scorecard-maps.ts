@@ -32,6 +32,42 @@ function objectiveStatus(status: string) {
   return "not-started";
 }
 
+async function refreshObjectiveFromKpis(objectiveNodeId: string) {
+  const stats = await client.query<{
+    count: number;
+    averageScore: number | null;
+    atRisk: number;
+    draft: number;
+  }>(`
+    SELECT
+      COUNT(k.id)::int AS count,
+      AVG(k.score)::float8 AS "averageScore",
+      COUNT(*) FILTER (WHERE k.status = 'at-risk')::int AS "atRisk",
+      COUNT(*) FILTER (WHERE k.status = 'draft')::int AS draft
+    FROM scorecard.objective_kpi_links l
+    JOIN scorecard.kpi_snapshots k ON k.id = l.kpi_snapshot_id
+    WHERE l.objective_node_id = $1::uuid
+  `, [objectiveNodeId]);
+
+  const row = stats.rows[0];
+  if (!row || row.count === 0) return;
+  const status = row.atRisk > 0
+    ? "at-risk"
+    : row.draft === row.count
+      ? "not-started"
+      : row.draft > 0
+        ? "at-risk"
+        : "on-track";
+
+  await client.query(`
+    UPDATE scorecard.objective_profiles
+    SET status = $2,
+        progress = $3,
+        updated_at = NOW()
+    WHERE objective_node_id = $1::uuid
+  `, [objectiveNodeId, status, Math.max(0, Math.min(100, row.averageScore ?? 0))]);
+}
+
 async function main() {
   await client.connect();
   try {
@@ -146,6 +182,7 @@ async function main() {
         ON CONFLICT DO NOTHING
       `, [objectiveNodeId, target.id]);
 
+      await refreshObjectiveFromKpis(objectiveNodeId);
       createdObjectives += 1;
     }
 
