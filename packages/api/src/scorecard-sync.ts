@@ -5,6 +5,7 @@ import { protectedProcedure, requireRole, router } from "./index";
 const id = z.string().uuid();
 const scorecardStatus = z.enum(["on-track", "at-risk", "draft"]);
 const objectiveStatus = z.enum(["on-track", "at-risk", "off-track", "not-started"]);
+const mapLinkType = z.enum(["weak", "strong", "enables", "impacts", "drives", "supports"]);
 
 interface SyncService {
   createObjective(input: {
@@ -70,10 +71,26 @@ interface SyncService {
   deleteKpi(input: { scorecardId: string; kpiSnapshotId: string }): Promise<{ removed: true }>;
 }
 
+interface MapSyncService {
+  upsertLink(input: {
+    scorecardId: string;
+    fromObjectiveId: string;
+    toObjectiveId: string;
+    strength: "weak" | "strong" | "enables" | "impacts" | "drives" | "supports";
+  }): Promise<unknown>;
+  deleteLink(input: { scorecardId: string; linkId: string }): Promise<{ removed: true }>;
+}
+
 function service(ctx: unknown): SyncService {
   const value = (ctx as { balancedScorecard?: unknown }).balancedScorecard;
   if (!value) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Balanced scorecard service unavailable" });
   return value as SyncService;
+}
+
+function mapService(ctx: unknown): MapSyncService {
+  const value = (ctx as { scorecardMapSync?: unknown }).scorecardMapSync;
+  if (!value) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Strategy Map sync service unavailable" });
+  return value as MapSyncService;
 }
 
 function fail(error: unknown): never {
@@ -84,6 +101,7 @@ function fail(error: unknown): never {
 }
 
 const author = () => requireRole("strategy_analyst", "seo_administrator");
+const mapEditor = () => requireRole("strategy_analyst");
 
 const objectiveInput = z.object({
   scorecardId: id,
@@ -118,9 +136,8 @@ const kpiInput = z.object({
 export const scorecardSyncRouter = router({
   objective: router({
     create: author().input(objectiveInput).mutation(async ({ ctx, input }) => {
-      try {
-        return await service(ctx).createObjective({ ...input, actorUserId: ctx.session!.user.id });
-      } catch (error) { return fail(error); }
+      try { return await service(ctx).createObjective({ ...input, actorUserId: ctx.session!.user.id }); }
+      catch (error) { return fail(error); }
     }),
     update: author().input(objectiveInput.extend({ objectiveNodeId: id })).mutation(async ({ ctx, input }) => {
       try { return await service(ctx).updateObjective(input); } catch (error) { return fail(error); }
@@ -138,6 +155,19 @@ export const scorecardSyncRouter = router({
     }),
     delete: author().input(z.object({ scorecardId: id, kpiSnapshotId: id }).strict()).mutation(async ({ ctx, input }) => {
       try { return await service(ctx).deleteKpi(input); } catch (error) { return fail(error); }
+    }),
+  }),
+  mapLink: router({
+    upsert: mapEditor().input(z.object({
+      scorecardId: id,
+      fromObjectiveId: id,
+      toObjectiveId: id,
+      strength: mapLinkType,
+    }).strict()).mutation(async ({ ctx, input }) => {
+      try { return await mapService(ctx).upsertLink(input); } catch (error) { return fail(error); }
+    }),
+    delete: mapEditor().input(z.object({ scorecardId: id, linkId: id }).strict()).mutation(async ({ ctx, input }) => {
+      try { return await mapService(ctx).deleteLink(input); } catch (error) { return fail(error); }
     }),
   }),
   health: protectedProcedure.query(() => ({ connected: true as const })),
