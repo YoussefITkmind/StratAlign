@@ -1,6 +1,6 @@
-import PersistedBalancedScorecardDetailPage from "@/components/scorecards/PersistedBalancedScorecardDetailPage";
+import MasterScorecardPage from "@/components/scorecards/MasterScorecardPage";
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <PersistedBalancedScorecardDetailPage scorecardId={id} />;
+  return <MasterScorecardPage scorecardId={id} />;
 }
