@@ -5,6 +5,8 @@ import { LINK_CONFIG, type LinkStrength } from "@/lib/strategyMapVisualConfig";
 interface LinkEdgeData {
   strength: LinkStrength;
   draft?: boolean;
+  active?: boolean;
+  dimmed?: boolean;
   [key: string]: unknown;
 }
 
@@ -20,7 +22,7 @@ export default function MapLinkEdge({ id, source, target, data }: EdgeProps) {
     curvature: 0.32,
   });
 
-  const { strength, draft } = data as LinkEdgeData;
+  const { strength, draft, active, dimmed } = data as LinkEdgeData;
   const cfg = LINK_CONFIG[strength];
 
   return (
@@ -29,10 +31,11 @@ export default function MapLinkEdge({ id, source, target, data }: EdgeProps) {
       path={path}
       markerEnd={`url(#strategy-map-arrow-${strength})`}
       style={{
-        stroke: draft ? "#3b82f6" : cfg.color,
-        strokeWidth: cfg.width,
-        strokeDasharray: draft ? "5 4" : undefined,
-        opacity: draft ? 0.9 : 1,
+        stroke: cfg.color,
+        strokeWidth: active ? Math.max(cfg.width + 0.75, 2.75) : cfg.width,
+        strokeDasharray: cfg.dashed || draft ? "6 4" : undefined,
+        opacity: dimmed ? 0.12 : draft ? 0.85 : active ? 1 : 0.9,
+        transition: "opacity 150ms ease, stroke-width 150ms ease",
       }}
     />
   );
