@@ -17,6 +17,7 @@ import {
 import { trpc } from "@/lib/trpc/client";
 import type { Kpi, Perspective, PerspectiveKey, Scorecard } from "@/types/scorecard";
 import { KPI_STATUS_DOT, scoreColor } from "@/lib/scorecardConfig";
+import ScorecardSyncWorkspace from "./ScorecardSyncWorkspace";
 
 const PERSPECTIVE_ORDER: PerspectiveKey[] = [
   "financial",
@@ -478,6 +479,8 @@ export default function PersistedBalancedScorecardDetailPage({ scorecardId }: { 
           </div>
         </div>
       </div>
+
+      <ScorecardSyncWorkspace scorecardId={scorecardId} />
 
       <main className="mx-auto max-w-[1600px] px-3 py-5 sm:px-5">
         <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
