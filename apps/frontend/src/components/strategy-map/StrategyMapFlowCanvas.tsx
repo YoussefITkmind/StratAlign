@@ -24,13 +24,14 @@ interface StrategyMapFlowCanvasProps {
   editing: boolean;
   selectedObjectiveId: string | null;
   onSelectObjective: (objectiveId: string) => void;
+  onHoverObjective?: (objectiveId: string | null) => void;
   onRemoveLink?: (linkId: string) => void;
   connecting?: boolean;
   pendingSourceId?: string | null;
   infoLabel?: ReactNode;
 }
 
-function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiveId, onSelectObjective, onRemoveLink, connecting, pendingSourceId, infoLabel }: StrategyMapFlowCanvasProps) {
+function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiveId, onSelectObjective, onHoverObjective, onRemoveLink, connecting, pendingSourceId, infoLabel }: StrategyMapFlowCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -87,12 +88,12 @@ function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiv
 
   const handleNodeHover: NodeMouseHandler = (_, node) => {
     if (connecting || node.type !== "objective") return;
-    onSelectObjective(node.id);
+    onHoverObjective?.(node.id);
   };
 
   const handleNodeLeave: NodeMouseHandler = (_, node) => {
     if (connecting || node.type !== "objective") return;
-    onSelectObjective("");
+    onHoverObjective?.(null);
   };
 
   const handleEdgeClick: EdgeMouseHandler = (_, edge) => {
