@@ -18,7 +18,7 @@ export const mapLinkSchema = z
   .object({
     fromObjectiveId: z.string().uuid(),
     toObjectiveId: z.string().uuid(),
-    strength: z.enum(["weak", "strong"]),
+    strength: z.enum(["weak", "strong", "enables", "impacts", "drives", "supports"]),
   })
   .strict()
   .refine((link) => link.fromObjectiveId !== link.toObjectiveId, {
