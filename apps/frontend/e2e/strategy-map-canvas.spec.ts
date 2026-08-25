@@ -131,7 +131,12 @@ test.describe("Strategy Map canvas — real data and governance", () => {
     await expect(editDialog).toBeVisible();
     await editDialog.getByLabel("Objective Label").fill("Improve Strategic Pricing");
     await editDialog.getByLabel("Owner Name").fill("Morgan Reed");
-    await editDialog.getByLabel(/Progress/).fill("73");
+    await editDialog.locator('input[type="range"]').evaluate((element) => {
+      const input = element as HTMLInputElement;
+      input.value = "73";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     await editDialog.getByLabel("Description").fill("Improve enterprise pricing discipline and margin quality.");
     await editDialog.getByRole("button", { name: "Save Changes" }).click();
     await expect(page.getByTestId("map-notice")).toContainText("updated and persisted");
