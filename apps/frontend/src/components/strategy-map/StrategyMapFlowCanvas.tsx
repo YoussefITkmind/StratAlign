@@ -24,28 +24,29 @@ interface StrategyMapFlowCanvasProps {
   editing: boolean;
   selectedObjectiveId: string | null;
   onSelectObjective: (objectiveId: string) => void;
-  onHoverObjective?: (objectiveId: string | null) => void;
   onRemoveLink?: (linkId: string) => void;
   connecting?: boolean;
   pendingSourceId?: string | null;
   infoLabel?: ReactNode;
 }
 
-function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiveId, onSelectObjective, onHoverObjective, onRemoveLink, connecting, pendingSourceId, infoLabel }: StrategyMapFlowCanvasProps) {
+function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiveId, onSelectObjective, onRemoveLink, connecting, pendingSourceId, infoLabel }: StrategyMapFlowCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [zoomPct, setZoomPct] = useState(100);
+  const [hoveredObjectiveId, setHoveredObjectiveId] = useState<string | null>(null);
+  const visualObjectiveId = connecting ? selectedObjectiveId : hoveredObjectiveId ?? selectedObjectiveId;
 
   useEffect(() => {
     const rect = canvasRef.current?.getBoundingClientRect();
     const contentHeight = Math.max(perspectives.length, 1) * LANE_HEIGHT;
     const targetWidth = rect && rect.width > 0 && rect.height > 0 ? (rect.width / rect.height) * contentHeight : 0;
     const connectedIds = new Set<string>();
-    if (selectedObjectiveId) {
+    if (visualObjectiveId) {
       for (const link of links) {
-        if (link.fromObjectiveId === selectedObjectiveId) connectedIds.add(link.toObjectiveId);
-        if (link.toObjectiveId === selectedObjectiveId) connectedIds.add(link.fromObjectiveId);
+        if (link.fromObjectiveId === visualObjectiveId) connectedIds.add(link.toObjectiveId);
+        if (link.toObjectiveId === visualObjectiveId) connectedIds.add(link.fromObjectiveId);
       }
     }
 
@@ -56,10 +57,10 @@ function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiv
               ...node,
               data: {
                 ...node.data,
-                active: node.id === selectedObjectiveId,
+                active: node.id === visualObjectiveId,
                 pendingSource: node.id === pendingSourceId,
                 connecting,
-                dimmed: Boolean(selectedObjectiveId) && node.id !== selectedObjectiveId && !connectedIds.has(node.id),
+                dimmed: Boolean(visualObjectiveId) && node.id !== visualObjectiveId && !connectedIds.has(node.id),
               },
             }
           : node,
@@ -67,19 +68,19 @@ function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiv
     );
     setEdges(
       buildLinkEdges(links, editing).map((edge) => {
-        const active = Boolean(selectedObjectiveId) && (edge.source === selectedObjectiveId || edge.target === selectedObjectiveId);
+        const active = Boolean(visualObjectiveId) && (edge.source === visualObjectiveId || edge.target === visualObjectiveId);
         return {
           ...edge,
           data: {
             ...edge.data,
             active,
-            dimmed: Boolean(selectedObjectiveId) && !active,
+            dimmed: Boolean(visualObjectiveId) && !active,
           },
         };
       }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [perspectives, placements, links, editing, selectedObjectiveId, connecting, pendingSourceId]);
+  }, [perspectives, placements, links, editing, visualObjectiveId, connecting, pendingSourceId]);
 
   const handleNodeSelect: NodeMouseHandler = (_, node) => {
     if (node.type !== "objective") return;
@@ -88,12 +89,12 @@ function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiv
 
   const handleNodeHover: NodeMouseHandler = (_, node) => {
     if (connecting || node.type !== "objective") return;
-    onHoverObjective?.(node.id);
+    setHoveredObjectiveId(node.id);
   };
 
   const handleNodeLeave: NodeMouseHandler = (_, node) => {
     if (connecting || node.type !== "objective") return;
-    onHoverObjective?.(null);
+    setHoveredObjectiveId(null);
   };
 
   const handleEdgeClick: EdgeMouseHandler = (_, edge) => {
