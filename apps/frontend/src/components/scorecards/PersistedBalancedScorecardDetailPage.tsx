@@ -80,8 +80,10 @@ function toScorecard(row: unknown): Scorecard | null {
   if (typeof row !== "object" || row === null) return null;
   const record = row as Record<string, unknown>;
   if (
+    record.isBalancedScorecard === false ||
     typeof record.id !== "string" ||
     typeof record.name !== "string" ||
+    record.name.startsWith("E2E ") ||
     typeof record.department !== "string" ||
     typeof record.period !== "string" ||
     typeof record.ownerName !== "string" ||
@@ -149,13 +151,11 @@ function kpiStatusDescription(status: Kpi["status"]) {
 function PerspectiveSection({
   perspective,
   ownerName,
-  strategicObjective,
   expanded,
   onToggle,
 }: {
   perspective: Perspective;
   ownerName: string;
-  strategicObjective?: string;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -252,6 +252,9 @@ function PerspectiveSection({
                 {perspective.kpis.map((kpi) => {
                   const progress = scoreColor(kpi.score);
                   const kpiExpanded = expandedKpiIds.has(kpi.id);
+                  const linkedObjectiveNames = (perspective.objectives ?? [])
+                    .filter((objective) => kpi.linkedObjectiveIds?.includes(objective.id))
+                    .map((objective) => objective.name);
                   return (
                     <Fragment key={kpi.id}>
                       <tr
@@ -299,10 +302,14 @@ function PerspectiveSection({
                               </div>
                               <div className="min-w-0">
                                 <p className="text-xs font-semibold text-gray-900">Linked Objectives</p>
-                                {strategicObjective ? (
-                                  <span className="mt-1 inline-flex max-w-full items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium leading-4 text-sky-700">
-                                    <span className="whitespace-normal">◎ {strategicObjective}</span>
-                                  </span>
+                                {linkedObjectiveNames.length > 0 ? (
+                                  <div className="mt-1 flex flex-wrap gap-1.5">
+                                    {linkedObjectiveNames.map((name) => (
+                                      <span key={name} className="inline-flex max-w-full items-center rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium leading-4 text-sky-700">
+                                        <span className="whitespace-normal">◎ {name}</span>
+                                      </span>
+                                    ))}
+                                  </div>
                                 ) : (
                                   <p className="mt-1 text-xs text-gray-400">—</p>
                                 )}
@@ -511,7 +518,6 @@ export default function PersistedBalancedScorecardDetailPage({ scorecardId }: { 
               key={perspective.id}
               perspective={perspective}
               ownerName={scorecard.ownerName}
-              strategicObjective={scorecard.strategicObjective}
               expanded={expandedPerspectiveIds.has(perspective.id) || (expandedPerspectiveIds.size === 0 && index === 0)}
               onToggle={() => togglePerspective(perspective.id)}
             />
