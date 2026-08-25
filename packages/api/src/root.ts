@@ -2,6 +2,7 @@ import { appRouter, mergeRouters, router } from "./index";
 import { strategyRouter } from "./strategy";
 import { strategyHierarchyRouter } from "./strategyHierarchy";
 import { scorecardRouter } from "./scorecard";
+import { scorecardSyncRouter } from "./scorecard-sync";
 import { executionRouter } from "./execution";
 import { portfolioRouter } from "./portfolio";
 import { schedulerRouter } from "./scheduler";
@@ -19,6 +20,7 @@ export const rootRouter = mergeRouters(
     strategy: strategyRouter,
     strategyHierarchy: strategyHierarchyRouter,
     scorecard: scorecardRouter,
+    scorecardSync: scorecardSyncRouter,
     execution: executionRouter,
     portfolio: portfolioRouter,
     scheduler: schedulerRouter,
