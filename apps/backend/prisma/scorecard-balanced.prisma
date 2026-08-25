@@ -64,3 +64,33 @@ model BalancedKpiSnapshot {
   @@map("kpi_snapshots")
   @@schema("scorecard")
 }
+
+model ScorecardObjectiveProfile {
+  objectiveNodeId String   @id @map("objective_node_id") @db.Uuid
+  scorecardId     String   @map("scorecard_id") @db.Uuid
+  status          String   @default("not-started")
+  progress        Decimal  @default(0) @db.Decimal(5, 2)
+  ownerName       String   @default("Unassigned") @map("owner_name")
+  ownerInitials   String?  @map("owner_initials") @db.VarChar(2)
+  ownerColor      String?  @map("owner_color")
+  description     String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@unique([scorecardId, objectiveNodeId])
+  @@index([scorecardId])
+  @@index([status])
+  @@map("objective_profiles")
+  @@schema("scorecard")
+}
+
+model ScorecardObjectiveKpiLink {
+  objectiveNodeId String   @map("objective_node_id") @db.Uuid
+  kpiSnapshotId   String   @map("kpi_snapshot_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@id([objectiveNodeId, kpiSnapshotId])
+  @@index([kpiSnapshotId])
+  @@map("objective_kpi_links")
+  @@schema("scorecard")
+}
