@@ -40,15 +40,43 @@ function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiv
     const rect = canvasRef.current?.getBoundingClientRect();
     const contentHeight = Math.max(perspectives.length, 1) * LANE_HEIGHT;
     const targetWidth = rect && rect.width > 0 && rect.height > 0 ? (rect.width / rect.height) * contentHeight : 0;
+    const connectedIds = new Set<string>();
+    if (selectedObjectiveId) {
+      for (const link of links) {
+        if (link.fromObjectiveId === selectedObjectiveId) connectedIds.add(link.toObjectiveId);
+        if (link.toObjectiveId === selectedObjectiveId) connectedIds.add(link.fromObjectiveId);
+      }
+    }
 
     setNodes(
       buildLaneAndObjectiveNodes(perspectives, placements, targetWidth).map((node) =>
         node.type === "objective"
-          ? { ...node, data: { ...node.data, active: node.id === selectedObjectiveId, pendingSource: node.id === pendingSourceId, connecting } }
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                active: node.id === selectedObjectiveId,
+                pendingSource: node.id === pendingSourceId,
+                connecting,
+                dimmed: Boolean(selectedObjectiveId) && node.id !== selectedObjectiveId && !connectedIds.has(node.id),
+              },
+            }
           : node,
       ),
     );
-    setEdges(buildLinkEdges(links, editing));
+    setEdges(
+      buildLinkEdges(links, editing).map((edge) => {
+        const active = Boolean(selectedObjectiveId) && (edge.source === selectedObjectiveId || edge.target === selectedObjectiveId);
+        return {
+          ...edge,
+          data: {
+            ...edge.data,
+            active,
+            dimmed: Boolean(selectedObjectiveId) && !active,
+          },
+        };
+      }),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perspectives, placements, links, editing, selectedObjectiveId, connecting, pendingSourceId]);
 
