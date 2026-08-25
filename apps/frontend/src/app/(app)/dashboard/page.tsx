@@ -1,17 +1,15 @@
+import DashboardWorkspace from "@/components/dashboard/DashboardWorkspace";
 import { auth } from "@/lib/auth/auth";
 import { getDisplayName } from "@/lib/user";
 
 export default async function DashboardPage() {
   const session = await auth();
+  const displayName = getDisplayName(session?.user?.name, session?.user?.email);
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-8">
-      <h1 className="text-[1.4rem] font-bold tracking-tight text-slate-900">
-        Welcome, {getDisplayName(session?.user?.name, session?.user?.email)}
-      </h1>
-      <p className="mt-1.5 text-[14px] text-slate-500">
-        Signed in as {session?.user?.email} ·{" "}
-        {session?.user?.role === "platform_administrator" ? "Platform administrator" : "Member"}
-      </p>
-    </div>
+    <>
+      <h1 className="sr-only">Welcome, {displayName}</h1>
+      <DashboardWorkspace />
+    </>
   );
 }
