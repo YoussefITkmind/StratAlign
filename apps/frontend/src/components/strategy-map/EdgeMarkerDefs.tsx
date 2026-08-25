@@ -1,12 +1,12 @@
 import { LINK_CONFIG, type LinkStrength } from "@/lib/strategyMapVisualConfig";
 
-const STRENGTHS: LinkStrength[] = ["weak", "strong"];
+const LINK_TYPES: LinkStrength[] = ["weak", "strong", "enables", "impacts", "drives", "supports"];
 
 export default function EdgeMarkerDefs() {
   return (
     <svg style={{ position: "absolute", width: 0, height: 0 }}>
       <defs>
-        {STRENGTHS.map((strength) => (
+        {LINK_TYPES.map((strength) => (
           <marker
             key={strength}
             id={`strategy-map-arrow-${strength}`}
