@@ -52,7 +52,7 @@ export default function ScorecardSyncWorkspace({ scorecardId }: { scorecardId: s
     progress: number;
     ownerName: string;
     description: string | null;
-    kpiSnapshotIds: string[];
+    kpiSnapshotIds?: string[];
   }) => {
     setError(null); setNotice(null);
     try {
