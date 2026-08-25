@@ -8,7 +8,7 @@ import {
 import { Scorecard, Filters } from "@/types/scorecard";
 import { SCORECARD_STATUS_CONFIG, scoreColor } from "@/lib/scorecardConfig";
 import { initialScorecards } from "@/data/mockScorecardData";
-import { filterScorecards, groupByDepartment, statusCounts, totalKpis, isFiltering } from "@/lib/scorecardUtils";
+import { filterScorecards, groupByDepartment, statusCounts, totalKpis } from "@/lib/scorecardUtils";
 import { trpc } from "@/lib/trpc/client";
 import { usePublishAssistantContext } from "@/lib/assistant/assistant-context";
 import ScorecardRow from "./ScorecardRow";
@@ -54,7 +54,6 @@ export default function BalancedScorecardsPage() {
   const kpiCount = useMemo(() => totalKpis(scorecards), [scorecards]);
   const filtered = useMemo(() => filterScorecards(scorecards, filters), [scorecards, filters]);
   const grouped = useMemo(() => groupByDepartment(filtered), [filtered]);
-  const filtering = isFiltering(filters);
 
   const toggle = (id: string) =>
     setExpandedIds((prev) => {
@@ -188,7 +187,7 @@ export default function BalancedScorecardsPage() {
             <div key={department}>
               <p className="px-4 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-wide text-gray-400">{department}</p>
               {cards.map((sc) => (
-                <ScorecardRow key={sc.id} scorecard={sc} expandedIds={expandedIds} forceExpanded={filtering} onToggle={toggle} />
+                <ScorecardRow key={sc.id} scorecard={sc} expandedIds={expandedIds} forceExpanded={false} onToggle={toggle} />
               ))}
             </div>
           ))}
