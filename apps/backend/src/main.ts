@@ -55,6 +55,9 @@ import { ConnectionsService } from "./modules/integrations/connections.service";
 import { SyncLogsService } from "./modules/integrations/sync-logs.service";
 import { ApiKeysService } from "./modules/integrations/api-keys.service";
 import { WebhooksService } from "./modules/integrations/webhooks.service";
+import { WebhookDispatcherService } from "./modules/integrations/webhook-dispatcher.service";
+import { ApiKeyAuthService } from "./modules/integrations/api-key-auth.service";
+import { handlePublicApiRequest } from "./modules/integrations/public-api.router";
 import { ContextAwareAssistantService } from "./modules/ai/assistant.service";
 import { PixelRagClient } from "./modules/pixelrag/pixelrag.client";
 import { TraceabilityReadService } from "./modules/traceability/traceability-read.service";
@@ -147,8 +150,10 @@ async function bootstrap(): Promise<void> {
     logger.child("cadence-generator"),
   );
   const value = new ValueManagementService(prisma, governance, governanceEscalation, rules, scheduler);
+  const webhookDispatcher = new WebhookDispatcherService(prisma, logger.child("webhook-dispatcher"));
+  const apiKeyAuth = new ApiKeyAuthService(prisma);
   const integrations = {
-    connections: new ConnectionsService(prisma),
+    connections: new ConnectionsService(prisma, webhookDispatcher),
     syncLogs: new SyncLogsService(prisma),
     apiKeys: new ApiKeysService(prisma),
     webhooks: new WebhooksService(prisma),
@@ -198,6 +203,7 @@ async function bootstrap(): Promise<void> {
       response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
       response.setHeader("Access-Control-Allow-Credentials", "true");
       if (request.method === "OPTIONS") { response.statusCode = 204; response.end(); return; }
+      if (request.url?.startsWith("/api/v1/")) { void handlePublicApiRequest(request, response, apiKeyAuth); return; }
       next();
     },
   });
