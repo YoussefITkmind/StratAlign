@@ -69,20 +69,18 @@ export const scorecardSyncRouter = router({
       .input(z.object({ scorecardId: id, kpiSnapshotId: id }).strict())
       .mutation(({ ctx, input }) => forward(() => backend(ctx).scorecardSync.kpi.delete.mutate(input))),
   }),
-  map: router({
-    link: router({
-      create: authenticatedProcedure
-        .input(z.object({
-          scorecardId: id,
-          fromObjectiveId: id,
-          toObjectiveId: id,
-          strength: mapLinkStrength,
-        }).strict())
-        .mutation(({ ctx, input }) => forward(() => backend(ctx).scorecardSync.map.link.create.mutate(input))),
-      delete: authenticatedProcedure
-        .input(z.object({ scorecardId: id, linkId: id }).strict())
-        .mutation(({ ctx, input }) => forward(() => backend(ctx).scorecardSync.map.link.delete.mutate(input))),
-    }),
+  mapLink: router({
+    upsert: authenticatedProcedure
+      .input(z.object({
+        scorecardId: id,
+        fromObjectiveId: id,
+        toObjectiveId: id,
+        strength: mapLinkStrength,
+      }).strict())
+      .mutation(({ ctx, input }) => forward(() => backend(ctx).scorecardSync.mapLink.upsert.mutate(input))),
+    delete: authenticatedProcedure
+      .input(z.object({ scorecardId: id, linkId: id }).strict())
+      .mutation(({ ctx, input }) => forward(() => backend(ctx).scorecardSync.mapLink.delete.mutate(input))),
   }),
   health: authenticatedProcedure.query(({ ctx }) => forward(() => backend(ctx).scorecardSync.health.query())),
 });
