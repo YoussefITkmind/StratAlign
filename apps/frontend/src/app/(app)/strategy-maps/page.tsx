@@ -10,12 +10,14 @@ export const metadata: Metadata = {
 
 export default async function Page() {
   const store = await cookies();
-  let firstScorecardId = DEMO_SCORECARD_ID;
+  let scorecardId = DEMO_SCORECARD_ID;
   try {
-    const scorecards = (await createBackendRegistryClient(store.toString()).scorecard.list.query()) as Array<{ id: string }>;
-    if (scorecards.length > 0) firstScorecardId = scorecards[0]!.id;
+    const scorecards = (await createBackendRegistryClient(store.toString()).scorecard.list.query()) as Array<{ id: string; nameEn?: string }>;
+    const seededMap = scorecards.find((scorecard) => scorecard.nameEn === "Corporate Strategy 2025");
+    if (seededMap) scorecardId = seededMap.id;
+    else if (scorecards.length > 0) scorecardId = scorecards[0]!.id;
   } catch {
-    // No reachable backend or no scorecards yet — fall through to the demo map.
+    // Explicit demo fallback only when persisted scorecards cannot be resolved.
   }
-  redirect(`/strategy-maps/${firstScorecardId}`);
+  redirect(`/strategy-maps/${scorecardId}`);
 }
