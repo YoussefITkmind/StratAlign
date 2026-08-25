@@ -183,7 +183,7 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
     progress: number;
     ownerName: string;
     description: string | null;
-    kpiSnapshotIds: string[];
+    kpiSnapshotIds?: string[];
   }) => {
     setError(null); setMessage(null);
     try {
