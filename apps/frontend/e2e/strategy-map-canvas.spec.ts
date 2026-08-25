@@ -67,13 +67,18 @@ test.describe("Strategy Map canvas — real data and governance", () => {
     await page.getByRole("button", { name: "Close" }).click();
 
     await page.getByTestId("connect-nodes-button").click();
-    await page.getByTestId("connect-strength-weak").click();
+    await page.getByTestId("connect-strength-drives").click();
     await page.getByTestId(`map-objective-${fixture.csatObjectiveId}`).click();
     await page.getByTestId(`map-objective-${fixture.extraObjectiveId}`).click();
     await page.getByTestId("connect-nodes-button").click();
 
     await page.getByTestId(`map-objective-${fixture.extraObjectiveId}`).click();
-    await expect(page.getByTestId("node-connections-list").locator('[data-testid^="map-link-"]')).toHaveCount(1);
+    const connection = page.getByTestId("node-connections-list").locator('[data-testid^="map-link-"]');
+    await expect(connection).toHaveCount(1);
+    await expect(connection).toContainText("Drives");
+
+    await connection.click();
+    await expect(page.getByTestId(`map-objective-${fixture.csatObjectiveId}`)).toHaveCSS("opacity", "1");
 
     await page.getByTestId("approval-participant-id").fill(fixture.bobId);
     await page.getByTestId("submit-for-approval-button").click();
