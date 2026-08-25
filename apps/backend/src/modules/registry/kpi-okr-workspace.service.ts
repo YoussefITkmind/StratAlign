@@ -134,10 +134,9 @@ function formatValue(value: number | null, unit: string): string {
 function variance(actual: number | null, target: number | null, unit: string): string {
   if (actual === null || target === null) return "—";
   const delta = actual - target;
-  const sign = delta > 0 ? "+" : "";
   const formatted = formatValue(Math.abs(delta), unit);
   if (formatted.startsWith("$")) return `${delta < 0 ? "-" : "+"}${formatted}`;
-  return `${sign}${delta < 0 ? "-" : ""}${formatted}`;
+  return `${delta > 0 ? "+" : delta < 0 ? "-" : ""}${formatted}`;
 }
 
 function achievement(actual: number | null, target: number | null, polarity: string): number | null {
@@ -152,7 +151,7 @@ function achievement(actual: number | null, target: number | null, polarity: str
 
 function performanceStatus(actual: number | null, target: number | null, polarity: string): KpiStatus {
   const ratio = achievement(actual, target, polarity);
-  if (ratio === null) return "behind";
+  if (ratio === null) return "at-risk";
   if (ratio >= 95) return "on-track";
   if (ratio >= 80) return "at-risk";
   return "behind";
@@ -171,6 +170,13 @@ function approval(status: string, publishedAt: Date | null, approvalCaseId: stri
 
 function latestByPeriod<T extends { period: string }>(rows: T[]): T | null {
   return rows.length === 0 ? null : [...rows].sort((a, b) => a.period.localeCompare(b.period)).at(-1) ?? null;
+}
+
+function keyResultProgress(title: string, current: number | null, target: number): number {
+  if (current === null || target === 0) return 0;
+  const lowerIsBetter = /^(reduce|lower|decrease|minimi[sz]e|shorten|cut)\b/i.test(title.trim());
+  const raw = lowerIsBetter && current > 0 ? (target / current) * 100 : (current / target) * 100;
+  return Math.max(0, Math.min(100, Math.round(raw)));
 }
 
 export class KpiOkrWorkspaceService {
@@ -321,11 +327,11 @@ export class KpiOkrWorkspaceService {
       const krViews = rows.map((keyResult) => {
         const current = number(keyResult.currentValue);
         const target = number(keyResult.targetValue) ?? 0;
-        const rawProgress = current === null || target === 0 ? 0 : (current / target) * 100;
-        const progress = Math.max(0, Math.min(100, Math.round(rawProgress)));
+        const title = keyResult.title?.trim() || "Key Result";
+        const progress = keyResultProgress(title, current, target);
         return {
           id: keyResult.id,
-          label: keyResult.title?.trim() || "Key Result",
+          label: title,
           actual: formatValue(current, keyResult.unit),
           target: formatValue(target, keyResult.unit),
           progress,
