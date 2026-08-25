@@ -5,7 +5,7 @@ export default defineConfig({
   schema: "prisma",
   migrations: {
     path: "prisma/migrations",
-    seed: "tsx prisma/seed.ts && tsx prisma/seed-balanced-scorecards.ts",
+    seed: "tsx prisma/seed.ts && tsx prisma/seed-balanced-scorecards.ts && tsx prisma/seed-strategy-maps.ts",
   },
   datasource: {
     // Use process.env directly (not prisma/config's `env()` helper) so this
