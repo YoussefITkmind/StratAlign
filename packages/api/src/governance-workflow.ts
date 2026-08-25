@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "./index";
 
-interface GovernanceCaseRecord {
+export interface GovernanceCaseRecord {
   id: string;
   entityType: string;
   entityId: string;
@@ -11,9 +11,9 @@ interface GovernanceCaseRecord {
   currentState: string;
 }
 
-type GovernanceCaseWithRuntime = GovernanceCaseRecord & Record<string, unknown>;
+export type GovernanceCaseWithRuntime = GovernanceCaseRecord & Record<string, unknown>;
 
-type GovernanceWorkflowEvent =
+export type GovernanceWorkflowEvent =
   | {
       type: "APPROVE" | "REJECT" | "REQUEST_CHANGES";
       actorUserId: string;
