@@ -30,6 +30,7 @@ export type CreateBalancedScorecardInput = {
   nameAr: string;
   scopeNodeId?: string | null;
   planVersionId: string;
+  actorUserId: string;
   description?: string;
   department: string;
   period: string;
@@ -57,6 +58,7 @@ type ScorecardRow = {
   nameAr: string;
   scopeNodeId: string | null;
   planVersionId: string;
+  isBalancedScorecard: boolean;
   description: string | null;
   department: string;
   period: string;
@@ -126,6 +128,12 @@ function trendValues(value: unknown): number[] {
   return value.filter((item): item is number => typeof item === "number" && Number.isFinite(item));
 }
 
+function objectiveStatus(status: ScorecardStatus): "on-track" | "at-risk" | "not-started" {
+  if (status === "on-track") return "on-track";
+  if (status === "at-risk") return "at-risk";
+  return "not-started";
+}
+
 export class BalancedScorecardService {
   constructor(private readonly prisma: PrismaService) {}
 
@@ -137,6 +145,7 @@ export class BalancedScorecardService {
                s.name_ar AS "nameAr",
                s.scope_node_id AS "scopeNodeId",
                s.plan_version_id AS "planVersionId",
+               (p.scorecard_id IS NOT NULL) AS "isBalancedScorecard",
                p.description,
                COALESCE(p.department, 'Corporate') AS department,
                COALESCE(p.period, '—') AS period,
@@ -212,6 +221,7 @@ export class BalancedScorecardService {
       nameAr: scorecard.nameAr,
       scopeNodeId: scorecard.scopeNodeId,
       planVersionId: scorecard.planVersionId,
+      isBalancedScorecard: scorecard.isBalancedScorecard,
       description: scorecard.description ?? undefined,
       department: scorecard.department,
       period: scorecard.period,
@@ -291,6 +301,13 @@ export class BalancedScorecardService {
           ${input.strategicWeight ?? null}, ${input.tags ?? []}::text[], ${input.notes ?? null}
         )`;
 
+      const createdPerspectives = new Map<PerspectiveKey, {
+        id: string;
+        ownerInitials: string;
+        ownerColor: string;
+        kpiIds: string[];
+      }>();
+
       for (const [index, perspective] of input.perspectives.entries()) {
         const nameEn = perspective.key === "financial"
           ? "Financial"
@@ -314,8 +331,9 @@ export class BalancedScorecardService {
             ${perspective.score}, ${perspective.priorScore ?? null}, ${perspective.weight}
           )`;
 
+        const kpiIds: string[] = [];
         for (const kpi of perspective.kpis) {
-          await tx.$executeRaw`
+          const kpiRows = await tx.$queryRaw<Array<{ id: string }>>`
             INSERT INTO scorecard.kpi_snapshots (
               perspective_id, name, status, owner_initials, owner_color,
               score, prior_score, weight, actual, target, variance, trend
@@ -323,7 +341,72 @@ export class BalancedScorecardService {
               ${perspectiveId}::uuid, ${kpi.name}, ${kpi.status}, ${kpi.owner.initials}, ${kpi.owner.color},
               ${kpi.score}, ${kpi.priorScore ?? null}, ${kpi.weight ?? null}, ${kpi.actual ?? null}, ${kpi.target ?? null}, ${kpi.variance ?? null},
               ${JSON.stringify(kpi.trend ?? [])}::jsonb
+            )
+            RETURNING id`;
+          kpiIds.push(kpiRows[0]!.id);
+        }
+
+        createdPerspectives.set(perspective.key, {
+          id: perspectiveId,
+          ownerInitials: perspective.owner.initials,
+          ownerColor: perspective.owner.color,
+          kpiIds,
+        });
+      }
+
+      await tx.$executeRaw`
+        INSERT INTO scorecard.strategy_maps (scorecard_id, state)
+        VALUES (${scorecardId}::uuid, 'published'::scorecard.strategy_map_state)`;
+
+      const objectiveName = input.strategicObjective?.trim();
+      if (objectiveName) {
+        const requestedPerspective = input.primaryPerspective && input.primaryPerspective !== "all"
+          ? input.primaryPerspective
+          : input.perspectives[0]?.key;
+        const targetPerspective = requestedPerspective
+          ? createdPerspectives.get(requestedPerspective)
+          : undefined;
+
+        if (targetPerspective) {
+          const objectiveRows = await tx.$queryRaw<Array<{ id: string }>>`
+            INSERT INTO strategy.strategy_nodes (
+              type, name_en, name_ar, plan_version_id, state, created_by
+            ) VALUES (
+              'objective'::strategy."StrategyNodeType",
+              ${objectiveName},
+              ${objectiveName},
+              ${input.planVersionId}::uuid,
+              'active'::strategy."StrategyNodeState",
+              ${input.actorUserId}
+            )
+            RETURNING id`;
+          const objectiveNodeId = objectiveRows[0]!.id;
+
+          await tx.$executeRaw`
+            INSERT INTO scorecard.placements (perspective_id, objective_node_id)
+            VALUES (${targetPerspective.id}::uuid, ${objectiveNodeId}::uuid)`;
+
+          await tx.$executeRaw`
+            INSERT INTO scorecard.objective_profiles (
+              objective_node_id, scorecard_id, status, progress,
+              owner_name, owner_initials, owner_color, description
+            ) VALUES (
+              ${objectiveNodeId}::uuid,
+              ${scorecardId}::uuid,
+              ${objectiveStatus(input.status)},
+              ${Math.min(100, Math.max(0, input.score))},
+              ${input.ownerName},
+              ${input.ownerInitials ?? targetPerspective.ownerInitials},
+              ${targetPerspective.ownerColor},
+              ${input.description ?? null}
             )`;
+
+          for (const kpiId of targetPerspective.kpiIds) {
+            await tx.$executeRaw`
+              INSERT INTO scorecard.objective_kpi_links (objective_node_id, kpi_snapshot_id)
+              VALUES (${objectiveNodeId}::uuid, ${kpiId}::uuid)
+              ON CONFLICT DO NOTHING`;
+          }
         }
       }
 
