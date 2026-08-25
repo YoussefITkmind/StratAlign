@@ -54,6 +54,7 @@ import { ThemeContextBuilder } from "./modules/ai/theme-context.builder";
 import { AiSuggestionService } from "./modules/ai/ai-suggestion.service";
 import { ConnectionsService } from "./modules/integrations/connections.service";
 import { SyncLogsService } from "./modules/integrations/sync-logs.service";
+import { SyncInvestigationService } from "./modules/integrations/sync-investigation.service";
 import { ApiKeysService } from "./modules/integrations/api-keys.service";
 import { WebhooksService } from "./modules/integrations/webhooks.service";
 import { WebhookDispatcherService } from "./modules/integrations/webhook-dispatcher.service";
@@ -151,6 +152,13 @@ async function bootstrap(): Promise<void> {
   const integrations = {
     connections: new ConnectionsService(prisma, webhookDispatcher),
     syncLogs: new SyncLogsService(prisma),
+    // Reuses the one shared LLM abstraction above; read-only, so it is handed
+    // `prisma` for reads and nothing that could retry or reconfigure a sync.
+    syncInvestigation: new SyncInvestigationService(
+      prisma,
+      llm,
+      logger.child("sync-investigation"),
+    ),
     apiKeys: new ApiKeysService(prisma),
     webhooks: new WebhooksService(prisma),
   };

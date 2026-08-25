@@ -24,6 +24,12 @@ export const integrationsRouter = router({
   syncLogs: router({
     list: authenticatedProcedure.query(({ ctx }) =>
       forward(() => backend(ctx).integrations.syncLogs.list.query())),
+    // Forwards an identifier only. Evidence collection, the model call, and
+    // every guardrail live in the backend; this layer holds no AI credential
+    // and makes no diagnostic decision.
+    investigate: authenticatedProcedure.input(z.object({ syncLogId: id }).strict())
+      .mutation(({ ctx, input }) =>
+        forward(() => backend(ctx).integrations.syncLogs.investigate.mutate(input))),
   }),
   apiKeys: router({
     list: authenticatedProcedure.query(({ ctx }) =>
