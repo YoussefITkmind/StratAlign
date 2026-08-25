@@ -1571,11 +1571,46 @@ model Initiative {
   strategicPlayNodeId String          @map("strategic_play_node_id") @db.Uuid
   ownerUserId         String          @map("owner_user_id")
   stage               InitiativeStage
+  priority            Priority        @default(MEDIUM)
+  department          String?
+  startDate           DateTime?       @map("start_date") @db.Date
+  endDate             DateTime?       @map("end_date") @db.Date
+  tags                String[]        @default([])
   createdAt           DateTime        @default(now()) @map("created_at")
   updatedAt           DateTime        @updatedAt @map("updated_at")
   @@index([strategicPlayNodeId])
   @@index([ownerUserId])
   @@map("initiatives")
+  @@schema("execution")
+}
+
+enum Priority {
+  CRITICAL @map("critical")
+  HIGH     @map("high")
+  MEDIUM   @map("medium")
+  LOW      @map("low")
+  @@schema("execution")
+}
+
+model Project {
+  id                 String    @id @default(uuid()) @db.Uuid
+  name               String
+  description        String?
+  department         String?
+  ownerUserId        String    @map("owner_user_id")
+  parentInitiativeId String?   @map("parent_initiative_id") @db.Uuid
+  startDate          DateTime? @map("start_date") @db.Date
+  endDate            DateTime? @map("end_date") @db.Date
+  budgetAmount       Decimal?  @map("budget_amount") @db.Decimal(20, 6)
+  priority           Priority  @default(MEDIUM)
+  jiraBoardUrl       String?   @map("jira_board_url")
+  confluenceSpaceUrl String?   @map("confluence_space_url")
+  createdBy          String    @map("created_by")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  @@index([parentInitiativeId])
+  @@index([ownerUserId])
+  @@map("projects")
   @@schema("execution")
 }
 

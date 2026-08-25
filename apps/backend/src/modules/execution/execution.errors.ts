@@ -7,6 +7,7 @@ export class ExecutionOperationError extends Error {
       | "EXECUTION_INITIATIVE_NOT_FOUND"
       | "EXECUTION_JIRA_LINK_NOT_FOUND"
       | "EXECUTION_FEED_LOCKED"
+      | "EXECUTION_INVALID_DATE_RANGE"
       | "EXECUTION_INVALID_OPERATION",
     message: string,
   ) {
@@ -39,6 +40,10 @@ export const executionErrors = {
   feedLocked: () => new ExecutionOperationError(
     "EXECUTION_FEED_LOCKED",
     "This feed-bound attribute is locked and cannot be changed manually",
+  ),
+  invalidDateRange: () => new ExecutionOperationError(
+    "EXECUTION_INVALID_DATE_RANGE",
+    "End date cannot be before the start date",
   ),
   invalidOperation: (message = "Unable to complete execution operation") =>
     new ExecutionOperationError("EXECUTION_INVALID_OPERATION", message),
