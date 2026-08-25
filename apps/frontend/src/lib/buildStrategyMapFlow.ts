@@ -64,12 +64,58 @@ export function buildLaneAndObjectiveNodes(
   return [...laneNodes, ...objectiveNodes];
 }
 
+function stableRouteBand(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash % 5;
+}
+
 export function buildLinkEdges(links: MapLinkRow[], editing: boolean): Edge[] {
-  return links.map((link) => ({
-    id: link.id,
-    source: link.fromObjectiveId,
-    target: link.toObjectiveId,
-    type: "mapLink",
-    data: { strength: link.strength, draft: editing },
-  }));
+  const incidentByNode = new Map<string, Array<{ linkId: string; otherId: string }>>();
+
+  for (const link of links) {
+    incidentByNode.set(link.fromObjectiveId, [
+      ...(incidentByNode.get(link.fromObjectiveId) ?? []),
+      { linkId: link.id, otherId: link.toObjectiveId },
+    ]);
+    incidentByNode.set(link.toObjectiveId, [
+      ...(incidentByNode.get(link.toObjectiveId) ?? []),
+      { linkId: link.id, otherId: link.fromObjectiveId },
+    ]);
+  }
+
+  for (const rows of incidentByNode.values()) {
+    rows.sort((a, b) => a.otherId.localeCompare(b.otherId) || a.linkId.localeCompare(b.linkId));
+  }
+
+  const slot = (nodeId: string, linkId: string) => {
+    const rows = incidentByNode.get(nodeId) ?? [];
+    return {
+      index: Math.max(0, rows.findIndex((row) => row.linkId === linkId)),
+      count: Math.max(1, rows.length),
+    };
+  };
+
+  return links.map((link) => {
+    const sourceSlot = slot(link.fromObjectiveId, link.id);
+    const targetSlot = slot(link.toObjectiveId, link.id);
+
+    return {
+      id: link.id,
+      source: link.fromObjectiveId,
+      target: link.toObjectiveId,
+      type: "mapLink",
+      data: {
+        strength: link.strength,
+        draft: editing,
+        sourceSlot: sourceSlot.index,
+        sourceCount: sourceSlot.count,
+        targetSlot: targetSlot.index,
+        targetCount: targetSlot.count,
+        routeBand: stableRouteBand(link.id),
+      },
+    };
+  });
 }
