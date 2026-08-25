@@ -24,6 +24,8 @@ export const integrationsRouter = router({
   syncLogs: router({
     list: authenticatedProcedure.query(({ ctx }) =>
       forward(() => backend(ctx).integrations.syncLogs.list.query())),
+    investigateFailures: authenticatedProcedure.mutation(({ ctx }) =>
+      forward(() => backend(ctx).integrations.syncLogs.investigateFailures.mutate())),
   }),
   apiKeys: router({
     list: authenticatedProcedure.query(({ ctx }) =>

@@ -53,6 +53,7 @@ import { ThemeContextBuilder } from "./modules/ai/theme-context.builder";
 import { AiSuggestionService } from "./modules/ai/ai-suggestion.service";
 import { ConnectionsService } from "./modules/integrations/connections.service";
 import { SyncLogsService } from "./modules/integrations/sync-logs.service";
+import { SyncInvestigationService } from "./modules/integrations/sync-investigation.service";
 import { ApiKeysService } from "./modules/integrations/api-keys.service";
 import { WebhooksService } from "./modules/integrations/webhooks.service";
 import { WebhookDispatcherService } from "./modules/integrations/webhook-dispatcher.service";
@@ -152,9 +153,14 @@ async function bootstrap(): Promise<void> {
   const value = new ValueManagementService(prisma, governance, governanceEscalation, rules, scheduler);
   const webhookDispatcher = new WebhookDispatcherService(prisma, logger.child("webhook-dispatcher"));
   const apiKeyAuth = new ApiKeyAuthService(prisma);
+  const syncLogsService = new SyncLogsService(prisma);
+  const syncInvestigation = new SyncInvestigationService(prisma, llm, logger.child("sync-investigation"));
   const integrations = {
     connections: new ConnectionsService(prisma, webhookDispatcher),
-    syncLogs: new SyncLogsService(prisma),
+    syncLogs: {
+      list: () => syncLogsService.list(),
+      investigateFailures: () => syncInvestigation.investigateFailures(),
+    },
     apiKeys: new ApiKeysService(prisma),
     webhooks: new WebhooksService(prisma),
   };

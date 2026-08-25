@@ -16,6 +16,9 @@ const PASSTHROUGH_CODES = new Set([
   "FORBIDDEN",
   "NOT_FOUND",
   "CONFLICT",
+  "SERVICE_UNAVAILABLE",
+  "TIMEOUT",
+  "UNPROCESSABLE_CONTENT",
 ]);
 
 export function translateBackendIntegrationsError(error: unknown): never {

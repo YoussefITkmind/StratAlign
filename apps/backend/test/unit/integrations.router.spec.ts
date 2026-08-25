@@ -29,6 +29,7 @@ const connectionsList = vi.fn();
 const connectionsToggle = vi.fn();
 const connectionsSyncNow = vi.fn();
 const syncLogsList = vi.fn();
+const syncLogsInvestigateFailures = vi.fn();
 const apiKeysList = vi.fn();
 const apiKeysCreate = vi.fn();
 const apiKeysToggleDisabled = vi.fn();
@@ -55,7 +56,7 @@ function context(sessionOverride: typeof session | null = session) {
     registry: {},
     integrations: {
       connections: { list: connectionsList, toggle: connectionsToggle, syncNow: connectionsSyncNow },
-      syncLogs: { list: syncLogsList },
+      syncLogs: { list: syncLogsList, investigateFailures: syncLogsInvestigateFailures },
       apiKeys: {
         list: apiKeysList,
         create: apiKeysCreate,
@@ -121,6 +122,18 @@ describe("integrations tRPC surface", () => {
     connectionsToggle.mockResolvedValue({ ...connectionOutput, status: "DISCONNECTED" });
     connectionsSyncNow.mockResolvedValue(connectionOutput);
     syncLogsList.mockResolvedValue([]);
+    syncLogsInvestigateFailures.mockResolvedValue({
+      summary: "One integration is failing due to an expired credential.",
+      findings: [
+        {
+          integration: "Snowflake ETL Service",
+          rootCause: "The stored API token expired.",
+          recommendation: "Reconnect the integration and rotate the credential in API Keys.",
+        },
+      ],
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+    });
     apiKeysList.mockResolvedValue([apiKeyOutput]);
     apiKeysCreate.mockResolvedValue({ ...apiKeyOutput, secret: "bsc_rd_sk_realsecretvalue" });
     apiKeysToggleDisabled.mockResolvedValue({ ...apiKeyOutput, disabled: true });
@@ -141,6 +154,9 @@ describe("integrations tRPC surface", () => {
       await expect(caller.integrations.syncLogs.list()).rejects.toMatchObject({
         code: "UNAUTHORIZED",
       });
+      await expect(caller.integrations.syncLogs.investigateFailures()).rejects.toMatchObject({
+        code: "UNAUTHORIZED",
+      });
       await expect(caller.integrations.apiKeys.list()).rejects.toMatchObject({
         code: "UNAUTHORIZED",
       });
@@ -150,6 +166,7 @@ describe("integrations tRPC surface", () => {
 
       expect(connectionsList).not.toHaveBeenCalled();
       expect(syncLogsList).not.toHaveBeenCalled();
+      expect(syncLogsInvestigateFailures).not.toHaveBeenCalled();
       expect(apiKeysList).not.toHaveBeenCalled();
       expect(webhooksList).not.toHaveBeenCalled();
     });
@@ -245,6 +262,38 @@ describe("integrations tRPC surface", () => {
       await expect(
         caller.integrations.connections.toggle({ id: connectionId }),
       ).rejects.toMatchObject({ code: "CONFLICT" });
+    });
+  });
+
+  describe("syncLogs", () => {
+    it("investigates failures", async () => {
+      const caller = rootRouter.createCaller(context() as never);
+      await expect(caller.integrations.syncLogs.investigateFailures()).resolves.toMatchObject({
+        findings: [{ integration: "Snowflake ETL Service" }],
+      });
+    });
+
+    it("maps a no-failures service error to BAD_REQUEST", async () => {
+      syncLogsInvestigateFailures.mockRejectedValueOnce({
+        code: "INTEGRATIONS_NO_SYNC_FAILURES",
+        message: "There are no failed syncs to investigate right now",
+      });
+      const caller = rootRouter.createCaller(context() as never);
+      await expect(caller.integrations.syncLogs.investigateFailures()).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: "There are no failed syncs to investigate right now",
+      });
+    });
+
+    it("maps an unconfigured AI provider to SERVICE_UNAVAILABLE", async () => {
+      syncLogsInvestigateFailures.mockRejectedValueOnce({
+        code: "AI_UNAVAILABLE",
+        message: "AI suggestions are not configured for this environment",
+      });
+      const caller = rootRouter.createCaller(context() as never);
+      await expect(caller.integrations.syncLogs.investigateFailures()).rejects.toMatchObject({
+        code: "SERVICE_UNAVAILABLE",
+      });
     });
   });
 
