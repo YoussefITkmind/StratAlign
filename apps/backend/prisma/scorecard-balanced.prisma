@@ -1,0 +1,66 @@
+model BalancedScorecardProfile {
+  scorecardId          String   @id @map("scorecard_id") @db.Uuid
+  description          String?
+  department           String   @default("Corporate")
+  period               String   @default("—")
+  ownerName            String   @default("Unassigned") @map("owner_name")
+  ownerInitials        String?  @map("owner_initials") @db.VarChar(2)
+  status               String   @default("draft")
+  score                Decimal  @default(0) @db.Decimal(5, 2)
+  priorScore           Decimal? @map("prior_score") @db.Decimal(5, 2)
+  reviewFrequency      String?  @map("review_frequency")
+  startPeriod          String?  @map("start_period")
+  endPeriod            String?  @map("end_period")
+  strategyName         String?  @map("strategy_name")
+  strategicTheme       String?  @map("strategic_theme")
+  strategicObjective   String?  @map("strategic_objective")
+  primaryPerspective   String?  @map("primary_perspective")
+  strategicWeight      Decimal? @map("strategic_weight") @db.Decimal(5, 2)
+  tags                 String[] @default([])
+  notes                String?
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([department])
+  @@index([status])
+  @@map("balanced_scorecard_profiles")
+  @@schema("scorecard")
+}
+
+model BalancedPerspectiveProfile {
+  perspectiveId       String   @id @map("perspective_id") @db.Uuid
+  perspectiveKey      String?  @map("perspective_key")
+  ownerInitials       String?  @map("owner_initials") @db.VarChar(2)
+  ownerColor          String?  @map("owner_color")
+  score               Decimal  @default(0) @db.Decimal(5, 2)
+  priorScore          Decimal? @map("prior_score") @db.Decimal(5, 2)
+  weight              Decimal  @default(0) @db.Decimal(5, 2)
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("balanced_perspective_profiles")
+  @@schema("scorecard")
+}
+
+model BalancedKpiSnapshot {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  perspectiveId  String   @map("perspective_id") @db.Uuid
+  name           String
+  status         String   @default("draft")
+  ownerInitials  String?  @map("owner_initials") @db.VarChar(2)
+  ownerColor     String?  @map("owner_color")
+  score          Decimal  @default(0) @db.Decimal(5, 2)
+  priorScore     Decimal? @map("prior_score") @db.Decimal(5, 2)
+  weight         Decimal? @db.Decimal(5, 2)
+  actual         String?
+  target         String?
+  variance       String?
+  trend          Json     @default("[]")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([perspectiveId])
+  @@index([status])
+  @@map("kpi_snapshots")
+  @@schema("scorecard")
+}

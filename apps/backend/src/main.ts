@@ -40,6 +40,7 @@ import { PerformanceResultsService } from "./modules/performance/performance-res
 import { PerformanceService } from "./modules/performance/performance.service";
 import { KpiDetailService } from "./modules/performance/kpi-detail.service";
 import { ScorecardService } from "./modules/scorecard/scorecard.service";
+import { BalancedScorecardService } from "./modules/scorecard/balanced-scorecard.service";
 import { StageAwareExecutionService } from "./modules/execution/stage-aware-execution.service";
 import { PortfolioService } from "./modules/portfolio/portfolio.service";
 import { SchedulerReadService } from "./modules/scheduler/scheduler-read.service";
@@ -89,9 +90,6 @@ async function bootstrap(): Promise<void> {
   const traceabilityRead = new TraceabilityReadService(prisma);
   const strategyNodeBridge = new StrategyNodeBridgeService(prisma);
 
-  // AI stays behind one provider abstraction, constructed once. Nothing else in
-  // the platform is allowed to know which vendor is configured, or whether one
-  // is configured at all.
   const llm = createLlmProvider(
     {
       provider: environment.AI_PROVIDER,
@@ -125,6 +123,7 @@ async function bootstrap(): Promise<void> {
     new KpiDetailService(prisma),
   );
   const scorecard = new ScorecardService(prisma, governance, rules, measurements);
+  const balancedScorecard = new BalancedScorecardService(prisma);
   const execution = new StageAwareExecutionService(prisma, prisma, eventBus);
   const portfolio = new PortfolioService(prisma, rules, governance, strategy);
   const schedulerRead = new SchedulerReadService(prisma);
@@ -135,9 +134,6 @@ async function bootstrap(): Promise<void> {
     { defaultTimezone: environment.SCHEDULER_DEFAULT_TIMEZONE, defaultLookaheadSeconds: environment.SCHEDULER_LOOKAHEAD_SECONDS },
     logger.child("value-checkin-scheduler"),
   );
-  // Materialises a definition's first instance synchronously at request time
-  // (see AiSuggestionService.acceptKpi), rather than waiting on the worker's
-  // next tick, so a just-accepted KPI's capture task is visible immediately.
   const cadenceGenerator = new CadenceGeneratorService(
     prisma,
     cadenceEngine,
@@ -193,7 +189,7 @@ async function bootstrap(): Promise<void> {
         session: await sessions.getSession({ headers }), oidcIdentities, authenticationFreshness,
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
         strategyHierarchy,
-        registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
+        registry, audit, auditTap, performance, scorecard, balancedScorecard, execution, portfolio, schedulerRead, value,
         aiSuggestion, assistant, integrations, pixelrag,
       };
     },

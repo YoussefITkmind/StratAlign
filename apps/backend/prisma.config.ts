@@ -2,10 +2,10 @@ import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
 export default defineConfig({
-  schema: "prisma/schema.prisma",
+  schema: "prisma",
   migrations: {
     path: "prisma/migrations",
-    seed: "tsx prisma/seed.ts",
+    seed: "tsx prisma/seed.ts && tsx prisma/seed-balanced-scorecards.ts",
   },
   datasource: {
     // Use process.env directly (not prisma/config's `env()` helper) so this
