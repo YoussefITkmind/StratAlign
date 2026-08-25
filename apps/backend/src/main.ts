@@ -30,6 +30,7 @@ import { KpiRegistryService } from "./modules/registry/kpi-registry.service";
 import { OkrService } from "./modules/registry/okr.service";
 import { AlignmentService } from "./modules/registry/alignment.service";
 import { KpiHierarchyService } from "./modules/registry/kpi-hierarchy.service";
+import { KpiOkrWorkspaceService } from "./modules/registry/kpi-okr-workspace.service";
 import { GovernanceApprovalGateway } from "./modules/registry/gateways/approval.gateway";
 import { PrismaStrategyNodeGateway } from "./modules/registry/gateways/strategy-node.gateway";
 import { MeasurementService } from "./modules/performance/measurement.service";
@@ -113,6 +114,7 @@ async function bootstrap(): Promise<void> {
     alignment: new AlignmentService(prisma, strategyNodeGateway),
     hierarchy: new KpiHierarchyService(prisma),
   };
+  const kpiOkrWorkspace = new KpiOkrWorkspaceService(prisma);
   const audit = new SnapshotService(prisma);
   const auditTap = new ApiAuditTapService(prisma, eventBus);
   const measurements = new MeasurementService(prisma, eventBus, logger.child("performance-measurement"));
@@ -199,7 +201,7 @@ async function bootstrap(): Promise<void> {
         session: await sessions.getSession({ headers }), oidcIdentities, authenticationFreshness,
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
         strategyHierarchy,
-        registry, audit, auditTap, performance, scorecard, balancedScorecard, scorecardMapSync, execution, portfolio, schedulerRead, value,
+        registry, kpiOkrWorkspace, audit, auditTap, performance, scorecard, balancedScorecard, scorecardMapSync, execution, portfolio, schedulerRead, value,
         aiSuggestion, assistant, integrations, pixelrag,
       };
     },
