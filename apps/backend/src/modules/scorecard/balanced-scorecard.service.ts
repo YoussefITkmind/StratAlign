@@ -30,7 +30,6 @@ export type CreateBalancedScorecardInput = {
   nameAr: string;
   scopeNodeId?: string | null;
   planVersionId: string;
-  actorUserId: string;
   description?: string;
   department: string;
   period: string;
@@ -282,6 +281,11 @@ export class BalancedScorecardService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const actorRows = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM iam.users ORDER BY created_at, id LIMIT 1`;
+      const actorUserId = actorRows[0]?.id;
+      if (!actorUserId) throw new Error("At least one IAM user is required to create a scorecard strategy objective");
+
       const rows = await tx.$queryRaw<Array<{ id: string }>>`
         INSERT INTO scorecard.scorecards (name_en, name_ar, scope_node_id, plan_version_id)
         VALUES (${input.nameEn}, ${input.nameAr}, ${input.scopeNodeId ?? null}::uuid, ${input.planVersionId}::uuid)
@@ -377,7 +381,7 @@ export class BalancedScorecardService {
               ${objectiveName},
               ${input.planVersionId}::uuid,
               'active'::strategy."StrategyNodeState",
-              ${input.actorUserId}
+              ${actorUserId}
             )
             RETURNING id`;
           const objectiveNodeId = objectiveRows[0]!.id;
