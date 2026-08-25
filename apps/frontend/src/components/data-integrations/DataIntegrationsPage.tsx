@@ -24,7 +24,10 @@ export default function DataIntegrationsPage() {
   const connectedCount = connections.filter((c) => c.status === "CONNECTED").length;
   const errorCount = connections.filter((c) => c.status === "ERROR").length;
   const activeWebhooks = webhooks.filter((w) => w.active).length;
-  const recordsToday = logs.reduce((sum, l) => sum + (l.recordsIn ?? 0) + (l.recordsOut ?? 0), 0);
+  const todayLabel = new Date().toDateString();
+  const recordsToday = logs
+    .filter((l) => new Date(l.createdAt).toDateString() === todayLabel)
+    .reduce((sum, l) => sum + (l.recordsIn ?? 0) + (l.recordsOut ?? 0), 0);
 
   const badges: Record<TabKey, number> = {
     connections: connections.filter((c) => c.status === "ERROR").length,

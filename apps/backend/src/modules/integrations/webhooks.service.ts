@@ -53,11 +53,17 @@ export class WebhooksService {
     const existing = await this.prisma.webhook.findUnique({ where: { id } });
     if (!existing) throw integrationsErrors.webhookNotFound();
 
-    const updated = await this.prisma.webhook.update({
-      where: { id },
-      data: { active: !existing.active },
+    const data = { active: !existing.active };
+    const { count } = await this.prisma.webhook.updateMany({
+      where: { id, updatedAt: existing.updatedAt },
+      data,
     });
-    return toView(updated);
+    if (count === 0) {
+      const stillExists = await this.prisma.webhook.findUnique({ where: { id } });
+      throw stillExists ? integrationsErrors.concurrentUpdate() : integrationsErrors.webhookNotFound();
+    }
+
+    return toView({ ...existing, ...data });
   }
 
   async delete(id: string): Promise<{ id: string }> {
