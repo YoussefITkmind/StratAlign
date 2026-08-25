@@ -19,7 +19,7 @@ model BalancedScorecardProfile {
   tags                 String[] @default([])
   notes                String?
   createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@index([department])
   @@index([status])
@@ -36,14 +36,14 @@ model BalancedPerspectiveProfile {
   priorScore          Decimal? @map("prior_score") @db.Decimal(5, 2)
   weight              Decimal  @default(0) @db.Decimal(5, 2)
   createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("balanced_perspective_profiles")
   @@schema("scorecard")
 }
 
 model BalancedKpiSnapshot {
-  id             String   @id @default(uuid()) @db.Uuid
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   perspectiveId  String   @map("perspective_id") @db.Uuid
   name           String
   status         String   @default("draft")
@@ -57,7 +57,7 @@ model BalancedKpiSnapshot {
   variance       String?
   trend          Json     @default("[]")
   createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@index([perspectiveId])
   @@index([status])
