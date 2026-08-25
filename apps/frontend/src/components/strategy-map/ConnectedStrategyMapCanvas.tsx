@@ -8,7 +8,6 @@ import DeleteObjectiveModal from "./DeleteObjectiveModal";
 import ScorecardObjectiveModal from "@/components/scorecards/ScorecardObjectiveModal";
 import type { MapLinkRow, MapPlacement } from "@/lib/buildStrategyMapFlow";
 import type { ObjectiveStatus, Perspective, Scorecard, ScorecardObjective } from "@/types/scorecard";
-import { draftMapLink } from "@/app/(app)/strategy-maps/actions";
 import { getMapAuthorization } from "@/app/(app)/strategy-maps/authorization";
 import {
   LINK_CONFIG,
@@ -36,6 +35,7 @@ function toScorecard(row: unknown): Scorecard | null {
   if (typeof row !== "object" || row === null) return null;
   const record = row as Record<string, unknown>;
   if (typeof record.id !== "string" || typeof record.name !== "string" || !Array.isArray(record.perspectives)) return null;
+  if (record.isBalancedScorecard === false || record.name.startsWith("E2E ")) return null;
   return record as unknown as Scorecard;
 }
 
@@ -52,6 +52,12 @@ function compactPerspectiveName(name: string, index: number) {
   return name;
 }
 
+function perspectiveLabel(perspective: Perspective) {
+  if (perspective.key === "internal-process") return "Internal Process";
+  if (perspective.key === "learning-growth") return "Learning & Growth";
+  return perspective.key[0]!.toUpperCase() + perspective.key.slice(1);
+}
+
 export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardId: string }) {
   const utils = trpc.useUtils();
   const mapQuery = trpc.scorecard.get.useQuery({ scorecardId });
@@ -59,6 +65,8 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
   const createObjective = trpc.scorecardSync.objective.create.useMutation();
   const updateObjective = trpc.scorecardSync.objective.update.useMutation();
   const deleteObjective = trpc.scorecardSync.objective.delete.useMutation();
+  const upsertMapLink = trpc.scorecardSync.mapLink.upsert.useMutation();
+  const deleteMapLink = trpc.scorecardSync.mapLink.delete.useMutation();
 
   const scorecard = useMemo(
     () => (balancedQuery.data ?? []).map(toScorecard).find((row): row is Scorecard => Boolean(row && row.id === scorecardId)),
@@ -76,8 +84,6 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
   const [connectMode, setConnectMode] = useState(false);
   const [pendingSource, setPendingSource] = useState<string | null>(null);
   const [connectStrength, setConnectStrength] = useState<LinkStrength>("drives");
-  const [draftMapId, setDraftMapId] = useState<string | null>(null);
-  const [draftLinks, setDraftLinks] = useState<MapLinkRow[]>([]);
   const [objectiveEditor, setObjectiveEditor] = useState<{ objective?: ScorecardObjective; perspectiveId?: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScorecardObjective | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -92,7 +98,7 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
 
   const canEdit = roles.includes("strategy_analyst") || roles.includes("seo_administrator");
   const canConnect = roles.includes("strategy_analyst");
-  const busy = createObjective.isPending || updateObjective.isPending || deleteObjective.isPending;
+  const busy = createObjective.isPending || updateObjective.isPending || deleteObjective.isPending || upsertMapLink.isPending || deleteMapLink.isPending;
 
   const perspectives = useMemo(() => {
     if (!mapDetail || !scorecard) return [];
@@ -131,7 +137,7 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
     );
   }, [scorecard]);
 
-  const visibleLinks = draftMapId ? draftLinks : (mapDetail?.publishedMap?.links ?? []);
+  const visibleLinks = mapDetail?.publishedMap?.links ?? [];
   const selectedObjective = selectedObjectiveId ? objectiveById.get(selectedObjectiveId) ?? null : null;
   const selectedPerspective = selectedObjectiveId ? perspectiveByObjectiveId.get(selectedObjectiveId) ?? null : null;
   const selectedLaneIndex = selectedPerspective ? scorecard?.perspectives.findIndex((row) => row.id === selectedPerspective.id) ?? -1 : -1;
@@ -202,7 +208,6 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
       await deleteObjective.mutateAsync({ scorecardId, objectiveNodeId: deleteTarget.id });
       setSelectedObjectiveId(null);
       setDeleteTarget(null);
-      setDraftLinks((current) => current.filter((link) => link.fromObjectiveId !== deleteTarget.id && link.toObjectiveId !== deleteTarget.id));
       setMessage("Objective and its map connections were deleted.");
       await refresh();
     } catch (caught) {
@@ -213,31 +218,23 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
   const addConnection = async (sourceId: string, targetId: string) => {
     setError(null); setMessage(null);
     try {
-      let mapId = draftMapId ?? undefined;
-      let current = draftLinks;
-      if (!mapId) {
-        const copied: MapLinkRow[] = [];
-        for (const link of mapDetail.publishedMap?.links ?? []) {
-          const result = await draftMapLink({
-            scorecardId,
-            strategyMapId: mapId,
-            link: { fromObjectiveId: link.fromObjectiveId, toObjectiveId: link.toObjectiveId, strength: link.strength },
-          }) as { map: { id: string }; link: MapLinkRow };
-          mapId = result.map.id;
-          copied.push(result.link);
-        }
-        current = copied;
-      }
-      const result = await draftMapLink({
-        scorecardId,
-        strategyMapId: mapId,
-        link: { fromObjectiveId: sourceId, toObjectiveId: targetId, strength: connectStrength },
-      }) as { map: { id: string }; link: MapLinkRow };
-      setDraftMapId(result.map.id);
-      setDraftLinks([...current, result.link]);
-      setMessage(`${LINK_CONFIG[connectStrength].label} connection saved to the map draft.`);
+      await upsertMapLink.mutateAsync({ scorecardId, fromObjectiveId: sourceId, toObjectiveId: targetId, strength: connectStrength });
+      setMessage(`${LINK_CONFIG[connectStrength].label} connection persisted.`);
+      await utils.scorecard.get.invalidate({ scorecardId });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create connection");
+    }
+  };
+
+  const removeConnection = async (linkId: string) => {
+    if (!canConnect || !window.confirm("Delete this Strategy Map connection?")) return;
+    setError(null); setMessage(null);
+    try {
+      await deleteMapLink.mutateAsync({ scorecardId, linkId });
+      setMessage("Strategy Map connection deleted.");
+      await utils.scorecard.get.invalidate({ scorecardId });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to delete connection");
     }
   };
 
@@ -324,13 +321,13 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
 
       <div className="relative bg-[#f8fafc]">
         <div className={selectedObjective ? "lg:mr-[320px]" : ""}>
-          <StrategyMapFlowCanvas perspectives={perspectives} placements={filteredPlacements} links={filteredLinks} editing={Boolean(draftMapId)} selectedObjectiveId={selectedObjectiveId} onSelectObjective={handleObjectiveClick} connecting={connectMode} pendingSourceId={pendingSource} infoLabel={infoCard} />
+          <StrategyMapFlowCanvas perspectives={perspectives} placements={filteredPlacements} links={filteredLinks} editing={canConnect} selectedObjectiveId={selectedObjectiveId} onSelectObjective={handleObjectiveClick} onRemoveLink={canConnect ? (linkId) => void removeConnection(linkId) : undefined} connecting={connectMode} pendingSourceId={pendingSource} infoLabel={infoCard} />
         </div>
 
         {selectedObjective && selectedPerspective && (
           <aside className="absolute inset-y-0 right-0 z-20 hidden w-[320px] overflow-y-auto border-l border-gray-200 bg-white lg:flex lg:flex-col" data-testid="node-properties-panel">
             <div className="flex items-center justify-between px-4 py-3" style={{ background: panelColor.bandBg }}>
-              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: panelColor.textColor }}>{selectedPerspective.key === "internal-process" ? "Internal Process" : selectedPerspective.key === "learning-growth" ? "Learning & Growth" : selectedPerspective.key}</span>
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: panelColor.textColor }}>{perspectiveLabel(selectedPerspective)}</span>
               <div className="flex items-center gap-1">
                 {canEdit && <><button type="button" onClick={() => setObjectiveEditor({ objective: selectedObjective, perspectiveId: selectedPerspective.id })} className="rounded p-1.5 text-gray-500 hover:bg-white/70"><Pencil className="h-3.5 w-3.5" /></button><button type="button" onClick={() => setDeleteTarget(selectedObjective)} className="rounded p-1.5 text-gray-500 hover:bg-white/70 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button></>}
                 <button type="button" onClick={() => setSelectedObjectiveId(null)} className="rounded p-1.5 text-gray-500 hover:bg-white/70"><X className="h-3.5 w-3.5" /></button>
