@@ -134,7 +134,7 @@ async function bootstrap(): Promise<void> {
   const scheduler = new SchedulerService(
     prisma,
     cadenceEngine,
-    { defaultTimezone: environment.SCHEDULER_DEFAULT_TIMEZONE, defaultLookaheadSeconds: environment.SCHEDULER_DEFAULT_LOOKAHEAD_SECONDS },
+    { defaultTimezone: environment.SCHEDULER_DEFAULT_TIMEZONE, defaultLookaheadSeconds: environment.SCHEDULER_LOOKAHEAD_SECONDS },
     logger.child("value-checkin-scheduler"),
   );
   const cadenceGenerator = new CadenceGeneratorService(
