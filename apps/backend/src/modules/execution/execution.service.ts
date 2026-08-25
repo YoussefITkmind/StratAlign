@@ -6,6 +6,7 @@ export type InitiativeStatus = "on_track" | "at_risk" | "off_track";
 export type ConfidenceLevel = "high" | "medium" | "low";
 export type ExecutionSource = "manual" | "erp" | "jira";
 export type RiskLevel = "low" | "medium" | "high";
+export type Priority = "critical" | "high" | "medium" | "low";
 
 export interface InitiativeView {
   id: string;
@@ -14,7 +15,30 @@ export interface InitiativeView {
   strategicPlayNodeId: string;
   ownerUserId: string;
   stage: InitiativeStage;
+  priority: Priority;
+  department: string | null;
+  startDate: Date | null;
+  endDate: Date | null;
+  tags: string[];
   createdAt: Date;
+}
+
+export interface ProjectView {
+  id: string;
+  name: string;
+  description: string | null;
+  department: string | null;
+  ownerUserId: string;
+  parentInitiativeId: string | null;
+  startDate: Date | null;
+  endDate: Date | null;
+  budgetAmount: string | null;
+  priority: Priority;
+  jiraBoardUrl: string | null;
+  confluenceSpaceUrl: string | null;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface InitiativeListItemView {
@@ -85,7 +109,30 @@ interface InitiativeRow {
   strategic_play_node_id: string;
   owner_user_id: string;
   stage: InitiativeStage;
+  priority: Priority;
+  department: string | null;
+  start_date: Date | null;
+  end_date: Date | null;
+  tags: string[];
   created_at: Date;
+}
+
+interface ProjectRow {
+  id: string;
+  name: string;
+  description: string | null;
+  department: string | null;
+  owner_user_id: string;
+  parent_initiative_id: string | null;
+  start_date: Date | null;
+  end_date: Date | null;
+  budget_amount: string | null;
+  priority: Priority;
+  jira_board_url: string | null;
+  confluence_space_url: string | null;
+  created_by: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface InitiativeListRow {
@@ -134,7 +181,32 @@ function initiativeView(row: InitiativeRow): InitiativeView {
     strategicPlayNodeId: row.strategic_play_node_id,
     ownerUserId: row.owner_user_id,
     stage: row.stage,
+    priority: row.priority,
+    department: row.department,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    tags: row.tags,
     createdAt: row.created_at,
+  };
+}
+
+function projectView(row: ProjectRow): ProjectView {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    department: row.department,
+    ownerUserId: row.owner_user_id,
+    parentInitiativeId: row.parent_initiative_id,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    budgetAmount: row.budget_amount,
+    priority: row.priority,
+    jiraBoardUrl: row.jira_board_url,
+    confluenceSpaceUrl: row.confluence_space_url,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -162,6 +234,13 @@ export class ExecutionService {
     strategicPlayNodeId: string;
     ownerUserId: string;
     stage: InitiativeStage;
+    priority?: Priority;
+    department?: string | null;
+    startDate?: Date | null;
+    endDate?: Date | null;
+    tags?: string[];
+    budgetAmount?: number | null;
+    currency?: string;
     actorUserId: string;
     actorIsSeoAdministrator: boolean;
   }): Promise<InitiativeView> {
@@ -187,15 +266,87 @@ export class ExecutionService {
       if (!ownership) throw executionErrors.playOwnershipRequired();
     }
 
+    if (input.startDate && input.endDate && input.endDate < input.startDate) {
+      throw executionErrors.invalidDateRange();
+    }
+
+    const priority = input.priority ?? "medium";
+    const tags = input.tags ?? [];
+
     const [row] = await this.prisma.$queryRaw<InitiativeRow[]>`
       INSERT INTO "execution"."initiatives"
-        ("name_en", "name_ar", "strategic_play_node_id", "owner_user_id", "stage")
+        ("name_en", "name_ar", "strategic_play_node_id", "owner_user_id", "stage", "priority", "department", "start_date", "end_date", "tags")
       VALUES
-        (${input.nameEn}, ${input.nameAr}, ${input.strategicPlayNodeId}::uuid, ${input.ownerUserId}, ${input.stage}::"execution"."InitiativeStage")
-      RETURNING id, name_en, name_ar, strategic_play_node_id, owner_user_id, stage, created_at
+        (${input.nameEn}, ${input.nameAr}, ${input.strategicPlayNodeId}::uuid, ${input.ownerUserId}, ${input.stage}::"execution"."InitiativeStage", ${priority}::"execution"."Priority", ${input.department ?? null}, ${input.startDate ?? null}, ${input.endDate ?? null}, ${tags})
+      RETURNING id, name_en, name_ar, strategic_play_node_id, owner_user_id, stage, priority, department, start_date, end_date, tags, created_at
     `;
     if (!row) throw executionErrors.invalidOperation();
+
+    if (input.budgetAmount != null) {
+      await this.prisma.$executeRaw`
+        INSERT INTO "execution"."financial_attrs"
+          ("initiative_id", "budget_amount", "spend_amount", "currency", "source", "locked")
+        VALUES
+          (${row.id}::uuid, ${input.budgetAmount}, 0, ${input.currency ?? "USD"}, 'manual'::"execution"."ExecutionSource", false)
+        ON CONFLICT ("initiative_id") DO UPDATE SET
+          "budget_amount" = EXCLUDED."budget_amount",
+          "currency" = EXCLUDED."currency",
+          "updated_at" = CURRENT_TIMESTAMP
+      `;
+    }
+
     return initiativeView(row);
+  }
+
+  async createProject(input: {
+    name: string;
+    description?: string | null;
+    department?: string | null;
+    ownerUserId: string;
+    parentInitiativeId?: string | null;
+    startDate?: Date | null;
+    endDate?: Date | null;
+    budgetAmount?: number | null;
+    priority?: Priority;
+    jiraBoardUrl?: string | null;
+    confluenceSpaceUrl?: string | null;
+    actorUserId: string;
+  }): Promise<ProjectView> {
+    if (input.startDate && input.endDate && input.endDate < input.startDate) {
+      throw executionErrors.invalidDateRange();
+    }
+
+    if (input.parentInitiativeId) {
+      await this.requireInitiative(input.parentInitiativeId);
+    }
+
+    const priority = input.priority ?? "medium";
+
+    const [row] = await this.prisma.$queryRaw<ProjectRow[]>`
+      INSERT INTO "execution"."projects"
+        ("name", "description", "department", "owner_user_id", "parent_initiative_id", "start_date", "end_date", "budget_amount", "priority", "jira_board_url", "confluence_space_url", "created_by")
+      VALUES
+        (${input.name}, ${input.description ?? null}, ${input.department ?? null}, ${input.ownerUserId}, ${input.parentInitiativeId ?? null}::uuid, ${input.startDate ?? null}, ${input.endDate ?? null}, ${input.budgetAmount ?? null}, ${priority}::"execution"."Priority", ${input.jiraBoardUrl ?? null}, ${input.confluenceSpaceUrl ?? null}, ${input.actorUserId})
+      RETURNING id, name, description, department, owner_user_id, parent_initiative_id, start_date, end_date, budget_amount::text, priority, jira_board_url, confluence_space_url, created_by, created_at, updated_at
+    `;
+    if (!row) throw executionErrors.invalidOperation();
+    return projectView(row);
+  }
+
+  async listProjects(input: { parentInitiativeId?: string }): Promise<ProjectView[]> {
+    const rows = input.parentInitiativeId
+      ? await this.prisma.$queryRaw<ProjectRow[]>`
+          SELECT id, name, description, department, owner_user_id, parent_initiative_id, start_date, end_date, budget_amount::text, priority, jira_board_url, confluence_space_url, created_by, created_at, updated_at
+          FROM "execution"."projects"
+          WHERE parent_initiative_id = ${input.parentInitiativeId}::uuid
+          ORDER BY created_at DESC, id DESC
+        `
+      : await this.prisma.$queryRaw<ProjectRow[]>`
+          SELECT id, name, description, department, owner_user_id, parent_initiative_id, start_date, end_date, budget_amount::text, priority, jira_board_url, confluence_space_url, created_by, created_at, updated_at
+          FROM "execution"."projects"
+          ORDER BY created_at DESC, id DESC
+        `;
+    return rows.map(projectView);
   }
 
   async list(input: {

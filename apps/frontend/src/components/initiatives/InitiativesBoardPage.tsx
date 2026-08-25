@@ -22,6 +22,7 @@ import { KanbanView } from "@/components/initiatives/KanbanView";
 import { GanttView } from "@/components/initiatives/GanttView";
 import { RegisterView } from "@/components/initiatives/RegisterView";
 import { CreateInitiativeModal } from "@/components/initiatives/CreateInitiativeModal";
+import { CreateProjectModal } from "@/components/initiatives/CreateProjectModal";
 
 const MAX_ASSISTANT_CONTEXT_INITIATIVES = 30;
 
@@ -45,6 +46,7 @@ export function InitiativesBoardPage() {
   const [search, setSearch] = useState("");
   const [budgetLocked, setBudgetLocked] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(false);
   const utils = trpc.useUtils();
 
   // Real execution data, fetched independently of the (still mock-backed)
@@ -193,7 +195,10 @@ export function InitiativesBoardPage() {
               <Plus className="h-4 w-4" />
               Create Initiative
             </button>
-            <button className="flex items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-violet-700">
+            <button
+              onClick={() => setCreatingProject(true)}
+              className="flex items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-violet-700"
+            >
               <Layers className="h-4 w-4" />
               Create Project
             </button>
@@ -219,6 +224,19 @@ export function InitiativesBoardPage() {
             setCreating(false);
             await utils.execution.initiative.list.invalidate();
             setView("register");
+          }}
+        />
+      )}
+
+      {creatingProject && (
+        <CreateProjectModal
+          onClose={() => setCreatingProject(false)}
+          onCreated={async () => {
+            setCreatingProject(false);
+            await Promise.all([
+              utils.execution.project.list.invalidate(),
+              utils.execution.initiative.list.invalidate(),
+            ]);
           }}
         />
       )}

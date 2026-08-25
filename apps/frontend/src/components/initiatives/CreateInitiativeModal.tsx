@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { X, Check } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
+import { useOwnerOptions } from "@/components/initiatives/useOwnerOptions";
 
 const STEPS = ["Basic Info", "Details", "Team & Budget"] as const;
 
@@ -16,10 +17,10 @@ const STAGE_LABEL: Record<(typeof STAGES)[number], string> = {
 };
 
 const PRIORITIES = [
-  { key: "Critical", dot: "bg-red-500" },
-  { key: "High", dot: "bg-orange-500" },
-  { key: "Medium", dot: "bg-blue-500" },
-  { key: "Low", dot: "bg-emerald-500" },
+  { key: "Critical", value: "critical", dot: "bg-red-500" },
+  { key: "High", value: "high", dot: "bg-orange-500" },
+  { key: "Medium", value: "medium", dot: "bg-blue-500" },
+  { key: "Low", value: "low", dot: "bg-emerald-500" },
 ] as const;
 
 function message(error: unknown) {
@@ -33,21 +34,25 @@ export function CreateInitiativeModal({ onClose, onCreated }: { onClose: () => v
   const [nameEn, setNameEn] = useState("");
   const [nameAr, setNameAr] = useState("");
   const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState<(typeof PRIORITIES)[number]["key"]>("Medium");
+  const [priority, setPriority] = useState<(typeof PRIORITIES)[number]["value"]>("medium");
 
   // Details
   const [strategicPlayNodeId, setStrategicPlayNodeId] = useState("");
   const [stage, setStage] = useState<(typeof STAGES)[number]>("design");
   const [department, setDepartment] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [tags, setTags] = useState("");
   const [playError, setPlayError] = useState(false);
+  const [dateError, setDateError] = useState(false);
 
   // Team & Budget
   const [ownerUserId, setOwnerUserId] = useState("");
-  const [teamSize, setTeamSize] = useState("");
   const [budget, setBudget] = useState("");
 
   const nodes = trpc.strategy.nodes.useQuery();
   const plays = nodes.data?.filter((node) => node.type === "strategic_play" && node.state === "active") ?? [];
+  const owners = useOwnerOptions();
 
   const register = trpc.execution.initiative.register.useMutation({
     onSuccess: onCreated,
@@ -57,11 +62,18 @@ export function CreateInitiativeModal({ onClose, onCreated }: { onClose: () => v
   const step3Valid = ownerUserId.trim().length > 0;
 
   const goNext = () => {
-    if (step === 1 && !strategicPlayNodeId) {
-      setPlayError(true);
-      return;
+    if (step === 1) {
+      if (!strategicPlayNodeId) {
+        setPlayError(true);
+        return;
+      }
+      if (startDate && endDate && endDate < startDate) {
+        setDateError(true);
+        return;
+      }
     }
     setPlayError(false);
+    setDateError(false);
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   };
 
@@ -71,14 +83,31 @@ export function CreateInitiativeModal({ onClose, onCreated }: { onClose: () => v
       setPlayError(true);
       return;
     }
-    register.mutate({ nameEn, nameAr, strategicPlayNodeId, ownerUserId, stage });
+    if (startDate && endDate && endDate < startDate) {
+      setStep(1);
+      setDateError(true);
+      return;
+    }
+    register.mutate({
+      nameEn,
+      nameAr,
+      strategicPlayNodeId,
+      ownerUserId,
+      stage,
+      priority,
+      department: department.trim() || null,
+      startDate: startDate ? new Date(startDate) : null,
+      endDate: endDate ? new Date(endDate) : null,
+      tags: tags.trim() ? tags.split(",").map((tag) => tag.trim()).filter(Boolean) : [],
+      budgetAmount: budget.trim() ? Number(budget) : null,
+    });
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-3 sm:items-center sm:p-6">
       <div
         data-testid="new-initiative-form"
-        className="my-4 w-full max-w-[92vw] rounded-2xl bg-white shadow-xl sm:my-0 sm:max-w-md"
+        className="my-4 w-full max-w-[92vw] rounded-2xl bg-white shadow-xl sm:my-0 sm:max-w-lg"
       >
         <div className="flex items-start justify-between px-5 pt-5 sm:px-6 sm:pt-6">
           <div>
@@ -153,12 +182,13 @@ export function CreateInitiativeModal({ onClose, onCreated }: { onClose: () => v
                 <span className="block text-[13px] font-medium text-slate-700">Priority</span>
                 <div className="mt-1.5 grid grid-cols-4 gap-2">
                   {PRIORITIES.map((p) => {
-                    const active = priority === p.key;
+                    const active = priority === p.value;
                     return (
                       <button
                         key={p.key}
                         type="button"
-                        onClick={() => setPriority(p.key)}
+                        aria-pressed={active}
+                        onClick={() => setPriority(p.value)}
                         className={`flex flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 text-[12.5px] font-medium transition ${
                           active ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
                         }`}
@@ -219,6 +249,40 @@ export function CreateInitiativeModal({ onClose, onCreated }: { onClose: () => v
                   className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
               </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-[13px] font-medium text-slate-700">
+                  Start Date
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] text-slate-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </label>
+                <label className="block text-[13px] font-medium text-slate-700">
+                  End Date
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] text-slate-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </label>
+              </div>
+              {dateError && (
+                <p role="alert" data-testid="initiative-date-range-error" className="text-[12.5px] text-red-600">
+                  End date cannot be before the start date.
+                </p>
+              )}
+              <label className="block text-[13px] font-medium text-slate-700">
+                Tags (comma-separated)
+                <input
+                  value={tags}
+                  onChange={(e) => setTags(e.target.value)}
+                  placeholder="e.g. Tech, Sales Ops, Data"
+                  className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                />
+              </label>
             </div>
           )}
 
@@ -226,44 +290,42 @@ export function CreateInitiativeModal({ onClose, onCreated }: { onClose: () => v
             <div className="space-y-4">
               <label className="block text-[13px] font-medium text-slate-700">
                 Owner <span className="text-red-500">*</span>
-                <input
-                  data-testid="initiative-owner-id"
-                  value={ownerUserId}
-                  onChange={(e) => setOwnerUserId(e.target.value)}
-                  placeholder="Owner user ID"
-                  className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
+                {owners.isRealData ? (
+                  <select
+                    data-testid="initiative-owner-id"
+                    value={ownerUserId}
+                    onChange={(e) => setOwnerUserId(e.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] text-slate-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="">Select an owner…</option>
+                    {owners.options.map((owner) => (
+                      <option key={owner.id} value={owner.id}>{owner.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    data-testid="initiative-owner-id"
+                    value={ownerUserId}
+                    onChange={(e) => setOwnerUserId(e.target.value)}
+                    placeholder="Owner user ID"
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                )}
               </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block text-[13px] font-medium text-slate-700">
-                  Team Size
+              <label className="block text-[13px] font-medium text-slate-700">
+                Budget
+                <div className="relative mt-1.5">
+                  <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">$</span>
                   <input
                     type="number"
                     min={0}
-                    value={teamSize}
-                    onChange={(e) => setTeamSize(e.target.value)}
+                    value={budget}
+                    onChange={(e) => setBudget(e.target.value)}
                     placeholder="0"
-                    className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-[14px] text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    className="w-full rounded-xl border border-slate-200 py-2.5 pl-7 pr-3.5 text-[14px] text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   />
-                </label>
-                <label className="block text-[13px] font-medium text-slate-700">
-                  Budget
-                  <div className="relative mt-1.5">
-                    <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[14px] text-slate-400">$</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={budget}
-                      onChange={(e) => setBudget(e.target.value)}
-                      placeholder="0"
-                      className="w-full rounded-xl border border-slate-200 py-2.5 pl-7 pr-3.5 text-[14px] text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-                </label>
-              </div>
-              <p className="text-[11.5px] text-slate-400">
-                Team size and budget aren&apos;t tracked by the Execution API yet — they won&apos;t be saved.
-              </p>
+                </div>
+              </label>
             </div>
           )}
 

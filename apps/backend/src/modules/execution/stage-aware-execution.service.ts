@@ -4,6 +4,7 @@ import {
   ExecutionService,
   type InitiativeStage,
   type InitiativeView,
+  type Priority,
 } from "./execution.service";
 import {
   EXECUTION_INITIATIVE_AGGREGATE,
@@ -46,6 +47,13 @@ export class StageAwareExecutionService extends ExecutionService {
     strategicPlayNodeId: string;
     ownerUserId: string;
     stage: InitiativeStage;
+    priority?: Priority;
+    department?: string | null;
+    startDate?: Date | null;
+    endDate?: Date | null;
+    tags?: string[];
+    budgetAmount?: number | null;
+    currency?: string;
     actorUserId: string;
     actorIsSeoAdministrator: boolean;
   }): Promise<InitiativeView> {
@@ -79,10 +87,15 @@ export class StageAwareExecutionService extends ExecutionService {
         strategic_play_node_id: string;
         owner_user_id: string;
         stage: InitiativeStage;
+        priority: Priority;
+        department: string | null;
+        start_date: Date | null;
+        end_date: Date | null;
+        tags: string[];
         created_at: Date;
         created_by: string | null;
       }>>(
-        `SELECT id, name_en, name_ar, strategic_play_node_id, owner_user_id, stage, created_at, created_by
+        `SELECT id, name_en, name_ar, strategic_play_node_id, owner_user_id, stage, priority, department, start_date, end_date, tags, created_at, created_by
          FROM "execution"."initiatives" WHERE id = $1::uuid FOR UPDATE`,
         input.initiativeId,
       );
@@ -147,6 +160,11 @@ export class StageAwareExecutionService extends ExecutionService {
         strategicPlayNodeId: current.strategic_play_node_id,
         ownerUserId: current.owner_user_id,
         stage: input.toStage,
+        priority: current.priority,
+        department: current.department,
+        startDate: current.start_date,
+        endDate: current.end_date,
+        tags: current.tags,
         createdAt: current.created_at,
       } satisfies InitiativeView;
     });
