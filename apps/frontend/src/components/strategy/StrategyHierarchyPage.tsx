@@ -13,6 +13,7 @@ import { usePublishAssistantContext } from "@/lib/assistant/assistant-context";
 import TreeRow from "./TreeRow";
 import AddNodeModal, { NodeFormValues } from "./AddNodeModal";
 import NodeDetailPanel from "./NodeDetailPanel";
+import StrategyBriefModal from "./StrategyBriefModal";
 
 /** Bounded so a large hierarchy cannot blow the assistant's prompt budget. */
 const MAX_ASSISTANT_CONTEXT_NODES = 30;
@@ -38,6 +39,7 @@ export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
   const [filters, setFilters] = useState<Filters>({ search: "", type: "all", status: "all" });
   const [modal, setModal] = useState<ModalState>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isBriefOpen, setIsBriefOpen] = useState(false);
 
   if (tree && !hasAutoExpanded) {
     setHasAutoExpanded(true);
@@ -168,7 +170,12 @@ export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
           <button className="flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
             <Share2 className="h-4 w-4" /> Share
           </button>
-          <button className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-blue-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:opacity-90">
+          <button
+            onClick={() => setIsBriefOpen(true)}
+            disabled={!tree}
+            title={tree ? undefined : "Strategy data hasn't loaded yet"}
+            className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-blue-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          >
             <Sparkles className="h-4 w-4" /> Generate Strategy Brief
           </button>
           {canManageStrategy && (
@@ -342,6 +349,13 @@ export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
         )}
       </div>
       </div>
+
+      {isBriefOpen && (
+        <StrategyBriefModal
+          canManage={canManageStrategy}
+          onClose={() => setIsBriefOpen(false)}
+        />
+      )}
 
       {canManageStrategy && modal?.mode === "add" && (
         <AddNodeModal

@@ -1,6 +1,7 @@
 import { appRouter, mergeRouters, router } from "./index";
 import { strategyRouter } from "./strategy";
 import { strategyHierarchyRouter } from "./strategyHierarchy";
+import { strategyBriefRouter } from "./strategy-brief";
 import { scorecardRouter } from "./scorecard";
 import { executionRouter } from "./execution";
 import { portfolioRouter } from "./portfolio";
@@ -18,6 +19,7 @@ export const rootRouter = mergeRouters(
   router({
     strategy: strategyRouter,
     strategyHierarchy: strategyHierarchyRouter,
+    strategyBrief: strategyBriefRouter,
     scorecard: scorecardRouter,
     execution: executionRouter,
     portfolio: portfolioRouter,
