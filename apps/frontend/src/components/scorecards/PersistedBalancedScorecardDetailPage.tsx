@@ -124,20 +124,54 @@ function statusSummary(kpis: Kpi[]) {
   };
 }
 
+function initialsForName(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
+
+function kpiOwnerLabel(kpi: Kpi, scorecardOwnerName: string) {
+  return initialsForName(scorecardOwnerName) === kpi.owner.initials.toUpperCase()
+    ? scorecardOwnerName
+    : kpi.owner.initials;
+}
+
+function kpiStatusDescription(status: Kpi["status"]) {
+  if (status === "on-track") return "On or above target.";
+  if (status === "at-risk") return "Below target; attention required.";
+  return "Not yet assessed.";
+}
+
 function PerspectiveSection({
   perspective,
   ownerName,
+  strategicObjective,
   expanded,
   onToggle,
 }: {
   perspective: Perspective;
   ownerName: string;
+  strategicObjective?: string;
   expanded: boolean;
   onToggle: () => void;
 }) {
   const ui = PERSPECTIVE_UI[perspective.key];
   const Icon = ui.icon;
   const counts = statusSummary(perspective.kpis);
+  const [expandedKpiIds, setExpandedKpiIds] = useState<Set<string>>(new Set());
+
+  const toggleKpi = (id: string) => {
+    setExpandedKpiIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   return (
     <section className={`overflow-hidden rounded-2xl border bg-white ${ui.section}`}>
@@ -205,27 +239,72 @@ function PerspectiveSection({
               <tbody>
                 {perspective.kpis.map((kpi) => {
                   const progress = scoreColor(kpi.score);
+                  const kpiExpanded = expandedKpiIds.has(kpi.id);
                   return (
-                    <tr key={kpi.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70">
-                      <td className="px-5 py-3 text-gray-400"><ChevronRight className="h-4 w-4" /></td>
-                      <td className="py-3 pr-4"><span className={`block h-3 w-3 rounded-full ${KPI_STATUS_DOT[kpi.status]}`} /></td>
-                      <td className="py-3 pr-4 font-semibold text-gray-900">{kpi.name}</td>
-                      <td className="py-3 pr-4 text-right text-gray-500">{kpi.weight != null ? `${kpi.weight}%` : "—"}</td>
-                      <td className="py-3 pr-4 text-right font-medium text-gray-900">{kpi.actual ?? "—"}</td>
-                      <td className="py-3 pr-4 text-right text-gray-500">{kpi.target ?? "—"}</td>
-                      <td className="py-3 pr-4 text-right"><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${varianceTone(kpi.variance)}`}>{kpi.variance ?? "—"}</span></td>
-                      <td className="py-3 pr-4">
-                        <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-100">
-                          <div className={`h-full rounded-full ${progress.bar}`} style={{ width: `${Math.min(100, Math.max(0, kpi.score))}%` }} />
-                        </div>
-                      </td>
-                      <td className="py-3 pr-4"><Sparkline data={kpi.trend ?? []} /></td>
-                      <td className="py-3 pr-5 text-right">
-                        <span className={`ml-auto flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white ${kpi.owner.color}`}>
-                          {kpi.owner.initials}
-                        </span>
-                      </td>
-                    </tr>
+                    <>
+                      <tr
+                        key={kpi.id}
+                        tabIndex={0}
+                        role="button"
+                        aria-expanded={kpiExpanded}
+                        onClick={() => toggleKpi(kpi.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            toggleKpi(kpi.id);
+                          }
+                        }}
+                        className="cursor-pointer border-b border-gray-50 hover:bg-gray-50/70 focus:bg-gray-50 focus:outline-none"
+                      >
+                        <td className="px-5 py-3 text-gray-400">
+                          {kpiExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </td>
+                        <td className="py-3 pr-4"><span className={`block h-3 w-3 rounded-full ${KPI_STATUS_DOT[kpi.status]}`} /></td>
+                        <td className="py-3 pr-4 font-semibold text-gray-900">{kpi.name}</td>
+                        <td className="py-3 pr-4 text-right text-gray-500">{kpi.weight != null ? `${kpi.weight}%` : "—"}</td>
+                        <td className="py-3 pr-4 text-right font-medium text-gray-900">{kpi.actual ?? "—"}</td>
+                        <td className="py-3 pr-4 text-right text-gray-500">{kpi.target ?? "—"}</td>
+                        <td className="py-3 pr-4 text-right"><span className={`rounded-full px-2.5 py-1 text-xs font-medium ${varianceTone(kpi.variance)}`}>{kpi.variance ?? "—"}</span></td>
+                        <td className="py-3 pr-4">
+                          <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-100">
+                            <div className={`h-full rounded-full ${progress.bar}`} style={{ width: `${Math.min(100, Math.max(0, kpi.score))}%` }} />
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4"><Sparkline data={kpi.trend ?? []} /></td>
+                        <td className="py-3 pr-5 text-right">
+                          <span className={`ml-auto flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white ${kpi.owner.color}`}>
+                            {kpi.owner.initials}
+                          </span>
+                        </td>
+                      </tr>
+
+                      {kpiExpanded && (
+                        <tr key={`${kpi.id}-details`} className="border-b border-gray-100 bg-white">
+                          <td colSpan={10} className="px-7 py-4">
+                            <div className="grid gap-5 sm:grid-cols-3">
+                              <div>
+                                <p className="text-sm font-semibold text-gray-900">Owner</p>
+                                <p className="mt-1 text-sm text-gray-500">{kpiOwnerLabel(kpi, ownerName)}</p>
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-gray-900">Linked Objectives</p>
+                                {strategicObjective ? (
+                                  <span className="mt-1 inline-flex max-w-full items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-sm font-medium text-sky-700">
+                                    <span className="truncate">◎ {strategicObjective}</span>
+                                  </span>
+                                ) : (
+                                  <p className="mt-1 text-sm text-gray-400">—</p>
+                                )}
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-gray-900">Status</p>
+                                <p className="mt-1 text-sm text-gray-500">{kpiStatusDescription(kpi.status)}</p>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   );
                 })}
               </tbody>
@@ -421,6 +500,7 @@ export default function PersistedBalancedScorecardDetailPage({ scorecardId }: { 
               key={perspective.id}
               perspective={perspective}
               ownerName={scorecard.ownerName}
+              strategicObjective={scorecard.strategicObjective}
               expanded={expandedPerspectiveIds.has(perspective.id) || (expandedPerspectiveIds.size === 0 && index === 0)}
               onToggle={() => togglePerspective(perspective.id)}
             />
