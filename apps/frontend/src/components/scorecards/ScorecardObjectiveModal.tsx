@@ -4,6 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import type { ObjectiveStatus, Perspective, ScorecardObjective } from "@/types/scorecard";
 
+function sameIds(left: string[], right: string[]) {
+  if (left.length !== right.length) return false;
+  const a = [...left].sort();
+  const b = [...right].sort();
+  return a.every((value, index) => value === b[index]);
+}
+
 export default function ScorecardObjectiveModal({
   objective,
   perspectives,
@@ -26,7 +33,7 @@ export default function ScorecardObjectiveModal({
     progress: number;
     ownerName: string;
     description: string | null;
-    kpiSnapshotIds: string[];
+    kpiSnapshotIds?: string[];
   }) => void | Promise<void>;
 }) {
   const existingPerspective = useMemo(
@@ -59,7 +66,7 @@ export default function ScorecardObjectiveModal({
   useEffect(() => {
     const allowed = new Set(availableKpis.map((kpi) => kpi.id));
     setSelectedKpis((previous) => new Set([...previous].filter((id) => allowed.has(id))));
-  }, [perspectiveId]);
+  }, [perspectiveId, availableKpis]);
 
   const toggleKpi = (id: string) => {
     setSelectedKpis((previous) => {
@@ -72,23 +79,40 @@ export default function ScorecardObjectiveModal({
 
   const canSave = Boolean(perspectiveId && name.trim() && ownerName.trim()) && !busy;
 
+  const save = () => {
+    const selected = [...selectedKpis];
+    const linksChanged = !objective
+      || perspectiveId !== existingPerspective?.id
+      || !sameIds(selected, objective.linkedKpiIds ?? []);
+
+    void onSave({
+      perspectiveId,
+      name: name.trim(),
+      status,
+      progress,
+      ownerName: ownerName.trim(),
+      description: description.trim() || null,
+      kpiSnapshotIds: linksChanged ? selected : undefined,
+    });
+  };
+
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label={objective ? "Edit Objective" : "Add Objective"}>
       <div className="max-h-[90vh] w-full max-w-[600px] overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-5">
           <h2 className="text-base font-semibold text-gray-900">{objective ? "Edit Objective" : "Add Objective"}</h2>
-          <button type="button" onClick={onClose} disabled={busy} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X className="h-4 w-4" /></button>
+          <button type="button" aria-label="Close" onClick={onClose} disabled={busy} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"><X className="h-4 w-4" /></button>
         </div>
 
         <div className="max-h-[68vh] space-y-5 overflow-y-auto px-6 py-5">
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-gray-800">Objective Label</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-sky-500" />
+            <input aria-label="Objective Label" value={name} onChange={(event) => setName(event.target.value)} className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-sky-500" />
           </label>
 
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-gray-800">Perspective</span>
-            <select value={perspectiveId} onChange={(event) => setPerspectiveId(event.target.value)} className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-sky-500">
+            <select aria-label="Perspective" value={perspectiveId} onChange={(event) => setPerspectiveId(event.target.value)} className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-sky-500">
               {perspectives.map((row) => <option key={row.id} value={row.id}>{row.key === "internal-process" ? "Internal Process" : row.key === "learning-growth" ? "Learning & Growth" : row.key[0]!.toUpperCase() + row.key.slice(1)}</option>)}
             </select>
           </label>
@@ -96,7 +120,7 @@ export default function ScorecardObjectiveModal({
           <div className="grid gap-4 sm:grid-cols-2">
             <label>
               <span className="mb-1.5 block text-sm font-medium text-gray-800">Status</span>
-              <select value={status} onChange={(event) => setStatus(event.target.value as ObjectiveStatus)} className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none">
+              <select aria-label="Status" value={status} onChange={(event) => setStatus(event.target.value as ObjectiveStatus)} className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none">
                 <option value="on-track">On Track</option>
                 <option value="at-risk">At Risk</option>
                 <option value="off-track">Off Track</option>
@@ -105,18 +129,18 @@ export default function ScorecardObjectiveModal({
             </label>
             <label>
               <span className="mb-1.5 block text-sm font-medium text-gray-800">Owner</span>
-              <input value={ownerName} onChange={(event) => setOwnerName(event.target.value)} className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none" />
+              <input aria-label="Owner" value={ownerName} onChange={(event) => setOwnerName(event.target.value)} className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none" />
             </label>
           </div>
 
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-gray-800">Progress — {progress}%</span>
-            <input type="range" min={0} max={100} value={progress} onChange={(event) => setProgress(Number(event.target.value))} className="w-full accent-sky-500" />
+            <input aria-label="Progress" type="range" min={0} max={100} value={progress} onChange={(event) => setProgress(Number(event.target.value))} className="w-full accent-sky-500" />
           </label>
 
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-gray-800">Description</span>
-            <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={3} className="w-full resize-none rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none" />
+            <textarea aria-label="Description" value={description} onChange={(event) => setDescription(event.target.value)} rows={3} className="w-full resize-none rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none" />
           </label>
 
           <div>
@@ -142,7 +166,7 @@ export default function ScorecardObjectiveModal({
 
         <div className="grid grid-cols-2 gap-3 border-t border-gray-100 px-6 py-5">
           <button type="button" onClick={onClose} disabled={busy} className="rounded-full border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-          <button type="button" disabled={!canSave} onClick={() => void onSave({ perspectiveId, name: name.trim(), status, progress, ownerName: ownerName.trim(), description: description.trim() || null, kpiSnapshotIds: [...selectedKpis] })} className="rounded-full bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">{objective ? "Save Changes" : "Add Objective"}</button>
+          <button type="button" disabled={!canSave} onClick={save} className="rounded-full bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">{objective ? "Save Changes" : "Add Objective"}</button>
         </div>
       </div>
     </div>
