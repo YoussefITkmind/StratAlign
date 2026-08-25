@@ -1,3 +1,4 @@
+# Python 3.12 required: pixelrag==0.3.0 pins Requires-Python >=3.12
 FROM python:3.12-slim
 
 RUN apt-get update \
@@ -14,4 +15,3 @@ COPY . .
 EXPOSE 8000
 
 CMD ["python", "scripts/run_web.py"]
-
