@@ -10,25 +10,22 @@ import {
   translateBackendGovernanceError,
 } from "@/server/backend-governance-client";
 
-type BackendGovernanceState =
-  | "DRAFT"
-  | "PENDING_APPROVAL"
-  | "APPROVED"
-  | "REJECTED"
-  | "CHANGES_REQUESTED";
-
 interface BackendGovernanceCase {
   id: string;
-  workflowDefinitionId: string;
   entityType: string;
   entityId: string;
   submittedBy: string;
   approvalParticipantId: string | null;
-  approvalSlaMs: number;
-  currentState: BackendGovernanceState;
-  xstateContextSnapshot: unknown;
-  createdAt: string | Date;
-  updatedAt: string | Date;
+  currentState: string;
+  xstateContextSnapshot?: unknown;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+  escalations?: unknown[];
+  decisionLog?: Array<{
+    decidedBy?: string;
+    decidedAt?: string | Date;
+    rationale?: string | null;
+  }> | null;
 }
 
 function backend(ctx: { cookieHeader: string | null }) {
@@ -62,7 +59,7 @@ function extractProposedChange(snapshot: unknown) {
   };
 }
 
-function mapStatus(state: BackendGovernanceState) {
+function mapStatus(state: string) {
   switch (state) {
     case "DRAFT":
       return "draft" as const;
@@ -74,20 +71,13 @@ function mapStatus(state: BackendGovernanceState) {
       return "rejected" as const;
     case "CHANGES_REQUESTED":
       return "changes_requested" as const;
+    default:
+      throw new Error(`Unsupported governance state: ${state}`);
   }
 }
 
 function toFrontendCase(item: BackendGovernanceCase) {
-  const runtime = item as BackendGovernanceCase & {
-    escalations?: unknown[];
-    decisionLog?: Array<{
-      decidedBy?: string;
-      decidedAt?: string | Date;
-      rationale?: string | null;
-    }> | null;
-  };
-
-  const latestDecision = runtime.decisionLog?.[0];
+  const latestDecision = item.decisionLog?.[0];
 
   return {
     id: item.id,
@@ -97,9 +87,9 @@ function toFrontendCase(item: BackendGovernanceCase) {
     status: mapStatus(item.currentState),
     submittedBy: item.submittedBy,
     approvalParticipantId: item.approvalParticipantId,
-    createdAt: String(item.createdAt),
-    updatedAt: String(item.updatedAt),
-    escalated: Array.isArray(runtime.escalations) && runtime.escalations.length > 0,
+    createdAt: item.createdAt ? String(item.createdAt) : "",
+    updatedAt: item.updatedAt ? String(item.updatedAt) : "",
+    escalated: Array.isArray(item.escalations) && item.escalations.length > 0,
     proposedChange: extractProposedChange(item.xstateContextSnapshot),
     decidedBy: latestDecision?.decidedBy,
     decidedAt: latestDecision?.decidedAt
@@ -138,7 +128,7 @@ export const governanceRouter = router({
   myPendingApprovals: authenticatedProcedure.query(async ({ ctx }) => {
     try {
       const cases = await backend(ctx).governance.myPendingApprovals.query();
-      return cases.map((item) => toFrontendCase(item as BackendGovernanceCase));
+      return cases.map((item) => toFrontendCase(item));
     } catch (error) {
       translateBackendGovernanceError(error);
     }
@@ -151,7 +141,7 @@ export const governanceRouter = router({
         const item = await backend(ctx).governance.getCase.query({
           caseId: input.id,
         });
-        return toFrontendCase(item as BackendGovernanceCase);
+        return toFrontendCase(item);
       } catch (error) {
         translateBackendGovernanceError(error);
       }
@@ -162,7 +152,7 @@ export const governanceRouter = router({
     .query(async ({ ctx, input }) => {
       try {
         const item = await backend(ctx).governance.getLatestCaseForEntity.query(input);
-        return item ? toFrontendCase(item as BackendGovernanceCase) : null;
+        return item ? toFrontendCase(item) : null;
       } catch (error) {
         translateBackendGovernanceError(error);
       }
@@ -176,7 +166,7 @@ export const governanceRouter = router({
     .query(async ({ ctx, input }) => {
       try {
         const items = await backend(ctx).governanceWorkflow.latestForEntities.query(input);
-        return items.map((item) => toFrontendCase(item as unknown as BackendGovernanceCase));
+        return items.map((item) => toFrontendCase(item));
       } catch (error) {
         translateBackendGovernanceError(error);
       }
@@ -197,7 +187,7 @@ export const governanceRouter = router({
         const item = await backend(ctx).governanceWorkflow.resubmit.mutate({
           caseId: input.id,
         });
-        return toFrontendCase(item as BackendGovernanceCase);
+        return toFrontendCase(item);
       } catch (error) {
         translateBackendGovernanceError(error);
       }
@@ -221,7 +211,7 @@ export const governanceRouter = router({
                 : "reject",
           ...(input.reason ? { rationale: input.reason } : {}),
         });
-        return toFrontendCase(item as BackendGovernanceCase);
+        return toFrontendCase(item);
       } catch (error) {
         translateBackendGovernanceError(error);
       }
