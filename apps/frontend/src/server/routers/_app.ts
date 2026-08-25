@@ -9,6 +9,7 @@ import { strategyRouter } from "@/server/routers/strategy";
 import { strategyHierarchyRouter } from "@/server/routers/strategy-hierarchy";
 import { captureRouter } from "@/server/routers/capture";
 import { scorecardRouter } from "@/server/routers/scorecard";
+import { scorecardSyncRouter } from "@/server/routers/scorecard-sync";
 import { homeRouter } from "@/server/routers/home";
 import { executionRouter } from "@/server/routers/execution";
 import { valueGateRouter } from "@/server/routers/value-gate";
@@ -28,6 +29,7 @@ export const appRouter = router({
   strategyHierarchy: strategyHierarchyRouter,
   capture: captureRouter,
   scorecard: scorecardRouter,
+  scorecardSync: scorecardSyncRouter,
   home: homeRouter,
   execution: executionRouter,
   valueGate: valueGateRouter,
