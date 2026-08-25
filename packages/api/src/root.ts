@@ -3,6 +3,7 @@ import { strategyRouter } from "./strategy";
 import { strategyHierarchyRouter } from "./strategyHierarchy";
 import { scorecardRouter } from "./scorecard";
 import { scorecardSyncRouter } from "./scorecard-sync";
+import { kpiWorkspaceRouter } from "./kpi-workspace";
 import { executionRouter } from "./execution";
 import { portfolioRouter } from "./portfolio";
 import { schedulerRouter } from "./scheduler";
@@ -21,6 +22,7 @@ export const rootRouter = mergeRouters(
     strategyHierarchy: strategyHierarchyRouter,
     scorecard: scorecardRouter,
     scorecardSync: scorecardSyncRouter,
+    kpiWorkspace: kpiWorkspaceRouter,
     execution: executionRouter,
     portfolio: portfolioRouter,
     scheduler: schedulerRouter,
