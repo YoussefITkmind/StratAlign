@@ -41,6 +41,7 @@ import { PerformanceService } from "./modules/performance/performance.service";
 import { KpiDetailService } from "./modules/performance/kpi-detail.service";
 import { ScorecardService } from "./modules/scorecard/scorecard.service";
 import { BalancedScorecardService } from "./modules/scorecard/balanced-scorecard.service";
+import { ScorecardMapSyncService } from "./modules/scorecard/scorecard-map-sync.service";
 import { StageAwareExecutionService } from "./modules/execution/stage-aware-execution.service";
 import { PortfolioService } from "./modules/portfolio/portfolio.service";
 import { SchedulerReadService } from "./modules/scheduler/scheduler-read.service";
@@ -125,6 +126,7 @@ async function bootstrap(): Promise<void> {
   );
   const scorecard = new ScorecardService(prisma, governance, rules, measurements);
   const balancedScorecard = new BalancedScorecardService(prisma);
+  const scorecardMapSync = new ScorecardMapSyncService(prisma);
   const execution = new StageAwareExecutionService(prisma, prisma, eventBus);
   const portfolio = new PortfolioService(prisma, rules, governance, strategy);
   const schedulerRead = new SchedulerReadService(prisma);
@@ -144,7 +146,7 @@ async function bootstrap(): Promise<void> {
       maxCatchUpOccurrences: environment.SCHEDULER_MAX_CATCHUP_OCCURRENCES,
       tickIntervalMs: environment.SCHEDULER_TICK_INTERVAL_MS,
     },
-    logger.child("cadence-generator"),
+    logger.child("value-checkin-scheduler"),
   );
   const value = new ValueManagementService(prisma, governance, governanceEscalation, rules, scheduler);
   const webhookDispatcher = new WebhookDispatcherService(prisma, logger.child("webhook-dispatcher"));
@@ -152,13 +154,7 @@ async function bootstrap(): Promise<void> {
   const integrations = {
     connections: new ConnectionsService(prisma, webhookDispatcher),
     syncLogs: new SyncLogsService(prisma),
-    // Reuses the one shared LLM abstraction above; read-only, so it is handed
-    // `prisma` for reads and nothing that could retry or reconfigure a sync.
-    syncInvestigation: new SyncInvestigationService(
-      prisma,
-      llm,
-      logger.child("sync-investigation"),
-    ),
+    syncInvestigation: new SyncInvestigationService(prisma, llm, logger.child("sync-investigation")),
     apiKeys: new ApiKeysService(prisma),
     webhooks: new WebhooksService(prisma),
   };
@@ -197,7 +193,7 @@ async function bootstrap(): Promise<void> {
         session: await sessions.getSession({ headers }), oidcIdentities, authenticationFreshness,
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
         strategyHierarchy,
-        registry, audit, auditTap, performance, scorecard, balancedScorecard, execution, portfolio, schedulerRead, value,
+        registry, audit, auditTap, performance, scorecard, balancedScorecard, scorecardMapSync, execution, portfolio, schedulerRead, value,
         aiSuggestion, assistant, integrations, pixelrag,
       };
     },
