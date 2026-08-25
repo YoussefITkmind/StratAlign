@@ -5,7 +5,7 @@ const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
 
 describe("strategy-map link validation", () => {
-  it.each(["weak", "strong"] as const)("accepts %s strength", (strength) => {
+  it.each(["weak", "strong", "enables", "impacts", "drives", "supports"] as const)("accepts %s relationship type", (strength) => {
     expect(validateMapLink({ fromObjectiveId: A, toObjectiveId: B, strength })).toEqual({
       fromObjectiveId: A,
       toObjectiveId: B,
