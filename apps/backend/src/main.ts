@@ -40,6 +40,7 @@ import { PerformanceResultsService } from "./modules/performance/performance-res
 import { PerformanceService } from "./modules/performance/performance.service";
 import { KpiDetailService } from "./modules/performance/kpi-detail.service";
 import { ScorecardService } from "./modules/scorecard/scorecard.service";
+import { ScorecardUiService } from "./modules/scorecard/scorecard-ui.service";
 import { StageAwareExecutionService } from "./modules/execution/stage-aware-execution.service";
 import { PortfolioService } from "./modules/portfolio/portfolio.service";
 import { SchedulerReadService } from "./modules/scheduler/scheduler-read.service";
@@ -122,6 +123,7 @@ async function bootstrap(): Promise<void> {
     new KpiDetailService(prisma),
   );
   const scorecard = new ScorecardService(prisma, governance, rules, measurements);
+  const scorecardUi = new ScorecardUiService(prisma);
   const execution = new StageAwareExecutionService(prisma, prisma, eventBus);
   const portfolio = new PortfolioService(prisma, rules, governance, strategy);
   const schedulerRead = new SchedulerReadService(prisma);
@@ -188,7 +190,7 @@ async function bootstrap(): Promise<void> {
         session: await sessions.getSession({ headers }), oidcIdentities, authenticationFreshness,
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
         strategyHierarchy,
-        registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
+        registry, audit, auditTap, performance, scorecard, scorecardUi, execution, portfolio, schedulerRead, value,
         aiSuggestion, assistant, integrations, pixelrag,
       };
     },
