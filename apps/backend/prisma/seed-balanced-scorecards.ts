@@ -236,17 +236,23 @@ function perspectiveName(key: PerspectiveKey): string {
 }
 
 async function main() {
-  await prisma.planVersion.upsert({
-    where: { id: PLAN_ID },
-    update: { name: "Balanced Scorecard Demo Plan", status: "ACTIVE" },
-    create: { id: PLAN_ID, name: "Balanced Scorecard Demo Plan", status: "ACTIVE" },
+  const existingActivePlan = await prisma.planVersion.findFirst({
+    where: { status: "ACTIVE" },
   });
+
+  const planVersionId = existingActivePlan?.id ?? (
+    await prisma.planVersion.upsert({
+      where: { id: PLAN_ID },
+      update: { name: "Balanced Scorecard Demo Plan", status: "ACTIVE" },
+      create: { id: PLAN_ID, name: "Balanced Scorecard Demo Plan", status: "ACTIVE" },
+    })
+  ).id;
 
   for (const card of cards) {
     const scorecardId = stableUuid(`scorecard:${card.slug}`);
     await prisma.$executeRaw`
       INSERT INTO scorecard.scorecards (id, name_en, name_ar, plan_version_id)
-      VALUES (${scorecardId}::uuid, ${card.name}, ${card.name}, ${PLAN_ID}::uuid)
+      VALUES (${scorecardId}::uuid, ${card.name}, ${card.name}, ${planVersionId}::uuid)
       ON CONFLICT (id) DO UPDATE SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, plan_version_id = EXCLUDED.plan_version_id`;
 
     await prisma.$executeRaw`
