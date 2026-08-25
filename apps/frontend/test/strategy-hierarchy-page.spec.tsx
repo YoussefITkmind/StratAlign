@@ -15,19 +15,40 @@ const hooks = vi.hoisted(() => ({
   deleteNode: vi.fn(),
   draftDescription: vi.fn(),
   invalidate: vi.fn(),
+  briefInvalidate: vi.fn(),
+  generateBrief: vi.fn(),
+  updateBriefSection: vi.fn(),
   treeData: undefined as unknown,
   treeLoading: false,
 }));
 
 vi.mock("@/lib/trpc/client", () => ({
   trpc: {
-    useUtils: () => ({ strategyHierarchy: { tree: { invalidate: hooks.invalidate } } }),
+    useUtils: () => ({
+      strategyHierarchy: { tree: { invalidate: hooks.invalidate } },
+      strategyBrief: { get: { invalidate: hooks.briefInvalidate } },
+    }),
     strategyHierarchy: {
       tree: { useQuery: () => ({ data: hooks.treeData, isLoading: hooks.treeLoading, isError: false }) },
       createNode: { useMutation: () => ({ mutateAsync: hooks.createNode }) },
       updateNode: { useMutation: () => ({ mutateAsync: hooks.updateNode }) },
       deleteNode: { useMutation: () => ({ mutateAsync: hooks.deleteNode }) },
       draftDescription: { useMutation: () => ({ mutateAsync: hooks.draftDescription, isPending: false }) },
+    },
+    // Only reached once the Strategy Brief modal is opened from the header.
+    strategyBrief: {
+      get: { useQuery: () => ({ data: null, isLoading: false, isError: false, error: null }) },
+      generate: {
+        useMutation: () => ({
+          mutateAsync: hooks.generateBrief,
+          isPending: false,
+          isError: false,
+          error: null,
+        }),
+      },
+      updateSection: {
+        useMutation: () => ({ mutateAsync: hooks.updateBriefSection, isPending: false }),
+      },
     },
   },
 }));
@@ -132,6 +153,23 @@ describe("StrategyHierarchyPage", () => {
       }),
     );
     await waitFor(() => expect(hooks.invalidate).toHaveBeenCalled());
+  });
+
+  it("opens the Strategy Brief from the header action", () => {
+    render(<StrategyHierarchyPage canManageStrategy={true} />);
+
+    expect(screen.queryByTestId("strategy-brief-modal")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /generate strategy brief/i }));
+
+    expect(screen.getByTestId("strategy-brief-modal")).toBeTruthy();
+  });
+
+  it("disables the Strategy Brief action until the hierarchy has loaded", () => {
+    hooks.treeData = null;
+    render(<StrategyHierarchyPage canManageStrategy={true} />);
+
+    const button = screen.getByRole("button", { name: /generate strategy brief/i }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
   });
 
   it("shows an empty state instead of crashing when there is no data yet", () => {

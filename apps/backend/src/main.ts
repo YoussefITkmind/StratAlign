@@ -56,6 +56,8 @@ import { SyncLogsService } from "./modules/integrations/sync-logs.service";
 import { ApiKeysService } from "./modules/integrations/api-keys.service";
 import { WebhooksService } from "./modules/integrations/webhooks.service";
 import { ContextAwareAssistantService } from "./modules/ai/assistant.service";
+import { StrategyBriefCollector } from "./modules/ai/strategy-brief.collector";
+import { StrategyBriefService } from "./modules/ai/strategy-brief.service";
 import { PixelRagClient } from "./modules/pixelrag/pixelrag.client";
 import { TraceabilityReadService } from "./modules/traceability/traceability-read.service";
 
@@ -167,6 +169,12 @@ async function bootstrap(): Promise<void> {
     logger.child("ai-suggestion"),
   );
   const assistant = new ContextAwareAssistantService(llm, logger.child("assistant"));
+  const strategyBrief = new StrategyBriefService(
+    prisma,
+    new StrategyBriefCollector(prisma, strategyHierarchy),
+    llm,
+    logger.child("strategy-brief"),
+  );
 
   const pixelrag = environment.PIXELRAG_SERVICE_URL
     ? new PixelRagClient(
@@ -187,7 +195,7 @@ async function bootstrap(): Promise<void> {
         health, credentials, loginRateLimiter, clientIp: req.socket.remoteAddress ?? "unknown",
         session: await sessions.getSession({ headers }), oidcIdentities, authenticationFreshness,
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
-        strategyHierarchy,
+        strategyHierarchy, strategyBrief,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
         aiSuggestion, assistant, integrations, pixelrag,
       };

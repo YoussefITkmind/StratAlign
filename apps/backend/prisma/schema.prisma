@@ -40,6 +40,7 @@ model User {
   notificationDigests               NotificationDigest[]      @relation("NotificationDigestRecipient")
   strategyNodesCreated              StrategyNode[]            @relation("StrategyNodeCreator")
   strategyHierarchyNodesCreated     StrategyHierarchyNode[]   @relation("StrategyHierarchyNodeCreator")
+  strategyBriefsGenerated           StrategyBrief[]           @relation("StrategyBriefGenerator")
   strategyOwnerAssignments          OwnerAssignment[]         @relation("StrategyOwner")
   strategyOwnerAssignmentsAssigned  OwnerAssignment[]         @relation("StrategyAssigner")
   strategyStagedChangesRequested    StagedChange[]            @relation("StrategyStagedChangeRequester")
@@ -679,6 +680,7 @@ model StrategyHierarchyNode {
   children StrategyHierarchyNode[]     @relation("StrategyHierarchyNodeChildren")
   creator  User                        @relation("StrategyHierarchyNodeCreator", fields: [createdBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
   activity StrategyHierarchyActivity[]
+  brief    StrategyBrief?
 
   @@index([parentId])
   @@map("strategy_hierarchy_nodes")
@@ -695,6 +697,40 @@ model StrategyHierarchyActivity {
 
   @@index([nodeId, createdAt])
   @@map("strategy_hierarchy_activity")
+  @@schema("strategy_hierarchy")
+}
+
+/// One AI-generated executive brief per strategy hierarchy root.
+///
+/// The whole validated brief is stored as `payload` so the page can be
+/// reopened without spending another model call, and so the exact wording an
+/// executive read is still recoverable after the tree moves on. Regenerating
+/// replaces `payload`.
+///
+/// The two user-editable sections live in their own columns rather than being
+/// written back into `payload`. That keeps a manual edit distinguishable from
+/// model output (a non-null override *is* the "edited" flag), lets a
+/// regeneration refresh the AI text without silently discarding what a human
+/// wrote, and makes reverting to the model's version a matter of clearing one
+/// column.
+model StrategyBrief {
+  id                       String   @id @default(uuid()) @db.Uuid
+  rootNodeId               String   @unique @map("root_node_id") @db.Uuid
+  title                    String
+  payload                  Json
+  executiveSummaryOverride String?  @map("executive_summary_override")
+  strategicVisionOverride  String?  @map("strategic_vision_override")
+  provider                 String
+  model                    String
+  generatedBy              String   @map("generated_by")
+  generatedAt              DateTime @default(now()) @map("generated_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  rootNode  StrategyHierarchyNode @relation(fields: [rootNodeId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  generator User                  @relation("StrategyBriefGenerator", fields: [generatedBy], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([generatedBy])
+  @@map("strategy_briefs")
   @@schema("strategy_hierarchy")
 }
 

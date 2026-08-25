@@ -86,6 +86,38 @@ export class AiThemeNotFoundError extends AiSuggestionError {
   }
 }
 
+/**
+ * No strategy hierarchy resolves for the caller's request.
+ *
+ * A separate class from `AiThemeNotFoundError` because it is raised by the
+ * Strategy Brief surface, which has no theme in hand — and because the tRPC
+ * layer maps this one to NOT_FOUND rather than to a generic AI failure.
+ */
+export class AiStrategyNotFoundError extends Error {
+  readonly code = "AI_STRATEGY_NOT_FOUND";
+
+  constructor(message = "That strategy could not be found") {
+    super(message);
+    this.name = "AiStrategyNotFoundError";
+  }
+}
+
+/**
+ * No brief has been generated for this strategy yet.
+ *
+ * Raised only when an operation requires an existing brief to act on (editing
+ * a section). Reading a brief that does not exist is not an error — it returns
+ * null, so the UI can offer to generate one.
+ */
+export class AiBriefNotFoundError extends Error {
+  readonly code = "AI_BRIEF_NOT_FOUND";
+
+  constructor(message = "No strategy brief has been generated yet") {
+    super(message);
+    this.name = "AiBriefNotFoundError";
+  }
+}
+
 const AI_ERROR_CODES = new Set([
   "AI_UNAVAILABLE",
   "AI_TIMEOUT",
