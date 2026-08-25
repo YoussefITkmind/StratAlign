@@ -5,9 +5,8 @@ import {
   Search, Download, Plus, BookOpen,
   Network, LayoutList,
 } from "lucide-react";
-import { Scorecard, Filters } from "@/types/scorecard";
+import { Scorecard, Filters, ScorecardStatus } from "@/types/scorecard";
 import { SCORECARD_STATUS_CONFIG, scoreColor } from "@/lib/scorecardConfig";
-import { initialScorecards } from "@/data/mockScorecardData";
 import { filterScorecards, groupByDepartment, statusCounts, totalKpis } from "@/lib/scorecardUtils";
 import { trpc } from "@/lib/trpc/client";
 import { usePublishAssistantContext } from "@/lib/assistant/assistant-context";
@@ -23,13 +22,54 @@ function toScorecardSummary(row: unknown): { id: string; nameEn: string } | null
   return typeof id === "string" && typeof nameEn === "string" ? { id, nameEn } : null;
 }
 
-export default function BalancedScorecardsPage() {
-  const [scorecards, setScorecards] = useState<Scorecard[]>(initialScorecards);
+function toScorecard(row: unknown): Scorecard | null {
+  if (typeof row !== "object" || row === null) return null;
+  const record = row as Record<string, unknown>;
+  if (typeof record.id !== "string" || typeof record.nameEn !== "string") return null;
 
-  // Real backend data, fetched independently of the (still mock-backed) tree
-  // above — this is what the assistant is told about, so it never presents
-  // demo fixtures as if they were genuine scorecards.
+  const uiData = typeof record.uiData === "object" && record.uiData !== null
+    ? record.uiData as Partial<Scorecard>
+    : {};
+  const status: ScorecardStatus = uiData.status === "on-track" || uiData.status === "at-risk" || uiData.status === "draft"
+    ? uiData.status
+    : "draft";
+
+  return {
+    ...uiData,
+    id: record.id,
+    name: record.nameEn,
+    department: typeof uiData.department === "string" ? uiData.department : "Corporate",
+    period: typeof uiData.period === "string" ? uiData.period : "—",
+    ownerName: typeof uiData.ownerName === "string" ? uiData.ownerName : "Unassigned",
+    status,
+    score: typeof uiData.score === "number" ? uiData.score : 0,
+    perspectives: Array.isArray(uiData.perspectives) ? uiData.perspectives : [],
+  };
+}
+
+function planVersionIdFrom(row: unknown): string | null {
+  if (typeof row !== "object" || row === null) return null;
+  const id = (row as Record<string, unknown>).id;
+  return typeof id === "string" ? id : null;
+}
+
+function planVersionStatusFrom(row: unknown): string {
+  if (typeof row !== "object" || row === null) return "";
+  const status = (row as Record<string, unknown>).status;
+  return typeof status === "string" ? status.toLowerCase() : "";
+}
+
+export default function BalancedScorecardsPage() {
+  const utils = trpc.useUtils();
   const scorecardListQuery = trpc.scorecard.list.useQuery();
+  const planVersionsQuery = trpc.strategy.planVersion.list.useQuery();
+  const createScorecard = trpc.scorecard.create.useMutation();
+
+  const scorecards = useMemo(
+    () => (scorecardListQuery.data ?? []).map(toScorecard).filter((row): row is Scorecard => row !== null),
+    [scorecardListQuery.data],
+  );
+
   const assistantData = useMemo(() => {
     const rows = (scorecardListQuery.data ?? [])
       .map(toScorecardSummary)
@@ -44,7 +84,8 @@ export default function BalancedScorecardsPage() {
     null,
     scorecardListQuery.data ? assistantData : null,
   );
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(["sc-corporate", "sc-corporate-financial"]));
+
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [view, setView] = useState<"tree" | "list">("tree");
   const [filters, setFilters] = useState<Filters>({ search: "", department: "all", status: "all" });
   const [modalOpen, setModalOpen] = useState(false);
@@ -63,9 +104,25 @@ export default function BalancedScorecardsPage() {
       return next;
     });
 
-  const handleAdd = (sc: Scorecard) => {
-    setScorecards((prev) => [...prev, sc]);
-    setExpandedIds((prev) => new Set(prev).add(sc.id));
+  const handleAdd = async (sc: Scorecard) => {
+    const planRows = planVersionsQuery.data ?? [];
+    const activePlan = planRows.find((row) => planVersionStatusFrom(row) === "active");
+    const planVersionId = planVersionIdFrom(activePlan) ?? planVersionIdFrom(planRows[0]);
+    if (!planVersionId) throw new Error("A strategy plan version is required before creating a scorecard");
+
+    const { id: _temporaryId, name: _name, ...uiData } = sc;
+    const created = await createScorecard.mutateAsync({
+      nameEn: sc.name,
+      nameAr: sc.name,
+      planVersionId,
+      uiData,
+    });
+
+    const createdId = typeof created === "object" && created !== null && typeof (created as Record<string, unknown>).id === "string"
+      ? (created as Record<string, unknown>).id as string
+      : null;
+    if (createdId) setExpandedIds((prev) => new Set(prev).add(createdId));
+    await utils.scorecard.list.invalidate();
   };
 
   const exportJson = () => {
