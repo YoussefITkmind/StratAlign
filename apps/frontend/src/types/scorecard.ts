@@ -1,10 +1,24 @@
 export type ScorecardStatus = "on-track" | "at-risk" | "draft";
+export type ObjectiveStatus = "on-track" | "at-risk" | "off-track" | "not-started";
 
 export type PerspectiveKey = "financial" | "customer" | "internal-process" | "learning-growth";
 
 export interface Owner {
   initials: string;
   color: string;
+}
+
+export interface ScorecardObjective {
+  id: string;
+  name: string;
+  status: ObjectiveStatus;
+  progress: number;
+  ownerName: string;
+  ownerInitials: string;
+  ownerColor: string;
+  description?: string;
+  linkedKpiIds: string[];
+  linkedKpis: string[];
 }
 
 export interface Kpi {
@@ -22,6 +36,8 @@ export interface Kpi {
   variance?: string;
   /** Recent period values for the detail-page trend sparkline, oldest first. */
   trend?: number[];
+  /** Shared objective records this KPI is linked to. */
+  linkedObjectiveIds?: string[];
 }
 
 export interface Perspective {
@@ -31,6 +47,7 @@ export interface Perspective {
   score: number;
   weight: number;
   priorScore?: number;
+  objectives?: ScorecardObjective[];
   kpis: Kpi[];
 }
 
@@ -43,10 +60,8 @@ export interface Scorecard {
   status: ScorecardStatus;
   score: number;
   priorScore?: number;
-  /** Id of a mock StrategyMap, used only by this list screen's still-mock preview — unrelated to the real scorecard.map.getPublished data Master Scorecard renders. */
   mapId?: string;
   perspectives: Perspective[];
-  /** Captured from the "New Balanced Scorecard" form; not yet surfaced elsewhere in the UI. */
   description?: string;
   reviewFrequency?: string;
   startDate?: string;
