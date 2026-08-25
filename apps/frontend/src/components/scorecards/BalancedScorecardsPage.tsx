@@ -22,13 +22,19 @@ function toScorecardSummary(row: unknown): { id: string; nameEn: string } | null
   return typeof id === "string" && typeof nameEn === "string" ? { id, nameEn } : null;
 }
 
-function toScorecard(row: unknown): Scorecard | null {
+function scorecardIdFrom(row: unknown): string | null {
+  if (typeof row !== "object" || row === null) return null;
+  const id = (row as Record<string, unknown>).id;
+  return typeof id === "string" ? id : null;
+}
+
+function toScorecard(row: unknown, uiDataValue: unknown): Scorecard | null {
   if (typeof row !== "object" || row === null) return null;
   const record = row as Record<string, unknown>;
   if (typeof record.id !== "string" || typeof record.nameEn !== "string") return null;
 
-  const uiData = typeof record.uiData === "object" && record.uiData !== null
-    ? record.uiData as Partial<Scorecard>
+  const uiData = typeof uiDataValue === "object" && uiDataValue !== null
+    ? uiDataValue as Partial<Scorecard>
     : {};
   const status: ScorecardStatus = uiData.status === "on-track" || uiData.status === "at-risk" || uiData.status === "draft"
     ? uiData.status
@@ -62,12 +68,30 @@ function planVersionStatusFrom(row: unknown): string {
 export default function BalancedScorecardsPage() {
   const utils = trpc.useUtils();
   const scorecardListQuery = trpc.scorecard.list.useQuery();
+  const scorecardUiQuery = trpc.scorecard.ui.list.useQuery();
   const planVersionsQuery = trpc.strategy.planVersion.list.useQuery();
   const createScorecard = trpc.scorecard.create.useMutation();
+  const saveScorecardUi = trpc.scorecard.ui.save.useMutation();
+
+  const uiDataByScorecardId = useMemo(() => {
+    const entries = (scorecardUiQuery.data ?? []).flatMap((row) => {
+      if (typeof row !== "object" || row === null) return [];
+      const record = row as Record<string, unknown>;
+      return typeof record.scorecardId === "string"
+        ? [[record.scorecardId, record.uiData] as const]
+        : [];
+    });
+    return new Map(entries);
+  }, [scorecardUiQuery.data]);
 
   const scorecards = useMemo(
-    () => (scorecardListQuery.data ?? []).map(toScorecard).filter((row): row is Scorecard => row !== null),
-    [scorecardListQuery.data],
+    () => (scorecardListQuery.data ?? [])
+      .map((row) => {
+        const id = scorecardIdFrom(row);
+        return toScorecard(row, id ? uiDataByScorecardId.get(id) : undefined);
+      })
+      .filter((row): row is Scorecard => row !== null),
+    [scorecardListQuery.data, uiDataByScorecardId],
   );
 
   const assistantData = useMemo(() => {
@@ -115,14 +139,19 @@ export default function BalancedScorecardsPage() {
       nameEn: sc.name,
       nameAr: sc.name,
       planVersionId,
-      uiData,
     });
 
     const createdId = typeof created === "object" && created !== null && typeof (created as Record<string, unknown>).id === "string"
       ? (created as Record<string, unknown>).id as string
       : null;
-    if (createdId) setExpandedIds((prev) => new Set(prev).add(createdId));
-    await utils.scorecard.list.invalidate();
+    if (!createdId) throw new Error("Created scorecard did not return an ID");
+
+    await saveScorecardUi.mutateAsync({ scorecardId: createdId, uiData });
+    setExpandedIds((prev) => new Set(prev).add(createdId));
+    await Promise.all([
+      utils.scorecard.list.invalidate(),
+      utils.scorecard.ui.list.invalidate(),
+    ]);
   };
 
   const exportJson = () => {
