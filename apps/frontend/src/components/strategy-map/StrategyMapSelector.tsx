@@ -8,33 +8,39 @@ import { trpc } from "@/lib/trpc/client";
 interface ScorecardOption {
   id: string;
   nameEn: string;
+  planVersionId: string;
 }
 
-interface BalancedOption {
+interface ScorecardDetail {
   id: string;
+  nameEn: string;
+  planVersionId: string;
 }
 
 export default function StrategyMapSelector({ scorecardId }: { scorecardId: string }) {
   const router = useRouter();
   const scorecardsQuery = trpc.scorecard.list.useQuery();
-  const balancedQuery = trpc.scorecard.balanced.list.useQuery();
+  const currentScorecardQuery = trpc.scorecard.get.useQuery({ scorecardId });
 
   const scorecards = (scorecardsQuery.data as ScorecardOption[] | undefined) ?? [];
-  const balanced = (balancedQuery.data as BalancedOption[] | undefined) ?? [];
+  const currentScorecard = currentScorecardQuery.data as ScorecardDetail | undefined;
 
   const maps = useMemo(() => {
-    const balancedIds = new Set(balanced.map((item) => item.id));
+    if (!currentScorecard?.planVersionId) return [];
+
     return scorecards.filter(
-      (item) => !balancedIds.has(item.id) && !item.nameEn.startsWith("E2E "),
+      (item) =>
+        item.planVersionId === currentScorecard.planVersionId &&
+        !item.nameEn.startsWith("E2E "),
     );
-  }, [balanced, scorecards]);
+  }, [currentScorecard?.planVersionId, scorecards]);
 
   const current = scorecards.find((item) => item.id === scorecardId);
   const options = maps.length > 0
     ? maps
     : current
       ? [current]
-      : [{ id: scorecardId, nameEn: "Strategy Map" }];
+      : [{ id: scorecardId, nameEn: currentScorecard?.nameEn ?? "Strategy Map", planVersionId: currentScorecard?.planVersionId ?? "" }];
 
   return (
     <div className="absolute left-14 top-3 z-30">
