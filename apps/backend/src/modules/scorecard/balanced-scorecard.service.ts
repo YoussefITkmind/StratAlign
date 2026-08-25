@@ -132,45 +132,47 @@ export class BalancedScorecardService {
   async list() {
     const [scorecards, perspectives, kpis] = await Promise.all([
       this.prisma.$queryRaw<ScorecardRow[]>`
-        SELECT id,
-               name_en AS "nameEn",
-               name_ar AS "nameAr",
-               scope_node_id AS "scopeNodeId",
-               plan_version_id AS "planVersionId",
-               description,
-               department,
-               period,
-               owner_name AS "ownerName",
-               owner_initials AS "ownerInitials",
-               status,
-               score,
-               prior_score AS "priorScore",
-               review_frequency AS "reviewFrequency",
-               start_period AS "startDate",
-               end_period AS "endDate",
-               strategy_name AS "strategyName",
-               strategic_theme AS "strategicTheme",
-               strategic_objective AS "strategicObjective",
-               primary_perspective AS "primaryPerspective",
-               strategic_weight AS "strategicWeight",
-               tags,
-               notes,
-               created_at AS "createdAt"
-        FROM scorecard.scorecards
-        ORDER BY created_at, id`,
+        SELECT s.id,
+               s.name_en AS "nameEn",
+               s.name_ar AS "nameAr",
+               s.scope_node_id AS "scopeNodeId",
+               s.plan_version_id AS "planVersionId",
+               p.description,
+               COALESCE(p.department, 'Corporate') AS department,
+               COALESCE(p.period, '—') AS period,
+               COALESCE(p.owner_name, 'Unassigned') AS "ownerName",
+               p.owner_initials AS "ownerInitials",
+               COALESCE(p.status, 'draft') AS status,
+               COALESCE(p.score, 0) AS score,
+               p.prior_score AS "priorScore",
+               p.review_frequency AS "reviewFrequency",
+               p.start_period AS "startDate",
+               p.end_period AS "endDate",
+               p.strategy_name AS "strategyName",
+               p.strategic_theme AS "strategicTheme",
+               p.strategic_objective AS "strategicObjective",
+               p.primary_perspective AS "primaryPerspective",
+               p.strategic_weight AS "strategicWeight",
+               COALESCE(p.tags, ARRAY[]::TEXT[]) AS tags,
+               p.notes,
+               s.created_at AS "createdAt"
+        FROM scorecard.scorecards s
+        LEFT JOIN scorecard.balanced_scorecard_profiles p ON p.scorecard_id = s.id
+        ORDER BY s.created_at, s.id`,
       this.prisma.$queryRaw<PerspectiveRow[]>`
-        SELECT id,
-               scorecard_id AS "scorecardId",
-               perspective_key AS "key",
-               name_en AS "nameEn",
-               "order",
-               owner_initials AS "ownerInitials",
-               owner_color AS "ownerColor",
-               score,
-               prior_score AS "priorScore",
-               weight
-        FROM scorecard.perspectives
-        ORDER BY scorecard_id, "order", id`,
+        SELECT p.id,
+               p.scorecard_id AS "scorecardId",
+               bp.perspective_key AS "key",
+               p.name_en AS "nameEn",
+               p."order",
+               bp.owner_initials AS "ownerInitials",
+               bp.owner_color AS "ownerColor",
+               COALESCE(bp.score, 0) AS score,
+               bp.prior_score AS "priorScore",
+               COALESCE(bp.weight, 0) AS weight
+        FROM scorecard.perspectives p
+        LEFT JOIN scorecard.balanced_perspective_profiles bp ON bp.perspective_id = p.id
+        ORDER BY p.scorecard_id, p."order", p.id`,
       this.prisma.$queryRaw<KpiRow[]>`
         SELECT id,
                perspective_id AS "perspectiveId",
@@ -271,20 +273,23 @@ export class BalancedScorecardService {
 
     return this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<Array<{ id: string }>>`
-        INSERT INTO scorecard.scorecards (
-          name_en, name_ar, scope_node_id, plan_version_id,
-          description, department, period, owner_name, owner_initials,
+        INSERT INTO scorecard.scorecards (name_en, name_ar, scope_node_id, plan_version_id)
+        VALUES (${input.nameEn}, ${input.nameAr}, ${input.scopeNodeId ?? null}::uuid, ${input.planVersionId}::uuid)
+        RETURNING id`;
+      const scorecardId = rows[0]!.id;
+
+      await tx.$executeRaw`
+        INSERT INTO scorecard.balanced_scorecard_profiles (
+          scorecard_id, description, department, period, owner_name, owner_initials,
           status, score, prior_score, review_frequency, start_period, end_period,
           strategy_name, strategic_theme, strategic_objective, primary_perspective,
           strategic_weight, tags, notes
         ) VALUES (
-          ${input.nameEn}, ${input.nameAr}, ${input.scopeNodeId ?? null}::uuid, ${input.planVersionId}::uuid,
-          ${input.description ?? null}, ${input.department}, ${input.period}, ${input.ownerName}, ${input.ownerInitials ?? null},
+          ${scorecardId}::uuid, ${input.description ?? null}, ${input.department}, ${input.period}, ${input.ownerName}, ${input.ownerInitials ?? null},
           ${input.status}, ${input.score}, ${input.priorScore ?? null}, ${input.reviewFrequency ?? null}, ${input.startDate ?? null}, ${input.endDate ?? null},
           ${input.strategyName ?? null}, ${input.strategicTheme ?? null}, ${input.strategicObjective ?? null}, ${input.primaryPerspective ?? null},
           ${input.strategicWeight ?? null}, ${input.tags ?? []}::text[], ${input.notes ?? null}
-        ) RETURNING id`;
-      const scorecardId = rows[0]!.id;
+        )`;
 
       for (const [index, perspective] of input.perspectives.entries()) {
         const nameEn = perspective.key === "financial"
@@ -296,14 +301,18 @@ export class BalancedScorecardService {
               : "Learning & Growth";
 
         const perspectiveRows = await tx.$queryRaw<Array<{ id: string }>>`
-          INSERT INTO scorecard.perspectives (
-            scorecard_id, name_en, name_ar, "order", perspective_key,
-            owner_initials, owner_color, score, prior_score, weight
-          ) VALUES (
-            ${scorecardId}::uuid, ${nameEn}, ${nameEn}, ${index}, ${perspective.key},
-            ${perspective.owner.initials}, ${perspective.owner.color}, ${perspective.score}, ${perspective.priorScore ?? null}, ${perspective.weight}
-          ) RETURNING id`;
+          INSERT INTO scorecard.perspectives (scorecard_id, name_en, name_ar, "order")
+          VALUES (${scorecardId}::uuid, ${nameEn}, ${nameEn}, ${index})
+          RETURNING id`;
         const perspectiveId = perspectiveRows[0]!.id;
+
+        await tx.$executeRaw`
+          INSERT INTO scorecard.balanced_perspective_profiles (
+            perspective_id, perspective_key, owner_initials, owner_color, score, prior_score, weight
+          ) VALUES (
+            ${perspectiveId}::uuid, ${perspective.key}, ${perspective.owner.initials}, ${perspective.owner.color},
+            ${perspective.score}, ${perspective.priorScore ?? null}, ${perspective.weight}
+          )`;
 
         for (const kpi of perspective.kpis) {
           await tx.$executeRaw`
