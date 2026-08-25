@@ -235,12 +235,12 @@ model DomainEvent {
   payload       Json
   dedupeKey     String            @unique @map("dedupe_key")
   status        DomainEventStatus @default(PENDING)
-  occurredAt    DateTime          @default(now()) @map("occurred_at")
-  publishedAt   DateTime?         @map("published_at")
-  attempts      Int               @default(0)
-  lastError     String?           @map("last_error")
-  createdAt     DateTime          @default(now()) @map("created_at")
-  updatedAt     DateTime          @updatedAt @map("updated_at")
+  occurredAt     DateTime          @default(now()) @map("occurred_at")
+  publishedAt    DateTime?         @map("published_at")
+  attempts       Int               @default(0)
+  lastError      String?           @map("last_error")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
 
   @@index([status, occurredAt])
   @@map("domain_events")
@@ -757,8 +757,8 @@ model PeriodCalendar {
   fiscalYearStartMonth Int        @default(1) @map("fiscal_year_start_month")
   timezone             String     @default("UTC")
   isActive             Boolean    @default(true) @map("is_active")
-  createdAt             DateTime   @default(now()) @map("created_at")
-  updatedAt             DateTime   @updatedAt @map("updated_at")
+  createdAt            DateTime   @default(now()) @map("created_at")
+  updatedAt            DateTime   @updatedAt @map("updated_at")
 
   cadenceDefinitions CadenceDefinition[]
 
@@ -1175,7 +1175,7 @@ model Alignment {
 model KpiHierarchyNode {
   id          String @id @default(uuid())
   parentKpiId String @map("parent_kpi_id")
-  childKpiId String @map("child_kpi_id")
+  childKpiId  String @map("child_kpi_id")
   rollupMethodRuleId String @map("rollup_method_rule_id")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -1364,16 +1364,16 @@ model RollupResult {
 model Commentary {
   id           String   @id @default(uuid())
   kpiVersionId String   @map("kpi_version_id")
-  scopeNodeId String            @map("scope_node_id") @db.Uuid
-  period        String
-  authorId      String          @map("author_id")
-  bodyEn        String?         @map("body_en")
-  bodyAr        String?         @map("body_ar")
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
-  author        User            @relation("CommentaryAuthor", fields: [authorId], references: [id], onDelete: Restrict)
-  kpiVersion    KpiVersion      @relation("PerformanceCommentaryKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  scopeNode     StrategyNode    @relation("PerformanceCommentaryScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  scopeNodeId  String   @map("scope_node_id") @db.Uuid
+  period       String
+  authorId     String   @map("author_id")
+  bodyEn       String?  @map("body_en")
+  bodyAr       String?  @map("body_ar")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  author User @relation("CommentaryAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  kpiVersion KpiVersion   @relation("PerformanceCommentaryKpiVersion", fields: [kpiVersionId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  scopeNode  StrategyNode @relation("PerformanceCommentaryScope", fields: [scopeNodeId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   @@index([kpiVersionId, scopeNodeId, period, createdAt])
   @@index([authorId])
   @@map("commentary")
@@ -1565,7 +1565,6 @@ enum RiskLevel {
   LOW    @map("low")
   MEDIUM @map("medium")
   HIGH   @map("high")
-
   @@schema("execution")
 }
 
@@ -1837,7 +1836,7 @@ model SyncLog {
   errorCount      Int           @default(0) @map("error_count")
   message         String
   color           String
-  icon            String
+  icon             String
   createdAt       DateTime      @default(now()) @map("created_at")
 
   @@index([status])
