@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   Activity,
   ChevronDown,
@@ -241,9 +241,8 @@ function PerspectiveSection({
                   const progress = scoreColor(kpi.score);
                   const kpiExpanded = expandedKpiIds.has(kpi.id);
                   return (
-                    <>
+                    <Fragment key={kpi.id}>
                       <tr
-                        key={kpi.id}
                         tabIndex={0}
                         role="button"
                         aria-expanded={kpiExpanded}
@@ -279,7 +278,7 @@ function PerspectiveSection({
                       </tr>
 
                       {kpiExpanded && (
-                        <tr key={`${kpi.id}-details`} className="border-b border-gray-100 bg-white">
+                        <tr className="border-b border-gray-100 bg-white">
                           <td colSpan={10} className="px-7 py-4">
                             <div className="grid gap-5 sm:grid-cols-3">
                               <div>
@@ -304,7 +303,7 @@ function PerspectiveSection({
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>
