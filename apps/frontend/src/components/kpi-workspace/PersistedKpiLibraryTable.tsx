@@ -22,6 +22,8 @@ const STATUS_META: Record<KpiStatus, { label: string; dot: string; bg: string; t
 const APPROVAL_META: Record<KpiApproval, { label: string; icon: typeof Check; bg: string; text: string; border: string }> = {
   draft: { label: "Draft", icon: Pencil, bg: "bg-white", text: "text-gray-600", border: "border-gray-300" },
   pending: { label: "Pending", icon: Clock, bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-200" },
+  changes_requested: { label: "Changes Requested", icon: Pencil, bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-200" },
+  rejected: { label: "Rejected", icon: X, bg: "bg-red-50", text: "text-red-700", border: "border-red-200" },
   approved: { label: "Approved", icon: Check, bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-200" },
 };
 
@@ -69,7 +71,7 @@ export default function PersistedKpiLibraryTable({ rows, objectives, onRefresh }
       {(["all", "financial", "customer", "internal", "learning"] as const).map((key) => <button key={key} type="button" onClick={() => setPerspective(key)} className={`rounded-full px-3 py-2 text-sm font-medium ${perspective === key ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-600"}`}>{key === "all" ? "All" : PERSPECTIVE_META[key].label}</button>)}
       <Select value={department} onChange={setDepartment} placeholder="All Departments" values={departments} />
       <Select value={status} onChange={(value) => setStatus(value as typeof status)} placeholder="All Status" values={["on-track", "at-risk", "behind"]} labels={["On Track", "At Risk", "Behind"]} />
-      <Select value={approval} onChange={(value) => setApproval(value as typeof approval)} placeholder="All Approvals" values={["draft", "pending", "approved"]} labels={["Draft", "Pending", "Approved"]} />
+      <Select value={approval} onChange={(value) => setApproval(value as typeof approval)} placeholder="All Approvals" values={["draft", "pending", "changes_requested", "rejected", "approved"]} labels={["Draft", "Pending", "Changes Requested", "Rejected", "Approved"]} />
       <button type="button" onClick={() => setShowCreate(true)} className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"><Plus className="h-4 w-4" /> Add KPI</button>
       <span className="ml-auto text-sm text-gray-500">{filtered.length} KPIs</span>
     </div>

@@ -1,5 +1,5 @@
 export type KpiPerspective = "financial" | "customer" | "internal" | "learning";
-export type KpiApproval = "draft" | "pending" | "approved";
+export type KpiApproval = "draft" | "pending" | "changes_requested" | "rejected" | "approved";
 export type KpiStatus = "on-track" | "at-risk" | "behind";
 
 export interface WorkspaceOwner {

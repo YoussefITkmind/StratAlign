@@ -2,8 +2,12 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
+import type { KpiApproval } from "@/types/kpi-workspace";
+import KpiApprovalWorkflow from "./KpiApprovalWorkflow";
 
 type KpiDetailRow = {
+  id?: string;
+  versionId?: string;
   name: string;
   tag: string;
   perspective: "financial" | "customer" | "internal" | "learning";
@@ -15,7 +19,7 @@ type KpiDetailRow = {
   favorable: boolean;
   trend: number[];
   freq: "Weekly" | "Monthly" | "Quarterly";
-  approval: "draft" | "pending" | "approved";
+  approval: KpiApproval;
   status: "on-track" | "at-risk" | "behind";
   description?: string;
   dataSourceType?: "manual" | "feed";
@@ -35,9 +39,11 @@ const STATUS_META: Record<KpiDetailRow["status"], { label: string; bg: string; t
   behind: { label: "Behind", bg: "bg-red-50", text: "text-red-700", dot: "bg-red-500" },
 };
 
-const APPROVAL_LABEL: Record<KpiDetailRow["approval"], string> = {
+const APPROVAL_LABEL: Record<KpiApproval, string> = {
   draft: "Draft",
   pending: "Pending",
+  changes_requested: "Changes Requested",
+  rejected: "Rejected",
   approved: "Approved",
 };
 
@@ -69,7 +75,7 @@ export default function KpiDetailDrawer({ row, onClose }: { row: KpiDetailRow; o
     {tab === "Overview" && <><div className="grid grid-cols-3 gap-3"><StatCard label="Actual" value={row.actual} /><StatCard label="Target" value={row.target} /><StatCard label="Variance" value={row.variance} tone={row.favorable ? "text-emerald-600" : "text-red-500"} /></div><div><p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Measurement Trend</p><div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3"><TrendChart values={row.trend} favorable={row.favorable} /></div></div><dl className="space-y-3 border-t border-gray-100 pt-4"><DetailRow label="Owner"><span className="flex items-center gap-2"><span className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-white ${row.owner.color}`}>{row.owner.initials}</span>{row.owner.name}</span></DetailRow><DetailRow label="Department">{row.department}</DetailRow><DetailRow label="Frequency">{row.freq}</DetailRow><DetailRow label="Aligned Objective">{row.tag}</DetailRow><DetailRow label="Status"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${statusMeta.bg} ${statusMeta.text}`}><span className={`h-1.5 w-1.5 rounded-full ${statusMeta.dot}`} />{statusMeta.label}</span></DetailRow><DetailRow label="Approval">{APPROVAL_LABEL[row.approval]}</DetailRow>{row.dataSourceType && <DetailRow label="Data Source">{row.dataSourceType === "feed" ? "Feed" : "Manual"}</DetailRow>}{row.period && <DetailRow label="Latest Period">{row.period}</DetailRow>}</dl><div className="border-t border-gray-100 pt-4"><p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Description</p><p className="text-sm leading-relaxed text-gray-600">{row.description ?? `${row.name} is aligned to ${row.tag} and reported ${row.freq.toLowerCase()}.`}</p></div></>}
     {tab === "History" && <div className="space-y-2">{row.trend.length > 0 ? row.trend.map((value, index) => <div key={index} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm"><span className="text-gray-500">Period {index + 1}</span><span className="font-medium text-gray-900">{value}</span></div>) : <p className="text-sm text-gray-400">No measurements yet.</p>}</div>}
     {tab === "Comments" && <p className="text-sm text-gray-400">Commentary is stored in the Performance module and can be managed through KPI performance workflows.</p>}
-    {tab === "Approval" && <div className="rounded-lg border border-gray-100 p-4 text-sm"><p className="text-gray-500">Current Registry lifecycle</p><p className="mt-1 font-semibold text-gray-900">{APPROVAL_LABEL[row.approval]}</p></div>}
+    {tab === "Approval" && <KpiApprovalWorkflow row={row} />}
   </div></div></div>;
 }
 
