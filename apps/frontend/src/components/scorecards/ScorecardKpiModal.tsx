@@ -25,13 +25,14 @@ export default function ScorecardKpiModal({
     actual?: string;
     target?: string;
     variance?: string;
+    trend?: number[];
     objectiveNodeIds: string[];
   }) => void | Promise<void>;
 }) {
   const [name, setName] = useState(kpi?.name ?? "");
   const [status, setStatus] = useState<ScorecardStatus>(kpi?.status ?? "draft");
   const [ownerInitials, setOwnerInitials] = useState(kpi?.owner.initials ?? perspective.owner.initials);
-  const [ownerColor, setOwnerColor] = useState(kpi?.owner.color ?? perspective.owner.color);
+  const [ownerColor] = useState(kpi?.owner.color ?? perspective.owner.color);
   const [score, setScore] = useState(kpi?.score ?? 0);
   const [weight, setWeight] = useState(kpi?.weight != null ? String(kpi.weight) : "");
   const [actual, setActual] = useState(kpi?.actual ?? "");
@@ -43,14 +44,13 @@ export default function ScorecardKpiModal({
     setName(kpi?.name ?? "");
     setStatus(kpi?.status ?? "draft");
     setOwnerInitials(kpi?.owner.initials ?? perspective.owner.initials);
-    setOwnerColor(kpi?.owner.color ?? perspective.owner.color);
     setScore(kpi?.score ?? 0);
     setWeight(kpi?.weight != null ? String(kpi.weight) : "");
     setActual(kpi?.actual ?? "");
     setTarget(kpi?.target ?? "");
     setVariance(kpi?.variance ?? "");
     setSelectedObjectives(new Set(kpi?.linkedObjectiveIds ?? []));
-  }, [kpi, perspective.owner.color, perspective.owner.initials]);
+  }, [kpi, perspective.owner.initials]);
 
   const objectives = useMemo(() => perspective.objectives ?? [], [perspective.objectives]);
 
@@ -134,7 +134,7 @@ export default function ScorecardKpiModal({
 
         <div className="grid grid-cols-2 gap-3 border-t border-gray-100 px-6 py-5">
           <button type="button" onClick={onClose} disabled={busy} className="rounded-full border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
-          <button type="button" disabled={!canSave} onClick={() => void onSave({ name: name.trim(), status, ownerInitials: ownerInitials.trim(), ownerColor, score, weight: weight === "" ? undefined : Number(weight), actual: actual.trim() || undefined, target: target.trim() || undefined, variance: variance.trim() || undefined, objectiveNodeIds: [...selectedObjectives] })} className="rounded-full bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">{kpi ? "Save Changes" : "Add KPI"}</button>
+          <button type="button" disabled={!canSave} onClick={() => void onSave({ name: name.trim(), status, ownerInitials: ownerInitials.trim(), ownerColor, score, weight: weight === "" ? undefined : Number(weight), actual: actual.trim() || undefined, target: target.trim() || undefined, variance: variance.trim() || undefined, trend: kpi?.trend ?? [], objectiveNodeIds: [...selectedObjectives] })} className="rounded-full bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">{kpi ? "Save Changes" : "Add KPI"}</button>
         </div>
       </div>
     </div>
