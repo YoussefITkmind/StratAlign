@@ -1,4 +1,4 @@
-import StrategyMapCanvas from "@/components/strategy-map/StrategyMapCanvas";
+import ConnectedStrategyMapCanvas from "@/components/strategy-map/ConnectedStrategyMapCanvas";
 import StrategyMapSelector from "@/components/strategy-map/StrategyMapSelector";
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
@@ -6,7 +6,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   return (
     <div className="relative">
       <StrategyMapSelector scorecardId={id} />
-      <StrategyMapCanvas scorecardId={id} />
+      <ConnectedStrategyMapCanvas scorecardId={id} />
     </div>
   );
 }
