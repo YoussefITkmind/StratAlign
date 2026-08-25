@@ -3,14 +3,22 @@ import { Filters, Scorecard } from "@/types/scorecard";
 export function filterScorecards(scorecards: Scorecard[], filters: Filters): Scorecard[] {
   const search = filters.search.trim().toLowerCase();
 
-  return scorecards.filter((sc) => {
-    if (filters.department !== "all" && sc.department !== filters.department) return false;
-    if (filters.status !== "all" && sc.status !== filters.status) return false;
-    if (!search) return true;
+  return scorecards.flatMap((sc) => {
+    if (filters.department !== "all" && sc.department !== filters.department) return [];
+    if (filters.status !== "all" && sc.status !== filters.status) return [];
+    if (!search) return [sc];
 
     const matchesScorecard = sc.name.toLowerCase().includes(search) || sc.ownerName.toLowerCase().includes(search);
-    const matchesKpi = sc.perspectives.some((p) => p.kpis.some((k) => k.name.toLowerCase().includes(search)));
-    return matchesScorecard || matchesKpi;
+    if (matchesScorecard) return [sc];
+
+    const perspectives = sc.perspectives
+      .map((p) => ({
+        ...p,
+        kpis: p.kpis.filter((k) => k.name.toLowerCase().includes(search)),
+      }))
+      .filter((p) => p.kpis.length > 0);
+
+    return perspectives.length > 0 ? [{ ...sc, perspectives }] : [];
   });
 }
 
