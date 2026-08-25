@@ -2,6 +2,8 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, requireRole, router } from "./index";
 
+export type StrategyMapLinkType = "weak" | "strong" | "enables" | "impacts" | "drives" | "supports";
+
 export interface ScorecardPlacementDetail {
   perspectiveId: string;
   objectiveNodeId: string;
@@ -73,7 +75,7 @@ export interface ScorecardServiceContract {
     link: {
       fromObjectiveId: string;
       toObjectiveId: string;
-      strength: "weak" | "strong";
+      strength: StrategyMapLinkType;
     };
   }): Promise<unknown>;
   removeDraftLink(input: {
@@ -150,6 +152,7 @@ const id = z.string().uuid();
 const weights = z.record(id, z.number().finite().positive());
 const scorecardStatus = z.enum(["on-track", "at-risk", "draft"]);
 const perspectiveKey = z.enum(["financial", "customer", "internal-process", "learning-growth"]);
+const mapLinkType = z.enum(["weak", "strong", "enables", "impacts", "drives", "supports"]);
 const ownerSchema = z.object({ initials: z.string().trim().min(1).max(2), color: z.string().trim().min(1).max(100) }).strict();
 const kpiSchema = z.object({
   name: z.string().trim().min(1).max(300),
@@ -319,7 +322,7 @@ export const scorecardRouter = router({
       .input(z.object({
         scorecardId: id,
         strategyMapId: id.optional(),
-        link: z.object({ fromObjectiveId: id, toObjectiveId: id, strength: z.enum(["weak", "strong"]) }).strict(),
+        link: z.object({ fromObjectiveId: id, toObjectiveId: id, strength: mapLinkType }).strict(),
       }).strict())
       .mutation(async ({ ctx, input }) => {
         try { return await service(ctx).draftLink(input); } catch (error) { return fail(error); }
