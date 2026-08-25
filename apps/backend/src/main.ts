@@ -134,7 +134,7 @@ async function bootstrap(): Promise<void> {
   const scheduler = new SchedulerService(
     prisma,
     cadenceEngine,
-    { defaultTimezone: environment.SCHEDULER_DEFAULT_TIMEZONE, defaultLookaheadSeconds: environment.SCHEDULER_LOOKAHEAD_SECONDS },
+    { defaultTimezone: environment.SCHEDULER_DEFAULT_TIMEZONE, defaultLookaheadSeconds: environment.SCHEDULER_DEFAULT_LOOKAHEAD_SECONDS },
     logger.child("value-checkin-scheduler"),
   );
   const cadenceGenerator = new CadenceGeneratorService(
@@ -146,7 +146,7 @@ async function bootstrap(): Promise<void> {
       maxCatchUpOccurrences: environment.SCHEDULER_MAX_CATCHUP_OCCURRENCES,
       tickIntervalMs: environment.SCHEDULER_TICK_INTERVAL_MS,
     },
-    logger.child("value-checkin-scheduler"),
+    logger.child("cadence-generator"),
   );
   const value = new ValueManagementService(prisma, governance, governanceEscalation, rules, scheduler);
   const webhookDispatcher = new WebhookDispatcherService(prisma, logger.child("webhook-dispatcher"));
@@ -154,7 +154,13 @@ async function bootstrap(): Promise<void> {
   const integrations = {
     connections: new ConnectionsService(prisma, webhookDispatcher),
     syncLogs: new SyncLogsService(prisma),
-    syncInvestigation: new SyncInvestigationService(prisma, llm, logger.child("sync-investigation")),
+    // Reuses the one shared LLM abstraction above; read-only, so it is handed
+    // `prisma` for reads and nothing that could retry or reconfigure a sync.
+    syncInvestigation: new SyncInvestigationService(
+      prisma,
+      llm,
+      logger.child("sync-investigation"),
+    ),
     apiKeys: new ApiKeysService(prisma),
     webhooks: new WebhooksService(prisma),
   };
