@@ -5,56 +5,43 @@ import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 import { trpc } from "@/lib/trpc/client";
 
-interface ScorecardOption {
+interface BalancedScorecardOption {
   id: string;
-  nameEn: string;
-  planVersionId: string;
-}
-
-interface ScorecardDetail {
-  id: string;
-  nameEn: string;
-  planVersionId: string;
+  name: string;
+  nameEn?: string;
+  isBalancedScorecard?: boolean;
 }
 
 export default function StrategyMapSelector({ scorecardId }: { scorecardId: string }) {
   const router = useRouter();
-  const scorecardsQuery = trpc.scorecard.list.useQuery();
-  const currentScorecardQuery = trpc.scorecard.get.useQuery({ scorecardId });
+  const balancedQuery = trpc.scorecard.balanced.list.useQuery();
 
-  const scorecards = (scorecardsQuery.data as ScorecardOption[] | undefined) ?? [];
-  const currentScorecard = currentScorecardQuery.data as ScorecardDetail | undefined;
+  const options = useMemo(() => {
+    const rows = (balancedQuery.data as BalancedScorecardOption[] | undefined) ?? [];
+    return rows
+      .filter((item) => item.isBalancedScorecard !== false && !item.name.startsWith("E2E "))
+      .map((item) => ({ id: item.id, name: item.nameEn ?? item.name }));
+  }, [balancedQuery.data]);
 
-  const maps = useMemo(() => {
-    if (!currentScorecard?.planVersionId) return [];
-
-    return scorecards.filter(
-      (item) =>
-        item.planVersionId === currentScorecard.planVersionId &&
-        !item.nameEn.startsWith("E2E "),
-    );
-  }, [currentScorecard?.planVersionId, scorecards]);
-
-  const current = scorecards.find((item) => item.id === scorecardId);
-  const options = maps.length > 0
-    ? maps
-    : current
-      ? [current]
-      : [{ id: scorecardId, nameEn: currentScorecard?.nameEn ?? "Strategy Map", planVersionId: currentScorecard?.planVersionId ?? "" }];
+  const hasCurrent = options.some((item) => item.id === scorecardId);
+  const selectValue = hasCurrent ? scorecardId : "";
 
   return (
     <div className="absolute left-14 top-3 z-30">
       <div className="relative min-w-[240px] max-w-[340px]">
         <select
-          aria-label="Select strategy map"
+          aria-label="Select scorecard strategy map"
           data-testid="strategy-map-selector"
-          value={scorecardId}
-          onChange={(event) => router.push(`/strategy-maps/${event.target.value}`)}
+          value={selectValue}
+          onChange={(event) => {
+            if (event.target.value) router.push(`/strategy-maps/${event.target.value}`);
+          }}
           className="w-full appearance-none rounded-full border border-[#063b4d] bg-[#063b4d] py-2 pl-4 pr-10 text-sm font-medium text-white outline-none transition hover:bg-[#0a4a60] focus:ring-2 focus:ring-sky-300"
         >
-          {options.map((map) => (
-            <option key={map.id} value={map.id} className="bg-white text-gray-900">
-              {map.nameEn}
+          {!hasCurrent && <option value="">Select scorecard</option>}
+          {options.map((scorecard) => (
+            <option key={scorecard.id} value={scorecard.id} className="bg-white text-gray-900">
+              {scorecard.name}
             </option>
           ))}
         </select>
