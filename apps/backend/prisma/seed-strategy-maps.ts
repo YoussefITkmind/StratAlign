@@ -25,6 +25,14 @@ type ObjectiveSeed = {
   linkedKpis: string[];
 };
 
+type RelationshipType = "enables" | "impacts" | "drives" | "supports";
+
+type AdditionalMapSeed = {
+  key: string;
+  name: string;
+  objectiveKeys: string[];
+};
+
 const perspectiveSeeds = [
   { key: "financial", name: "Financial", order: 0 },
   { key: "customer", name: "Customer", order: 1 },
@@ -47,7 +55,7 @@ const objectives: ObjectiveSeed[] = [
   { key: "culture", name: "High-Performance Culture", perspective: "learning", status: "on-track", progress: 84, owner: "Diana Foxx", description: "Strengthen accountability, engagement, and cross-functional execution across the organization.", linkedKpis: ["Employee Engagement", "Goal Alignment"] },
 ];
 
-const links: Array<[string, string, "enables" | "impacts" | "drives" | "supports"]> = [
+const links: Array<[string, string, RelationshipType]> = [
   ["acquire-logos", "grow-revenue", "drives"],
   ["retention", "grow-revenue", "impacts"],
   ["premium-experience", "expand-market", "supports"],
@@ -63,6 +71,36 @@ const links: Array<[string, string, "enables" | "impacts" | "drives" | "supports
   ["innovation", "improve-profitability", "impacts"],
   ["retention", "expand-market", "supports"],
   ["culture", "retention", "supports"],
+];
+
+const additionalMaps: AdditionalMapSeed[] = [
+  {
+    key: "product",
+    name: "Product Strategy 2025",
+    objectiveKeys: [
+      "improve-profitability",
+      "retention",
+      "premium-experience",
+      "innovation",
+      "ops-excellence",
+      "talent",
+      "technology",
+      "culture",
+    ],
+  },
+  {
+    key: "apac",
+    name: "APAC Expansion Strategy",
+    objectiveKeys: [
+      "grow-revenue",
+      "expand-market",
+      "acquire-logos",
+      "premium-experience",
+      "sales-excellence",
+      "technology",
+      "culture",
+    ],
+  },
 ];
 
 async function main() {
@@ -186,8 +224,64 @@ async function main() {
       `, [stableUuid(`link:${fromKey}:${toKey}`), mapId, objectiveIds.get(fromKey), objectiveIds.get(toKey), type]);
     }
 
+    let additionalPlacementCount = 0;
+    let additionalLinkCount = 0;
+
+    for (const additionalMap of additionalMaps) {
+      const additionalScorecardId = stableUuid(`${additionalMap.key}-scorecard`);
+      await client.query(`
+        INSERT INTO scorecard.scorecards (id, name_en, name_ar, plan_version_id)
+        VALUES ($1, $2, $2, $3)
+        ON CONFLICT (id) DO UPDATE SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, plan_version_id = EXCLUDED.plan_version_id, updated_at = NOW()
+      `, [additionalScorecardId, additionalMap.name, planId]);
+
+      const additionalPerspectiveIds = new Map<string, string>();
+      for (const perspective of perspectiveSeeds) {
+        const perspectiveId = stableUuid(`${additionalMap.key}:scorecard-perspective:${perspective.key}`);
+        additionalPerspectiveIds.set(perspective.key, perspectiveId);
+        await client.query(`
+          INSERT INTO scorecard.perspectives (id, scorecard_id, name_en, name_ar, "order")
+          VALUES ($1, $2, $3, $3, $4)
+          ON CONFLICT (id) DO UPDATE SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, "order" = EXCLUDED."order", updated_at = NOW()
+        `, [perspectiveId, additionalScorecardId, perspective.name, perspective.order]);
+      }
+
+      const objectiveKeySet = new Set(additionalMap.objectiveKeys);
+      for (const objectiveKey of additionalMap.objectiveKeys) {
+        const objective = objectives.find((item) => item.key === objectiveKey);
+        const objectiveId = objectiveIds.get(objectiveKey);
+        if (!objective || !objectiveId) continue;
+        const perspectiveId = additionalPerspectiveIds.get(objective.perspective)!;
+        await client.query(`
+          INSERT INTO scorecard.placements (id, perspective_id, objective_node_id)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (perspective_id, objective_node_id) DO NOTHING
+        `, [stableUuid(`${additionalMap.key}:placement:${objectiveKey}`), perspectiveId, objectiveId]);
+        additionalPlacementCount += 1;
+      }
+
+      const additionalMapId = stableUuid(`${additionalMap.key}:published-map`);
+      await client.query(`
+        INSERT INTO scorecard.strategy_maps (id, scorecard_id, state)
+        VALUES ($1, $2, 'published')
+        ON CONFLICT (id) DO UPDATE SET state = 'published', updated_at = NOW()
+      `, [additionalMapId, additionalScorecardId]);
+
+      for (const [fromKey, toKey, type] of links) {
+        if (!objectiveKeySet.has(fromKey) || !objectiveKeySet.has(toKey)) continue;
+        await client.query(`
+          INSERT INTO scorecard.map_links (id, strategy_map_id, from_objective_id, to_objective_id, strength)
+          VALUES ($1, $2, $3, $4, $5::scorecard.map_link_strength)
+          ON CONFLICT (strategy_map_id, from_objective_id, to_objective_id) DO UPDATE SET strength = EXCLUDED.strength
+        `, [stableUuid(`${additionalMap.key}:link:${fromKey}:${toKey}`), additionalMapId, objectiveIds.get(fromKey), objectiveIds.get(toKey), type]);
+        additionalLinkCount += 1;
+      }
+    }
+
     await client.query("COMMIT");
-    console.log(`Seeded persisted Strategy Map: 1 map, ${objectives.length} objectives, ${links.length} connections`);
+    console.log(
+      `Seeded persisted Strategy Maps: ${1 + additionalMaps.length} maps, ${objectives.length + additionalPlacementCount} placements, ${links.length + additionalLinkCount} connections`,
+    );
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
