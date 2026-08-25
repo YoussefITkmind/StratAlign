@@ -3,6 +3,8 @@
 import { cookies } from "next/headers";
 import { createBackendRegistryClient } from "@/server/backend-registry-client";
 
+export type StrategyMapLinkType = "weak" | "strong" | "enables" | "impacts" | "drives" | "supports";
+
 async function backend() {
   const store = await cookies();
   return createBackendRegistryClient(store.toString());
@@ -19,7 +21,7 @@ export async function placeObjective(input: { perspectiveId: string; objectiveNo
 export async function draftMapLink(input: {
   scorecardId: string;
   strategyMapId?: string;
-  link: { fromObjectiveId: string; toObjectiveId: string; strength: "weak" | "strong" };
+  link: { fromObjectiveId: string; toObjectiveId: string; strength: StrategyMapLinkType };
 }) {
   return (await backend()).scorecard.map.draftLink.mutate(input);
 }
