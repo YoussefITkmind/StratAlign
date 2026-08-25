@@ -1,8 +1,9 @@
 # Python 3.12 required: pixelrag==0.3.0 pins Requires-Python >=3.12
 FROM python:3.12-slim
 
+# poppler-utils provides pdfinfo/pdftoppm, required by PixelRAG's PDF renderer
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libreoffice \
+    && apt-get install -y --no-install-recommends libreoffice poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
