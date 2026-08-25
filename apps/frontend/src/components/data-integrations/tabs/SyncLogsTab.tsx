@@ -1,8 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, ChevronDown, Sparkles, X, Check } from "lucide-react";
+import { Search, ChevronDown, Sparkles, Check } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
+import SyncInvestigationModal, {
+  type SyncInvestigationResultView,
+} from "@/components/data-integrations/SyncInvestigationModal";
 
 const LOG_STATUS_META: Record<string, { label: string; text: string; dot: string }> = {
   SUCCESS: { label: "Success", text: "text-emerald-600", dot: "bg-emerald-500" },
@@ -19,8 +22,17 @@ export default function SyncLogsTab({ search }: { search: string }) {
   const [intOpen, setIntOpen] = useState(false);
   const [filter, setFilter] = useState("All");
   const [selected, setSelected] = useState<string[]>([]);
-  const [aiOpen, setAiOpen] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
+
+  // One investigation at a time: `investigating` doubles as the open-modal flag
+  // and as the id whose row button is disabled, so a second click on any row
+  // cannot start a duplicate request while one is in flight.
+  const [investigating, setInvestigating] = useState<{ id: string; integration: string } | null>(
+    null,
+  );
+  const [result, setResult] = useState<SyncInvestigationResultView | null>(null);
+  const [investigationError, setInvestigationError] = useState<string | null>(null);
+
+  const investigation = trpc.integrations.syncLogs.investigate.useMutation();
 
   const integrations = useMemo(
     () => ["All Integrations", ...Array.from(new Set(logs.map((l) => l.integration)))],
@@ -54,11 +66,34 @@ export default function SyncLogsTab({ search }: { search: string }) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  function runInvestigation() {
-    setAiOpen(true);
-    setAiLoading(true);
-    setTimeout(() => setAiLoading(false), 1600);
+  async function runInvestigation(log: { id: string; integration: string }) {
+    if (investigation.isPending) return;
+
+    setInvestigating({ id: log.id, integration: log.integration });
+    setResult(null);
+    setInvestigationError(null);
+
+    try {
+      const diagnosis = await investigation.mutateAsync({ syncLogId: log.id });
+      setResult(diagnosis);
+    } catch (error) {
+      // The backend already scrubs provider detail from these messages; the
+      // fallback exists for transport failures that never reached it.
+      setInvestigationError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to investigate this sync run. Try again.",
+      );
+    }
   }
+
+  function closeInvestigation() {
+    setInvestigating(null);
+    setResult(null);
+    setInvestigationError(null);
+  }
+
+  const firstFailed = logs.find((l) => l.status === "FAILED");
 
   return (
     <div>
@@ -73,7 +108,7 @@ export default function SyncLogsTab({ search }: { search: string }) {
       </div>
 
       {/* AI banner */}
-      {failedCount > 0 && (
+      {failedCount > 0 && firstFailed && (
         <div className="mt-5 flex items-center justify-between gap-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3.5">
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-600 text-white">
@@ -81,23 +116,24 @@ export default function SyncLogsTab({ search }: { search: string }) {
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-slate-900">AI Sync Drop Investigator</p>
+                <p className="text-sm font-semibold text-slate-900">AI Sync Investigator</p>
                 <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
-                  Possible AI feature
+                  AI-assisted
                 </span>
               </div>
               <p className="mt-0.5 text-xs text-slate-500">
                 {failedCount} failed {failedCount === 1 ? "sync" : "syncs"} detected — AI can
-                analyse logs to identify root causes and suggest fixes.
+                analyse the recorded logs to suggest a likely cause and next steps.
               </p>
             </div>
           </div>
           <button
-            onClick={runInvestigation}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-violet-700"
+            onClick={() => runInvestigation(firstFailed)}
+            disabled={investigation.isPending}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Sparkles className="h-3.5 w-3.5" />
-            Investigate with AI
+            Investigate latest failure
           </button>
         </div>
       )}
@@ -176,6 +212,7 @@ export default function SyncLogsTab({ search }: { search: string }) {
               <th className="px-2 py-3 font-medium">Records Out</th>
               <th className="px-2 py-3 font-medium">Errors</th>
               <th className="px-4 py-3 font-medium">Message</th>
+              <th className="px-4 py-3 text-right font-medium">Investigate</th>
             </tr>
           </thead>
           <tbody>
@@ -219,12 +256,25 @@ export default function SyncLogsTab({ search }: { search: string }) {
                     )}
                   </td>
                   <td className="px-4 py-3 max-w-xs text-slate-500">{l.message}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => runInvestigation(l)}
+                      disabled={investigation.isPending}
+                      aria-label={`Investigate ${l.integration} sync run`}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {investigation.isPending && investigating?.id === l.id
+                        ? "Investigating…"
+                        : "Investigate"}
+                    </button>
+                  </td>
                 </tr>
               );
             })}
             {!query.isLoading && filtered.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-400">
+                <td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-400">
                   No logs match your filters.
                 </td>
               </tr>
@@ -233,62 +283,14 @@ export default function SyncLogsTab({ search }: { search: string }) {
         </table>
       </div>
 
-      {/* AI modal */}
-      {aiOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-          onClick={() => setAiOpen(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg animate-fade-in rounded-2xl bg-white p-5 shadow-xl"
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-600 text-white">
-                  <Sparkles className="h-4 w-4" />
-                </span>
-                <div>
-                  <p className="text-base font-semibold text-slate-900">Sync Drop Investigator</p>
-                  <p className="text-xs text-slate-400">Analyzing {failedCount} failed syncs</p>
-                </div>
-              </div>
-              <button onClick={() => setAiOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {aiLoading ? (
-              <div className="mt-6 flex flex-col items-center gap-3 py-8">
-                <div className="h-8 w-8 animate-spin-slow rounded-full border-2 border-violet-200 border-t-violet-600" />
-                <p className="text-sm text-slate-400">Reviewing sync logs and error patterns…</p>
-              </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold text-slate-700">Snowflake ETL Service</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Root cause: the stored API token expired. Reconnect the integration and
-                    rotate the credential in API Keys to restore syncing.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold text-slate-700">NetSuite ERP</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Root cause: connection timed out. This usually means the account is
-                    disconnected — reconnect it from the Connections tab.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setAiOpen(false)}
-                  className="mt-2 w-full rounded-lg bg-slate-900 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                >
-                  Got it
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+      {investigating && (
+        <SyncInvestigationModal
+          integration={investigating.integration}
+          isLoading={investigation.isPending}
+          error={investigationError}
+          result={result}
+          onClose={closeInvestigation}
+        />
       )}
     </div>
   );

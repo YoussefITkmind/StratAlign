@@ -29,6 +29,7 @@ const connectionsList = vi.fn();
 const connectionsToggle = vi.fn();
 const connectionsSyncNow = vi.fn();
 const syncLogsList = vi.fn();
+const syncInvestigate = vi.fn();
 const apiKeysList = vi.fn();
 const apiKeysCreate = vi.fn();
 const apiKeysToggleDisabled = vi.fn();
@@ -56,6 +57,7 @@ function context(sessionOverride: typeof session | null = session) {
     integrations: {
       connections: { list: connectionsList, toggle: connectionsToggle, syncNow: connectionsSyncNow },
       syncLogs: { list: syncLogsList },
+      syncInvestigation: { investigate: syncInvestigate },
       apiKeys: {
         list: apiKeysList,
         create: apiKeysCreate,
@@ -103,6 +105,25 @@ const apiKeyOutput = {
   disabled: false,
 };
 
+const syncLogId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+const investigationOutput = {
+  syncLogId,
+  integration: "Snowflake ETL Service",
+  kind: "SYNC_FAILURE" as const,
+  source: "ai" as const,
+  diagnosis: "The source system rejected the credential supplied by this integration.",
+  likelyCause: "An expired or revoked authentication credential.",
+  confidence: "medium" as const,
+  evidence: ["The run reported 3 errors."],
+  recommendedActions: ["Check the source credentials for this integration."],
+  insufficientData: false,
+  insufficientReasons: [],
+  volume: null,
+  evidenceLogCount: 4,
+  generatedAt: "2026-08-25T09:00:00.000Z",
+};
+
 const webhookOutput = {
   id: webhookId,
   name: "Forecast Update",
@@ -121,6 +142,7 @@ describe("integrations tRPC surface", () => {
     connectionsToggle.mockResolvedValue({ ...connectionOutput, status: "DISCONNECTED" });
     connectionsSyncNow.mockResolvedValue(connectionOutput);
     syncLogsList.mockResolvedValue([]);
+    syncInvestigate.mockResolvedValue(investigationOutput);
     apiKeysList.mockResolvedValue([apiKeyOutput]);
     apiKeysCreate.mockResolvedValue({ ...apiKeyOutput, secret: "bsc_rd_sk_realsecretvalue" });
     apiKeysToggleDisabled.mockResolvedValue({ ...apiKeyOutput, disabled: true });
@@ -147,9 +169,13 @@ describe("integrations tRPC surface", () => {
       await expect(caller.integrations.webhooks.list()).rejects.toMatchObject({
         code: "UNAUTHORIZED",
       });
+      await expect(caller.integrations.syncLogs.investigate({ syncLogId })).rejects.toMatchObject({
+        code: "UNAUTHORIZED",
+      });
 
       expect(connectionsList).not.toHaveBeenCalled();
       expect(syncLogsList).not.toHaveBeenCalled();
+      expect(syncInvestigate).not.toHaveBeenCalled();
       expect(apiKeysList).not.toHaveBeenCalled();
       expect(webhooksList).not.toHaveBeenCalled();
     });
@@ -174,6 +200,124 @@ describe("integrations tRPC surface", () => {
       await expect(
         caller.integrations.webhooks.create({ name: "x", url: "https://example.test", events: [] }),
       ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(
+        caller.integrations.syncLogs.investigate({ syncLogId }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(syncInvestigate).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The investigation surface carries model output to a browser, so the router
+   * is the last place that can stop a malformed or over-specific answer. These
+   * tests pin what a caller may send, what they get back, and — most
+   * importantly — that a provider outage is not reported as a bad request.
+   */
+  describe("sync investigation", () => {
+    it("investigates a sync log and returns the structured diagnosis", async () => {
+      const caller = rootRouter.createCaller(context() as never);
+
+      await expect(caller.integrations.syncLogs.investigate({ syncLogId })).resolves.toEqual(
+        investigationOutput,
+      );
+      expect(syncInvestigate).toHaveBeenCalledWith(syncLogId);
+    });
+
+    it("returns an explicit insufficient-data result unchanged", async () => {
+      syncInvestigate.mockResolvedValueOnce({
+        ...investigationOutput,
+        source: "deterministic",
+        kind: "NO_ANOMALY",
+        diagnosis: "Insufficient data to determine the likely cause.",
+        likelyCause: null,
+        confidence: "low",
+        insufficientData: true,
+        insufficientReasons: ["NO_HISTORICAL_VOLUME"],
+      });
+      const caller = rootRouter.createCaller(context() as never);
+
+      await expect(caller.integrations.syncLogs.investigate({ syncLogId })).resolves.toMatchObject({
+        insufficientData: true,
+        likelyCause: null,
+        confidence: "low",
+        source: "deterministic",
+      });
+    });
+
+    it("rejects a malformed sync log id before reaching the service", async () => {
+      const caller = rootRouter.createCaller(context() as never);
+
+      await expect(
+        caller.integrations.syncLogs.investigate({ syncLogId: "not-a-uuid" }),
+      ).rejects.toBeDefined();
+      expect(syncInvestigate).not.toHaveBeenCalled();
+    });
+
+    it("rejects an attempt to smuggle extra input past the schema", async () => {
+      const caller = rootRouter.createCaller(context() as never);
+
+      await expect(
+        caller.integrations.syncLogs.investigate({
+          syncLogId,
+          diagnosis: "the token expired",
+        } as never),
+      ).rejects.toBeDefined();
+      expect(syncInvestigate).not.toHaveBeenCalled();
+    });
+
+    it("maps an unknown sync log to NOT_FOUND", async () => {
+      syncInvestigate.mockRejectedValueOnce(
+        Object.assign(new Error("Sync log entry was not found"), {
+          code: "INTEGRATIONS_SYNC_LOG_NOT_FOUND",
+        }),
+      );
+      const caller = rootRouter.createCaller(context() as never);
+
+      await expect(caller.integrations.syncLogs.investigate({ syncLogId })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+    });
+
+    it.each([
+      ["AI_UNAVAILABLE", "SERVICE_UNAVAILABLE"],
+      ["AI_TIMEOUT", "TIMEOUT"],
+      ["AI_MALFORMED_OUTPUT", "UNPROCESSABLE_CONTENT"],
+    ])("maps a provider %s failure to %s", async (serviceCode, trpcCode) => {
+      syncInvestigate.mockRejectedValueOnce(
+        Object.assign(new Error("upstream detail that must not leak"), { code: serviceCode }),
+      );
+      const caller = rootRouter.createCaller(context() as never);
+
+      const error = await caller.integrations.syncLogs
+        .investigate({ syncLogId })
+        .then(() => null)
+        .catch((thrown: unknown) => thrown as { code: string; message: string });
+
+      expect(error?.code).toBe(trpcCode);
+      expect(error?.message).not.toContain("upstream detail");
+    });
+
+    it("does not leak an unexpected service failure to the caller", async () => {
+      syncInvestigate.mockRejectedValueOnce(new Error("connect ECONNREFUSED 10.0.0.4:5432"));
+      const caller = rootRouter.createCaller(context() as never);
+
+      const error = await caller.integrations.syncLogs
+        .investigate({ syncLogId })
+        .then(() => null)
+        .catch((thrown: unknown) => thrown as { code: string; message: string });
+
+      expect(error?.code).toBe("INTERNAL_SERVER_ERROR");
+      expect(error?.message).toBe("Unable to investigate this sync run");
+    });
+
+    it("refuses model output that fails the response contract", async () => {
+      syncInvestigate.mockResolvedValueOnce({
+        ...investigationOutput,
+        confidence: "certain",
+      });
+      const caller = rootRouter.createCaller(context() as never);
+
+      await expect(caller.integrations.syncLogs.investigate({ syncLogId })).rejects.toBeDefined();
     });
   });
 
