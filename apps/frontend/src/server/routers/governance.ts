@@ -176,7 +176,7 @@ export const governanceRouter = router({
     .query(async ({ ctx, input }) => {
       try {
         const items = await backend(ctx).governanceWorkflow.latestForEntities.query(input);
-        return items.map((item) => toFrontendCase(item as BackendGovernanceCase));
+        return items.map((item) => toFrontendCase(item as unknown as BackendGovernanceCase));
       } catch (error) {
         translateBackendGovernanceError(error);
       }
