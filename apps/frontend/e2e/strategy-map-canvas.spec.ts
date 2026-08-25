@@ -119,6 +119,42 @@ test.describe("Strategy Map canvas — real data and governance", () => {
     await viewer.close();
   });
 
+  test("administrator edits and deletes a hierarchy-backed map objective persistently", async ({ page }) => {
+    await loginAs(page, "platform_administrator");
+    await page.goto(`/strategy-maps/${fixture.scorecardId}`);
+    const objective = page.getByTestId(`map-objective-${fixture.extraObjectiveId}`);
+    await expect(objective).toBeVisible({ timeout: 15_000 });
+    await objective.click();
+
+    await page.getByTitle("Edit objective").click();
+    const editDialog = page.getByRole("dialog", { name: "Edit objective" });
+    await expect(editDialog).toBeVisible();
+    await editDialog.getByLabel("Objective Label").fill("Improve Strategic Pricing");
+    await editDialog.getByLabel("Owner Name").fill("Morgan Reed");
+    await editDialog.getByLabel(/Progress/).fill("73");
+    await editDialog.getByLabel("Description").fill("Improve enterprise pricing discipline and margin quality.");
+    await editDialog.getByRole("button", { name: "Save Changes" }).click();
+    await expect(page.getByTestId("map-notice")).toContainText("updated and persisted");
+
+    await page.reload();
+    const renamedObjective = page.getByTestId(`map-objective-${fixture.extraObjectiveId}`);
+    await expect(renamedObjective).toContainText("Improve Strategic Pricing");
+    await renamedObjective.click();
+    await expect(page.getByTestId("node-properties-panel")).toContainText("Morgan Reed");
+    await expect(page.getByTestId("node-properties-panel")).toContainText("73%");
+    await expect(page.getByTestId("node-properties-panel")).toContainText("Improve enterprise pricing discipline and margin quality.");
+
+    await page.getByTitle("Delete objective").click();
+    const deleteDialog = page.getByRole("dialog", { name: "Delete objective" });
+    await expect(deleteDialog).toBeVisible();
+    await deleteDialog.getByRole("button", { name: "Delete" }).click();
+    await expect(page.getByTestId("map-notice")).toContainText("were deleted");
+    await expect(page.getByTestId(`map-objective-${fixture.extraObjectiveId}`)).toHaveCount(0);
+
+    await page.reload();
+    await expect(page.getByTestId(`map-objective-${fixture.extraObjectiveId}`)).toHaveCount(0);
+  });
+
   test("non-analyst direct writes are rejected server-side", async ({ page }) => {
     await loginAs(page, "executive_viewer");
     const linkResponse = await page.request.post(`${backendTrpc}/scorecard.map.draftLink`, {
