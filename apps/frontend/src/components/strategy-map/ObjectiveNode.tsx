@@ -9,13 +9,14 @@ interface ObjectiveData {
   active?: boolean;
   pendingSource?: boolean;
   connecting?: boolean;
+  dimmed?: boolean;
   [key: string]: unknown;
 }
 
 const handleStyle = { opacity: 0, pointerEvents: "none" as const };
 
 export default function ObjectiveNode({ data }: NodeProps) {
-  const { placement, laneIndex, active, pendingSource, connecting } = data as ObjectiveData;
+  const { placement, laneIndex, active, pendingSource, connecting, dimmed } = data as ObjectiveData;
   const cfg = perspectiveColors(laneIndex);
   const highlighted = active || pendingSource;
 
@@ -27,6 +28,8 @@ export default function ObjectiveNode({ data }: NodeProps) {
         borderColor: highlighted ? "#3b82f6" : "#e5e7eb",
         boxShadow: highlighted ? "0 0 0 3px rgba(59,130,246,0.15), 0 6px 14px rgba(0,0,0,0.08)" : "0 1px 2px rgba(0,0,0,0.04)",
         cursor: connecting ? "crosshair" : "pointer",
+        opacity: dimmed ? 0.18 : 1,
+        filter: dimmed ? "saturate(0.45)" : undefined,
       }}
     >
       <Handle type="source" position={Position.Top} style={handleStyle} />
