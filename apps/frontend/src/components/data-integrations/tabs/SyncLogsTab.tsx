@@ -21,7 +21,7 @@ export default function SyncLogsTab({ search }: { search: string }) {
   const [filter, setFilter] = useState("All");
   const [selected, setSelected] = useState<string[]>([]);
   const [aiOpen, setAiOpen] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
+  const investigate = trpc.integrations.syncLogs.investigateFailures.useMutation();
 
   const integrations = useMemo(
     () => ["All Integrations", ...Array.from(new Set(logs.map((l) => l.integration)))],
@@ -57,8 +57,7 @@ export default function SyncLogsTab({ search }: { search: string }) {
 
   function runInvestigation() {
     setAiOpen(true);
-    setAiLoading(true);
-    setTimeout(() => setAiLoading(false), 1600);
+    investigate.mutate();
   }
 
   return (
@@ -259,27 +258,37 @@ export default function SyncLogsTab({ search }: { search: string }) {
               </button>
             </div>
 
-            {aiLoading ? (
+            {investigate.isPending ? (
               <div className="mt-6 flex flex-col items-center gap-3 py-8">
                 <div className="h-8 w-8 animate-spin-slow rounded-full border-2 border-violet-200 border-t-violet-600" />
                 <p className="text-sm text-slate-400">Reviewing sync logs and error patterns…</p>
               </div>
-            ) : (
+            ) : investigate.isError ? (
               <div className="mt-4 space-y-3">
-                <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold text-slate-700">Snowflake ETL Service</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Root cause: the stored API token expired. Reconnect the integration and
-                    rotate the credential in API Keys to restore syncing.
-                  </p>
+                <div className="rounded-lg border border-red-100 bg-red-50 p-3">
+                  <p className="text-xs text-red-600">{investigate.error.message}</p>
                 </div>
-                <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold text-slate-700">NetSuite ERP</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Root cause: connection timed out. This usually means the account is
-                    disconnected — reconnect it from the Connections tab.
-                  </p>
-                </div>
+                <button
+                  onClick={() => investigate.mutate()}
+                  className="mt-2 w-full rounded-lg bg-slate-900 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : investigate.data ? (
+              <div className="mt-4 space-y-3">
+                <p className="text-xs text-slate-500">{investigate.data.summary}</p>
+                {investigate.data.findings.map((finding) => (
+                  <div key={finding.integration} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold text-slate-700">{finding.integration}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Root cause: {finding.rootCause} {finding.recommendation}
+                    </p>
+                  </div>
+                ))}
+                <p className="text-[10px] text-slate-300">
+                  {investigate.data.provider} · {investigate.data.model}
+                </p>
                 <button
                   onClick={() => setAiOpen(false)}
                   className="mt-2 w-full rounded-lg bg-slate-900 py-2 text-sm font-semibold text-white hover:bg-slate-800"
@@ -287,7 +296,7 @@ export default function SyncLogsTab({ search }: { search: string }) {
                   Got it
                 </button>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       )}

@@ -20,4 +20,9 @@ export const integrationsErrors = {
       "INTEGRATIONS_CONCURRENT_UPDATE",
       "This item was just changed by another request — please retry",
     ),
+  noSyncFailures: () =>
+    new IntegrationsError(
+      "INTEGRATIONS_NO_SYNC_FAILURES",
+      "There are no failed syncs to investigate right now",
+    ),
 };

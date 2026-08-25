@@ -35,6 +35,19 @@ export interface SyncLogOutput {
   createdAt: Date;
 }
 
+export interface SyncInvestigationFindingOutput {
+  integration: string;
+  rootCause: string;
+  recommendation: string;
+}
+
+export interface SyncInvestigationOutput {
+  summary: string;
+  findings: SyncInvestigationFindingOutput[];
+  provider: string;
+  model: string;
+}
+
 export interface ApiKeyOutput {
   id: string;
   name: string;
@@ -69,6 +82,7 @@ export interface ConnectionsServiceContract {
 
 export interface SyncLogsServiceContract {
   list(): Promise<SyncLogOutput[]>;
+  investigateFailures(): Promise<SyncInvestigationOutput>;
 }
 
 export interface ApiKeysServiceContract {
@@ -110,7 +124,40 @@ const INTEGRATIONS_ERROR_CODES = {
   INTEGRATIONS_API_KEY_NOT_FOUND: "NOT_FOUND",
   INTEGRATIONS_WEBHOOK_NOT_FOUND: "NOT_FOUND",
   INTEGRATIONS_CONCURRENT_UPDATE: "CONFLICT",
+  INTEGRATIONS_NO_SYNC_FAILURES: "BAD_REQUEST",
 } as const satisfies Record<string, TRPCError["code"]>;
+
+/**
+ * A failure surfaced from the AI module (see `ai.errors.ts`) rather than from
+ * `IntegrationsError`. Mapped the same way `assistant.ts` maps them — a fixed,
+ * safe-to-show message per code, never the upstream provider detail.
+ */
+const AI_ERROR_CODES = {
+  AI_UNAVAILABLE: {
+    code: "SERVICE_UNAVAILABLE",
+    message: "The AI investigator is unavailable right now. Try again later.",
+  },
+  AI_TIMEOUT: {
+    code: "TIMEOUT",
+    message: "The AI investigator took too long to respond. Try again.",
+  },
+  AI_MALFORMED_OUTPUT: {
+    code: "UNPROCESSABLE_CONTENT",
+    message: "The AI investigator's response could not be used. Try again.",
+  },
+} as const satisfies Record<string, { code: TRPCError["code"]; message: string }>;
+
+function isMappedAiError(
+  error: unknown,
+): error is { code: keyof typeof AI_ERROR_CODES } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code: unknown }).code === "string" &&
+    (error as { code: string }).code in AI_ERROR_CODES
+  );
+}
 
 function isMappedIntegrationsError(
   error: unknown,
@@ -127,6 +174,10 @@ function isMappedIntegrationsError(
 const fail = (error: unknown): never => {
   if (isMappedIntegrationsError(error)) {
     throw new TRPCError({ code: INTEGRATIONS_ERROR_CODES[error.code], message: error.message });
+  }
+  if (isMappedAiError(error)) {
+    const mapped = AI_ERROR_CODES[error.code];
+    throw new TRPCError({ code: mapped.code, message: mapped.message });
   }
   throw new TRPCError({
     code: "BAD_REQUEST",
@@ -170,6 +221,15 @@ export const integrationsRouter = router({
     list: protectedProcedure.query(async ({ ctx }) => {
       try {
         return await service(ctx).syncLogs.list();
+      } catch (error) {
+        return fail(error);
+      }
+    }),
+    // A mutation, not a query: it spends money on an LLM call, is not
+    // cacheable, and must never be replayed by a client-side refetch.
+    investigateFailures: protectedProcedure.mutation(async ({ ctx }) => {
+      try {
+        return await service(ctx).syncLogs.investigateFailures();
       } catch (error) {
         return fail(error);
       }
