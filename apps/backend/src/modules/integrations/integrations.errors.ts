@@ -20,4 +20,6 @@ export const integrationsErrors = {
       "INTEGRATIONS_CONCURRENT_UPDATE",
       "This item was just changed by another request — please retry",
     ),
+  syncLogNotFound: () =>
+    new IntegrationsError("INTEGRATIONS_SYNC_LOG_NOT_FOUND", "Sync log entry was not found"),
 };
