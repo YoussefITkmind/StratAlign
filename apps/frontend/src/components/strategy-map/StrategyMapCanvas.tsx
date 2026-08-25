@@ -2,17 +2,28 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Download, Link2, Map as MapIcon, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Download, ExternalLink, Link2, Map as MapIcon, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import StrategyMapFlowCanvas from "./StrategyMapFlowCanvas";
 import type { MapPlacement, MapLinkRow } from "@/lib/buildStrategyMapFlow";
 import AddObjectiveModal from "./AddObjectiveModal";
 import NewMapModal from "./NewMapModal";
+import EditObjectiveModal, { type EditableObjectiveStatus } from "./EditObjectiveModal";
+import DeleteObjectiveModal from "./DeleteObjectiveModal";
 import {
   createScorecard, draftMapLink, placeObjective, proposeMap, publishMap, removeMapLink,
 } from "@/app/(app)/strategy-maps/actions";
 import { getMapAuthorization } from "@/app/(app)/strategy-maps/authorization";
-import { STATUS_DOT, STATUS_LABEL, STATUS_PILL, LINK_CONFIG, perspectiveColors, perspectiveIcon, type LinkStrength } from "@/lib/strategyMapVisualConfig";
+import {
+  STATUS_DOT,
+  STATUS_LABEL,
+  STATUS_PILL,
+  LINK_CONFIG,
+  SEMANTIC_LINK_TYPES,
+  perspectiveColors,
+  perspectiveIcon,
+  type LinkStrength,
+} from "@/lib/strategyMapVisualConfig";
 import { DEMO_SCORECARD_ID, demoScorecard, demoPerspectives, demoPlacements, demoLinks } from "@/data/demoStrategyMap";
 
 interface Perspective { id: string; nameEn: string; nameAr: string; order: number }
@@ -26,18 +37,54 @@ interface ScorecardDetail {
 type PlacementStatus = "on_track" | "watch" | "off_track";
 interface StrategyNode { id: string; type: string; nameEn: string; planVersionId: string; state?: string }
 interface ScorecardTab { id: string; nameEn: string }
+interface PlacementDetail extends MapPlacement {
+  owners?: Array<{ id: string; displayName: string | null; email: string }>;
+  progress?: number | null;
+  score?: number | null;
+  kpiCount?: number;
+}
+interface HierarchyNode {
+  id: string;
+  name: string;
+  type: "plan" | "perspective" | "objective" | "initiative" | "project";
+  status: EditableObjectiveStatus;
+  progress: number;
+  owner: { name: string; initials: string; color: string };
+  description: string | null;
+  linkedKpis: string[];
+  startDate: Date | string | null;
+  endDate: Date | string | null;
+  children: HierarchyNode[];
+}
 
-const EMPTY_PLACEMENTS: MapPlacement[] = [];
+const EMPTY_PLACEMENTS: PlacementDetail[] = [];
 const EMPTY_NODES: StrategyNode[] = [];
 const EMPTY_TABS: ScorecardTab[] = [];
 
-/** Shown when there is no reachable backend so the canvas still renders the designed layout instead of "not found" — not real persisted data. */
 const DEMO_SCORECARD_DETAIL: ScorecardDetail = {
   id: demoScorecard.id, nameEn: demoScorecard.nameEn, nameAr: demoScorecard.nameAr, planVersionId: demoScorecard.planVersionId,
   perspectives: demoPerspectives.map(({ id, nameEn, nameAr, order }) => ({ id, nameEn, nameAr, order })),
   weighting: { perspectiveWeights: Object.fromEntries(demoPerspectives.map((perspective) => [perspective.id, perspective.weight ?? 0])) },
   publishedMap: { id: "demo-map", links: demoLinks },
 };
+
+function flattenHierarchy(root: HierarchyNode | null | undefined): HierarchyNode[] {
+  if (!root) return [];
+  return [root, ...root.children.flatMap((child) => flattenHierarchy(child))];
+}
+
+function periodLabel(node: HierarchyNode | null) {
+  if (!node?.endDate) return "Current period";
+  const date = new Date(node.endDate);
+  return Number.isNaN(date.getTime()) ? "Current period" : `FY ${date.getUTCFullYear()}`;
+}
+
+function hierarchyStatusToPlacement(status: EditableObjectiveStatus): PlacementStatus | null {
+  if (status === "on-track") return "on_track";
+  if (status === "at-risk") return "watch";
+  if (status === "off-track") return "off_track";
+  return null;
+}
 
 export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string }) {
   const router = useRouter();
@@ -47,11 +94,13 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
   const placementsQuery = trpc.scorecard.placement.list.useQuery({ scorecardId }, { enabled: !isDemo });
   const nodesQuery = trpc.strategy.nodes.useQuery(undefined, { enabled: !isDemo });
   const scorecardsQuery = trpc.scorecard.list.useQuery();
+  const hierarchyQuery = trpc.strategyHierarchy.tree.useQuery(undefined, { enabled: !isDemo });
   const scorecard = isDemo ? DEMO_SCORECARD_DETAIL : (scorecardQuery.data as ScorecardDetail | undefined);
-  const placements = isDemo ? demoPlacements : ((placementsQuery.data as MapPlacement[] | undefined) ?? EMPTY_PLACEMENTS);
+  const placements = isDemo ? (demoPlacements as PlacementDetail[]) : ((placementsQuery.data as PlacementDetail[] | undefined) ?? EMPTY_PLACEMENTS);
   const strategyNodes = (nodesQuery.data as StrategyNode[] | undefined) ?? EMPTY_NODES;
   const realTabs = (scorecardsQuery.data as ScorecardTab[] | undefined) ?? EMPTY_TABS;
   const tabs = realTabs.length > 0 ? realTabs : [{ id: scorecardId, nameEn: scorecard?.nameEn ?? "" }];
+  const hierarchyNodes = useMemo(() => flattenHierarchy(hierarchyQuery.data as HierarchyNode | null | undefined), [hierarchyQuery.data]);
 
   const [roles, setRoles] = useState<string[]>([]);
   const [authLoaded, setAuthLoaded] = useState(false);
@@ -71,15 +120,21 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
   const [depsVisible, setDepsVisible] = useState(true);
   const [connectMode, setConnectMode] = useState(false);
   const [pendingSource, setPendingSource] = useState<string | null>(null);
-  const [connectStrength, setConnectStrength] = useState<LinkStrength>("strong");
+  const [connectStrength, setConnectStrength] = useState<LinkStrength>("drives");
   const [addObjectiveOpen, setAddObjectiveOpen] = useState(false);
   const [newMapOpen, setNewMapOpen] = useState(false);
+  const [editObjectiveOpen, setEditObjectiveOpen] = useState(false);
+  const [deleteObjectiveOpen, setDeleteObjectiveOpen] = useState(false);
 
   useEffect(() => {
     void getMapAuthorization().then((result) => setRoles(result.roles)).catch(() => setRoles([])).finally(() => setAuthLoaded(true));
   }, []);
 
   const isAnalyst = roles.includes("strategy_analyst");
+  const isSeoAdmin = roles.includes("seo_administrator");
+  const updateObjective = trpc.strategyHierarchy.updateNode.useMutation();
+  const deleteObjective = trpc.strategyHierarchy.deleteNode.useMutation();
+
   const placedIds = useMemo(() => new Set(placements.map((item) => item.objectiveNodeId)), [placements]);
   const eligibleObjectives = useMemo(() => strategyNodes.filter((node) =>
     node.type.toLowerCase() === "objective" && node.planVersionId === scorecard?.planVersionId && !placedIds.has(node.id) &&
@@ -87,6 +142,7 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
   const objectiveNames = useMemo(() => new Map(placements.map((item) => [item.objectiveNodeId, item.objectiveNameEn])), [placements]);
   const visibleLinks = useMemo(() => draftMapId ? draftLinks : (scorecard?.publishedMap?.links ?? []), [draftMapId, draftLinks, scorecard?.publishedMap?.links]);
   const selectedPlacement = placements.find((item) => item.objectiveNodeId === selectedObjectiveId) ?? null;
+  const selectedHierarchyNode = hierarchyNodes.find((node) => node.id === selectedObjectiveId && node.type === "objective") ?? null;
 
   const perspectivesWithWeight = useMemo(
     () => (scorecard?.perspectives ?? []).map((perspective) => ({ ...perspective, weight: scorecard?.weighting?.perspectiveWeights[perspective.id] })),
@@ -115,7 +171,14 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
     [visibleLinks, selectedObjectiveId],
   );
 
-  if (!authLoaded || scorecardQuery.isLoading || placementsQuery.isLoading || nodesQuery.isLoading) return <p className="p-8 text-sm text-gray-500">Loading strategy map…</p>;
+  useEffect(() => {
+    if (selectedObjectiveId && isFilteringMap && !filteredObjectiveIds.has(selectedObjectiveId)) {
+      setSelectedObjectiveId(null);
+    }
+  }, [filteredObjectiveIds, isFilteringMap, selectedObjectiveId]);
+
+  const loading = !authLoaded || scorecardQuery.isLoading || placementsQuery.isLoading || nodesQuery.isLoading || (!isDemo && hierarchyQuery.isLoading);
+  if (loading) return <p className="p-8 text-sm text-gray-500">Loading strategy map…</p>;
   if (!scorecard || scorecardQuery.error) return <div data-testid="map-canvas-not-found" className="p-8 text-center">Strategy map not found.</div>;
 
   const run = async (action: () => Promise<void>) => {
@@ -142,7 +205,7 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
     setMessage("Objective added and persisted.");
   });
 
-  const addLink = (sourceId: string, targetId: string, strength: "weak" | "strong") => run(async () => {
+  const addLink = (sourceId: string, targetId: string, strength: LinkStrength) => run(async () => {
     let mapId = draftMapId;
     let current = draftLinks;
     if (!mapId) {
@@ -153,6 +216,7 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
       fromObjectiveId: sourceId, toObjectiveId: targetId, strength,
     } }) as { map: { id: string }; link: MapLinkRow };
     setDraftMapId(result.map.id); setDraftLinks([...current, result.link]);
+    setMessage(`${LINK_CONFIG[strength].label} connection added to the draft map.`);
   });
 
   const startConnectFrom = (objectiveId: string) => {
@@ -177,11 +241,48 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
     setPendingSource(null);
   };
 
+  const selectConnectedObjective = (objectiveId: string) => {
+    setSearch("");
+    setPerspectiveFilter("all");
+    setStatusFilter("all");
+    setSelectedObjectiveId(objectiveId);
+  };
+
   const removeLink = (linkId: string) => run(async () => {
     if (!draftMapId) return;
     await removeMapLink({ strategyMapId: draftMapId, linkId });
     setDraftLinks((current) => current.filter((link) => link.id !== linkId));
   });
+
+  const saveObjective = (patch: { name: string; status: EditableObjectiveStatus; progress: number; ownerName: string; description: string | null }) => {
+    if (!selectedHierarchyNode || isDemo) return;
+    void run(async () => {
+      await updateObjective.mutateAsync({ id: selectedHierarchyNode.id, ...patch });
+      await Promise.all([
+        utils.strategyHierarchy.tree.invalidate(),
+        utils.scorecard.placement.list.invalidate({ scorecardId }),
+      ]);
+      setEditObjectiveOpen(false);
+      setMessage("Objective updated and persisted.");
+    });
+  };
+
+  const confirmDeleteObjective = () => {
+    if (!selectedHierarchyNode || isDemo) return;
+    const id = selectedHierarchyNode.id;
+    void run(async () => {
+      await deleteObjective.mutateAsync({ id });
+      setSelectedObjectiveId(null);
+      setDeleteObjectiveOpen(false);
+      setDraftLinks((current) => current.filter((link) => link.fromObjectiveId !== id && link.toObjectiveId !== id));
+      await Promise.all([
+        utils.strategyHierarchy.tree.invalidate(),
+        utils.scorecard.placement.list.invalidate({ scorecardId }),
+        utils.scorecard.get.invalidate({ scorecardId }),
+      ]);
+      setMessage("Objective and its strategy-map connections were deleted.");
+    });
+  };
 
   const submit = () => run(async () => {
     if (!draftMapId || !approverId.trim()) return;
@@ -221,6 +322,14 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
     </div>
   );
 
+  const objectiveProgress = selectedHierarchyNode?.progress ?? selectedPlacement?.progress ?? selectedPlacement?.score ?? 0;
+  const objectiveOwner = selectedHierarchyNode?.owner.name ?? selectedPlacement?.owners?.[0]?.displayName ?? selectedPlacement?.owners?.[0]?.email ?? "Unassigned";
+  const objectiveKpis = selectedHierarchyNode?.linkedKpis?.length
+    ? selectedHierarchyNode.linkedKpis
+    : selectedPlacement?.kpiNameEn ? [selectedPlacement.kpiNameEn] : [];
+  const panelStatus = selectedHierarchyNode ? hierarchyStatusToPlacement(selectedHierarchyNode.status) : selectedPlacement?.status ?? null;
+  const panelColor = selectedLaneIndex >= 0 ? perspectiveColors(selectedLaneIndex) : perspectiveColors(0);
+
   return (
     <div className="mx-auto max-w-[1600px] space-y-3 p-4 sm:p-6" data-testid="map-canvas-page">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -231,22 +340,13 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
           {tabs.map((tab) => {
             const active = tab.id === scorecardId;
             return (
-              <button
-                key={tab.id}
-                data-testid={`strategy-map-tab-${tab.id}`}
-                onClick={() => router.push(`/strategy-maps/${tab.id}`)}
-                className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors ${active ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-700 hover:bg-gray-50"}`}
-              >
+              <button key={tab.id} data-testid={`strategy-map-tab-${tab.id}`} onClick={() => router.push(`/strategy-maps/${tab.id}`)} className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors ${active ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
                 {tab.nameEn}
               </button>
             );
           })}
           {isAnalyst && (
-            <button
-              onClick={() => setNewMapOpen(true)}
-              data-testid="new-map-button"
-              className="flex shrink-0 items-center gap-1 rounded-full border border-dashed border-gray-300 px-4 py-2 text-sm font-medium text-gray-400 hover:border-gray-400 hover:text-gray-600"
-            >
+            <button onClick={() => setNewMapOpen(true)} data-testid="new-map-button" className="flex shrink-0 items-center gap-1 rounded-full border border-dashed border-gray-300 px-4 py-2 text-sm font-medium text-gray-400 hover:border-gray-400 hover:text-gray-600">
               <Plus className="h-3.5 w-3.5" /> New Map
             </button>
           )}
@@ -254,20 +354,10 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
         <div className="flex shrink-0 items-center gap-2">
           {isAnalyst && (
             <>
-              <button
-                data-testid="connect-nodes-button"
-                disabled={busy}
-                onClick={() => { setConnectMode((value) => !value); setPendingSource(null); }}
-                className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium disabled:opacity-40 ${connectMode ? "border-slate-900 bg-slate-900 text-white" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}
-              >
+              <button data-testid="connect-nodes-button" disabled={busy} onClick={() => { setConnectMode((value) => !value); setPendingSource(null); }} className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium disabled:opacity-40 ${connectMode ? "border-slate-900 bg-slate-900 text-white" : "border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
                 <Link2 className="h-4 w-4" /> Connect Nodes
               </button>
-              <button
-                data-testid="add-objective-button"
-                disabled={busy}
-                onClick={() => setAddObjectiveOpen(true)}
-                className="flex items-center gap-1.5 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
-              >
+              <button data-testid="add-objective-button" disabled={busy} onClick={() => setAddObjectiveOpen(true)} className="flex items-center gap-1.5 rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40">
                 <Plus className="h-4 w-4" /> Add Objective
               </button>
             </>
@@ -283,28 +373,18 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
 
       {connectMode && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-900 px-4 py-2.5 text-white">
-          <p className="text-sm">
-            {pendingSource ? "Click the target objective to connect it." : "Pick a link strength, then click a source objective."}
-          </p>
-          <div className="flex items-center gap-2">
-            {(["weak", "strong"] as LinkStrength[]).map((strength) => {
+          <p className="text-sm">{pendingSource ? "Click the target objective to connect it." : "Pick a relationship type, then click a source objective."}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            {SEMANTIC_LINK_TYPES.map((strength) => {
               const on = connectStrength === strength;
               return (
-                <button
-                  key={strength}
-                  data-testid={`connect-strength-${strength}`}
-                  onClick={() => setConnectStrength(strength)}
-                  className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium capitalize"
-                  style={{ background: on ? "rgba(255,255,255,0.15)" : "transparent", boxShadow: on ? `inset 0 0 0 1px ${LINK_CONFIG[strength].color}` : undefined }}
-                >
+                <button key={strength} data-testid={`connect-strength-${strength}`} onClick={() => setConnectStrength(strength)} className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium" style={{ background: on ? "rgba(255,255,255,0.15)" : "transparent", boxShadow: on ? `inset 0 0 0 1px ${LINK_CONFIG[strength].color}` : undefined }}>
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: LINK_CONFIG[strength].color }} />
-                  {strength}
+                  {LINK_CONFIG[strength].label}
                 </button>
               );
             })}
-            <button onClick={() => { setConnectMode(false); setPendingSource(null); }} className="rounded-full p-1 hover:bg-white/10">
-              <X className="h-4 w-4" />
-            </button>
+            <button onClick={() => { setConnectMode(false); setPendingSource(null); }} className="rounded-full p-1 hover:bg-white/10"><X className="h-4 w-4" /></button>
           </div>
         </div>
       )}
@@ -312,153 +392,122 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search objectives..."
-            className="w-56 rounded-full border border-gray-300 py-2 pl-9 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-          />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search objectives..." className="w-56 rounded-full border border-gray-300 py-2 pl-9 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
         </div>
-        <button
-          onClick={() => setPerspectiveFilter("all")}
-          className={`rounded-full px-3.5 py-2 text-xs font-semibold uppercase tracking-wide ${perspectiveFilter === "all" ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"}`}
-        >
-          All
-        </button>
+        <button onClick={() => setPerspectiveFilter("all")} className={`rounded-full px-3.5 py-2 text-xs font-semibold uppercase tracking-wide ${perspectiveFilter === "all" ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"}`}>All</button>
         {sortedPerspectives.map((perspective, index) => {
           const Icon = perspectiveIcon(index);
           return (
-            <button
-              key={perspective.id}
-              onClick={() => setPerspectiveFilter(perspective.id)}
-              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold uppercase tracking-wide ${perspectiveFilter === perspective.id ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"}`}
-            >
+            <button key={perspective.id} onClick={() => setPerspectiveFilter(perspective.id)} className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold uppercase tracking-wide ${perspectiveFilter === perspective.id ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
               <Icon className="h-3.5 w-3.5" /> {perspective.nameEn}
             </button>
           );
         })}
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as PlacementStatus | "all")}
-          className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500"
-        >
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as PlacementStatus | "all")} className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500">
           <option value="all">All Status</option>
           {(Object.keys(STATUS_LABEL) as PlacementStatus[]).map((key) => <option key={key} value={key}>{STATUS_LABEL[key]}</option>)}
         </select>
-        <button
-          onClick={() => setDepsVisible((value) => !value)}
-          className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium ${depsVisible ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-700 hover:bg-gray-50"}`}
-        >
+        <button onClick={() => setDepsVisible((value) => !value)} className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium ${depsVisible ? "bg-slate-900 text-white" : "border border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
           <Link2 className="h-3.5 w-3.5" /> Dependencies
         </button>
-        <div className="ml-auto flex items-center gap-4 text-xs font-medium text-gray-600">
-          <span className="flex items-center gap-1.5"><span className="h-px w-5 rounded-full" style={{ background: LINK_CONFIG.weak.color }} /> Weak</span>
-          <span className="flex items-center gap-1.5"><span className="h-0.5 w-5 rounded-full" style={{ background: LINK_CONFIG.strong.color }} /> Strong</span>
+        <div className="ml-auto flex flex-wrap items-center gap-3 text-xs font-medium text-gray-600">
+          {SEMANTIC_LINK_TYPES.map((type) => <span key={type} className="flex items-center gap-1.5"><span className="h-px w-5 rounded-full" style={{ background: LINK_CONFIG[type].color }} /> {LINK_CONFIG[type].label}</span>)}
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-        <StrategyMapFlowCanvas
-          perspectives={perspectivesWithWeight}
-          placements={filteredPlacements}
-          links={filteredLinks}
-          editing={!!draftMapId}
-          selectedObjectiveId={selectedObjectiveId}
-          onSelectObjective={handleObjectiveClick}
-          onRemoveLink={isAnalyst ? (id) => void removeLink(id) : undefined}
-          connecting={connectMode}
-          pendingSourceId={pendingSource}
-          infoLabel={infoCard}
-        />
+        <StrategyMapFlowCanvas perspectives={perspectivesWithWeight} placements={filteredPlacements} links={filteredLinks} editing={!!draftMapId} selectedObjectiveId={selectedObjectiveId} onSelectObjective={handleObjectiveClick} onRemoveLink={isAnalyst ? (id) => void removeLink(id) : undefined} connecting={connectMode} pendingSourceId={pendingSource} infoLabel={infoCard} />
 
         <aside className="flex flex-col gap-4">
-          <div data-testid="node-properties-panel" className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div data-testid="node-properties-panel" className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
             {selectedPlacement ? (
               <>
-                <div className="mb-3 flex items-center justify-between">
-                  {selectedPerspective ? (
-                    <span
-                      className="text-xs font-semibold uppercase tracking-wide"
-                      style={{ color: perspectiveColors(selectedLaneIndex).textColor }}
-                    >
-                      {selectedPerspective.nameEn}
-                    </span>
-                  ) : <span />}
+                <div className="flex items-center justify-between px-4 py-3" style={{ background: panelColor.bandBg }}>
+                  {selectedPerspective ? <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: panelColor.textColor }}>{selectedPerspective.nameEn}</span> : <span />}
                   <div className="flex items-center gap-1">
-                    {isAnalyst && (
-                      <button
-                        title="Draw a link from here"
-                        onClick={() => startConnectFrom(selectedPlacement.objectiveNodeId)}
-                        className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
+                    {isSeoAdmin && selectedHierarchyNode && !isDemo && (
+                      <>
+                        <button title="Edit objective" onClick={() => setEditObjectiveOpen(true)} className="rounded-full p-1.5 text-gray-500 hover:bg-white/70"><Pencil className="h-3.5 w-3.5" /></button>
+                        <button title="Delete objective" onClick={() => setDeleteObjectiveOpen(true)} className="rounded-full p-1.5 text-gray-500 hover:bg-white/70 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                      </>
                     )}
-                    <button title="Close" onClick={() => setSelectedObjectiveId(null)} className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
+                    <button title="Close" onClick={() => setSelectedObjectiveId(null)} className="rounded-full p-1.5 text-gray-500 hover:bg-white/70"><X className="h-3.5 w-3.5" /></button>
                   </div>
                 </div>
 
-                <h3 className="mb-2 text-base font-semibold text-gray-900">{selectedPlacement.objectiveNameEn}</h3>
+                <div className="space-y-4 p-4">
+                  <div>
+                    <h3 className="text-base font-semibold leading-6 text-gray-900">{selectedHierarchyNode?.name ?? selectedPlacement.objectiveNameEn}</h3>
+                    <div className="mt-2 flex items-center gap-2">
+                      {panelStatus && <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium" style={{ background: STATUS_PILL[panelStatus].bg, color: STATUS_PILL[panelStatus].text }}><span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_DOT[panelStatus] }} />{STATUS_LABEL[panelStatus]}</span>}
+                      <span className="text-xs font-medium text-gray-500">{Math.round(objectiveProgress)}%</span>
+                    </div>
+                  </div>
 
-                {selectedPlacement.status && (
-                  <span
-                    className="mb-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium"
-                    style={{ background: STATUS_PILL[selectedPlacement.status].bg, color: STATUS_PILL[selectedPlacement.status].text }}
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: STATUS_DOT[selectedPlacement.status] }} />
-                    {STATUS_LABEL[selectedPlacement.status]}
-                  </span>
-                )}
+                  <div className="flex items-center gap-4 rounded-xl bg-gray-50 p-3">
+                    <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full" style={{ background: `conic-gradient(${panelColor.accent} ${Math.max(0, Math.min(100, objectiveProgress))}%, #e5e7eb 0)` }}>
+                      <div className="grid h-10 w-10 place-items-center rounded-full bg-white text-xs font-semibold text-gray-800">{Math.round(objectiveProgress)}%</div>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gray-900">Completion</p>
+                      <p className="truncate text-xs text-gray-500">{objectiveOwner}</p>
+                      <p className="text-xs text-gray-400">{periodLabel(selectedHierarchyNode)}</p>
+                    </div>
+                  </div>
 
-                <div className="my-3 border-t border-gray-100" />
-                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Linked KPI</p>
-                {selectedPlacement.kpiNameEn ? (
-                  <span className="inline-block rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">{selectedPlacement.kpiNameEn}</span>
-                ) : (
-                  <p className="text-xs text-gray-400">No KPI linked</p>
-                )}
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-gray-400">Description</p>
+                    <p className="mt-2 text-sm leading-6 text-gray-600">{selectedHierarchyNode?.description || "No description has been added for this objective."}</p>
+                  </div>
 
-                <div className="my-3 border-t border-gray-100" />
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Connections ({selectedNodeLinks.length})</p>
-                <div className="space-y-1.5" data-testid="node-connections-list">
-                  {selectedNodeLinks.map((link) => {
-                    const outgoing = link.fromObjectiveId === selectedPlacement.objectiveNodeId;
-                    const otherId = outgoing ? link.toObjectiveId : link.fromObjectiveId;
-                    return (
-                      <div key={link.id} data-testid={`map-link-${link.id}`} className="flex items-center justify-between gap-2 rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs">
-                        <span className="flex min-w-0 items-center gap-1.5">
-                          {outgoing ? <ArrowRight className="h-3.5 w-3.5 shrink-0 text-gray-400" /> : <ArrowLeft className="h-3.5 w-3.5 shrink-0 text-gray-400" />}
-                          <span className="truncate">{objectiveNames.get(otherId) ?? otherId}</span>
-                          <span className="shrink-0 rounded bg-white px-1.5 py-0.5 text-[10px] uppercase text-gray-500">{link.strength}</span>
-                        </span>
-                        {isAnalyst && draftMapId && (
-                          <button aria-label="Remove link" onClick={() => void removeLink(link.id)} className="shrink-0 text-red-500">
-                            <Trash2 className="h-3.5 w-3.5" />
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-gray-400">Linked KPIs</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {objectiveKpis.length > 0 ? objectiveKpis.map((kpi) => <span key={kpi} className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700">{kpi}</span>) : <span className="text-xs text-gray-400">No KPI linked</span>}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-gray-400">Connections ({selectedNodeLinks.length})</p>
+                    <div className="mt-2 space-y-2" data-testid="node-connections-list">
+                      {selectedNodeLinks.map((link) => {
+                        const outgoing = link.fromObjectiveId === selectedPlacement.objectiveNodeId;
+                        const otherId = outgoing ? link.toObjectiveId : link.fromObjectiveId;
+                        const config = LINK_CONFIG[link.strength];
+                        return (
+                          <button key={link.id} type="button" data-testid={`map-link-${link.id}`} onClick={() => selectConnectedObjective(otherId)} className="flex w-full items-center justify-between gap-2 rounded-xl bg-gray-50 px-3 py-2.5 text-left text-xs transition hover:bg-gray-100">
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: config.color }} />
+                              <span className="min-w-0">
+                                <span className="block text-[10px] font-medium uppercase tracking-wide text-gray-400">{outgoing ? <><ArrowRight className="mr-1 inline h-3 w-3" />{config.label}</> : <><ArrowLeft className="mr-1 inline h-3 w-3" />{config.label}</>}</span>
+                                <span className="block truncate font-medium text-gray-800">{objectiveNames.get(otherId) ?? otherId}</span>
+                              </span>
+                            </span>
+                            <ExternalLink className="h-3.5 w-3.5 shrink-0 text-sky-500" />
                           </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {selectedNodeLinks.length === 0 && <p className="text-xs text-gray-400">No connections yet.</p>}
+                        );
+                      })}
+                      {selectedNodeLinks.length === 0 && <p className="text-xs text-gray-400">No connections yet.</p>}
+                    </div>
+                  </div>
                 </div>
+
+                {(isSeoAdmin || isAnalyst) && !isDemo && (
+                  <div className="grid grid-cols-2 gap-2 border-t border-gray-100 p-3">
+                    <button type="button" disabled={!isSeoAdmin || !selectedHierarchyNode} onClick={() => setEditObjectiveOpen(true)} className="flex items-center justify-center gap-1.5 rounded-full border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"><Pencil className="h-3.5 w-3.5" /> Edit</button>
+                    <button type="button" disabled={!isAnalyst} onClick={() => startConnectFrom(selectedPlacement.objectiveNodeId)} className="flex items-center justify-center gap-1.5 rounded-full bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-40"><Link2 className="h-3.5 w-3.5" /> Connect</button>
+                  </div>
+                )}
               </>
             ) : (
-              <>
-                <h2 className="mb-2 text-sm font-semibold text-gray-800">Objective detail</h2>
-                <p className="text-xs text-gray-400">Select an objective on the canvas to view its details.</p>
-              </>
+              <div className="p-4"><h2 className="mb-2 text-sm font-semibold text-gray-800">Objective detail</h2><p className="text-xs text-gray-400">Select an objective on the canvas to view its details.</p></div>
             )}
           </div>
 
           {isAnalyst && draftMapId && (
             <section className="rounded-2xl border bg-white p-4">
               <h2 className="mb-2 font-semibold">Submit draft for approval</h2>
-              <div className="flex flex-col gap-2">
-                <input data-testid="approval-participant-id" value={approverId} onChange={(e) => setApproverId(e.target.value)} placeholder="Approver user UUID" className="w-full rounded-lg border p-2 text-sm" />
-                <button data-testid="submit-for-approval-button" disabled={busy || !draftMapId || !approverId.trim()} onClick={() => void submit()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Submit</button>
-              </div>
+              <div className="flex flex-col gap-2"><input data-testid="approval-participant-id" value={approverId} onChange={(e) => setApproverId(e.target.value)} placeholder="Approver user UUID" className="w-full rounded-lg border p-2 text-sm" /><button data-testid="submit-for-approval-button" disabled={busy || !draftMapId || !approverId.trim()} onClick={() => void submit()} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Submit</button></div>
             </section>
           )}
 
@@ -467,26 +516,16 @@ export default function StrategyMapCanvas({ scorecardId }: { scorecardId: string
           {isAnalyst && (
             <section data-testid="publish-approved-map" className="rounded-2xl border bg-white p-4">
               <h2 className="mb-2 font-semibold">Publish approved draft</h2>
-              <div className="flex flex-col gap-2">
-                <input data-testid="publish-map-id" value={publishMapId} onChange={(e) => setPublishMapId(e.target.value)} placeholder="Strategy map UUID" className="rounded-lg border p-2 text-sm" />
-                <input data-testid="publish-case-id" value={publishCaseId} onChange={(e) => setPublishCaseId(e.target.value)} placeholder="Approved case UUID" className="rounded-lg border p-2 text-sm" />
-                <button data-testid="publish-map-button" disabled={busy || !publishMapId.trim() || !publishCaseId.trim()} onClick={() => void publish()} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Publish</button>
-              </div>
+              <div className="flex flex-col gap-2"><input data-testid="publish-map-id" value={publishMapId} onChange={(e) => setPublishMapId(e.target.value)} placeholder="Strategy map UUID" className="rounded-lg border p-2 text-sm" /><input data-testid="publish-case-id" value={publishCaseId} onChange={(e) => setPublishCaseId(e.target.value)} placeholder="Approved case UUID" className="rounded-lg border p-2 text-sm" /><button data-testid="publish-map-button" disabled={busy || !publishMapId.trim() || !publishCaseId.trim()} onClick={() => void publish()} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Publish</button></div>
             </section>
           )}
         </aside>
       </div>
 
-      {addObjectiveOpen && (
-        <AddObjectiveModal
-          objectives={eligibleObjectives}
-          perspectives={scorecard.perspectives}
-          busy={busy}
-          onClose={() => setAddObjectiveOpen(false)}
-          onAdd={addObjective}
-        />
-      )}
+      {addObjectiveOpen && <AddObjectiveModal objectives={eligibleObjectives} perspectives={scorecard.perspectives} busy={busy} onClose={() => setAddObjectiveOpen(false)} onAdd={addObjective} />}
       {newMapOpen && <NewMapModal busy={busy} onClose={() => setNewMapOpen(false)} onCreate={createMap} />}
+      {editObjectiveOpen && selectedHierarchyNode && <EditObjectiveModal objective={{ id: selectedHierarchyNode.id, name: selectedHierarchyNode.name, status: selectedHierarchyNode.status, progress: selectedHierarchyNode.progress, ownerName: selectedHierarchyNode.owner.name, description: selectedHierarchyNode.description }} busy={busy} onClose={() => setEditObjectiveOpen(false)} onSave={saveObjective} />}
+      {deleteObjectiveOpen && selectedHierarchyNode && <DeleteObjectiveModal objectiveName={selectedHierarchyNode.name} busy={busy} onCancel={() => setDeleteObjectiveOpen(false)} onDelete={confirmDeleteObjective} />}
     </div>
   );
 }
