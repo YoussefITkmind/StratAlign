@@ -85,6 +85,11 @@ function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiv
     onSelectObjective(node.id);
   };
 
+  const handleNodeHover: NodeMouseHandler = (_, node) => {
+    if (connecting || node.type !== "objective") return;
+    onSelectObjective(node.id);
+  };
+
   const handleEdgeClick: EdgeMouseHandler = (_, edge) => {
     onRemoveLink?.(edge.id);
   };
@@ -99,7 +104,7 @@ function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiv
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeSelect}
-        onNodeMouseEnter={handleNodeSelect}
+        onNodeMouseEnter={handleNodeHover}
         onEdgeClick={handleEdgeClick}
         onMove={(_, viewport) => setZoomPct(Math.round(viewport.zoom * 100))}
         nodesDraggable={false}
