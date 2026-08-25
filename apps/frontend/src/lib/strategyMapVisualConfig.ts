@@ -1,7 +1,7 @@
 import { Activity, Layers, Target, TrendingUp, Users, Zap, type LucideIcon } from "lucide-react";
 
 export type PlacementStatus = "on_track" | "watch" | "off_track";
-export type LinkStrength = "weak" | "strong";
+export type LinkStrength = "weak" | "strong" | "enables" | "impacts" | "drives" | "supports";
 
 interface PerspectiveColors {
   accent: string;
@@ -10,8 +10,6 @@ interface PerspectiveColors {
   textColor: string;
 }
 
-// Perspectives are dynamic per scorecard (not a fixed BSC 4-key enum), so the
-// palette cycles by lane index instead of being keyed by name.
 const PERSPECTIVE_PALETTE: PerspectiveColors[] = [
   { accent: "#3b82f6", bandBg: "#eef4fd", barColor: "#3b82f6", textColor: "#2563eb" },
   { accent: "#10b981", bandBg: "#eaf7f1", barColor: "#10b981", textColor: "#059669" },
@@ -21,8 +19,6 @@ const PERSPECTIVE_PALETTE: PerspectiveColors[] = [
   { accent: "#14b8a6", bandBg: "#ecfaf8", barColor: "#14b8a6", textColor: "#0d9488" },
 ];
 
-// Same dynamic-by-lane-index cycling as the color palette above, not a fixed
-// per-perspective-name mapping — this is generic BSC iconography, not data.
 const PERSPECTIVE_ICONS: LucideIcon[] = [TrendingUp, Users, Activity, Zap, Target, Layers];
 
 export function perspectiveColors(laneIndex: number): PerspectiveColors {
@@ -51,10 +47,16 @@ export const STATUS_PILL: Record<PlacementStatus, { bg: string; text: string }> 
   off_track: { bg: "#fdecec", text: "#dc2626" },
 };
 
-export const LINK_CONFIG: Record<LinkStrength, { color: string; width: number }> = {
-  weak: { color: "#94a3b8", width: 1.5 },
-  strong: { color: "#3b82f6", width: 2.5 },
+export const LINK_CONFIG: Record<LinkStrength, { label: string; color: string; width: number; dashed?: boolean }> = {
+  weak: { label: "Weak", color: "#94a3b8", width: 1.5 },
+  strong: { label: "Strong", color: "#3b82f6", width: 2.5 },
+  enables: { label: "Enables", color: "#0ea5e9", width: 2 },
+  impacts: { label: "Impacts", color: "#10b981", width: 2 },
+  drives: { label: "Drives", color: "#f97316", width: 2 },
+  supports: { label: "Supports", color: "#6366f1", width: 2, dashed: true },
 };
+
+export const SEMANTIC_LINK_TYPES: LinkStrength[] = ["enables", "impacts", "drives", "supports"];
 
 // Canvas layout
 export const LANE_HEIGHT = 190;
