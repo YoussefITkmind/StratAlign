@@ -56,6 +56,8 @@ import { SyncLogsService } from "./modules/integrations/sync-logs.service";
 import { ApiKeysService } from "./modules/integrations/api-keys.service";
 import { WebhooksService } from "./modules/integrations/webhooks.service";
 import { ContextAwareAssistantService } from "./modules/ai/assistant.service";
+import { createTtsProvider } from "./modules/ai/tts.factory";
+import { AudioBriefService } from "./modules/ai/audio-brief.service";
 import { PixelRagClient } from "./modules/pixelrag/pixelrag.client";
 import { TraceabilityReadService } from "./modules/traceability/traceability-read.service";
 
@@ -168,6 +170,44 @@ async function bootstrap(): Promise<void> {
   );
   const assistant = new ContextAwareAssistantService(llm, logger.child("assistant"));
 
+  // The audio brief is pinned to OpenAI regardless of AI_PROVIDER: it needs
+  // OpenAI's speech endpoint, and a brief whose script and voice came from
+  // different vendors is not something we want to reason about. Constructed
+  // through the same factory as `llm` above, so the vendor-agnostic provider
+  // architecture is reused rather than bypassed.
+  const audioBriefLlm = createLlmProvider(
+    {
+      provider: "openai",
+      apiKey: environment.OPENAI_API_KEY,
+      model: environment.OPENAI_MODEL,
+      timeoutMs: environment.AI_TIMEOUT_MS,
+      maxRetries: environment.AI_MAX_RETRIES,
+    },
+    logger.child("ai-audio-brief"),
+  );
+  const audioBriefTts = createTtsProvider(
+    {
+      provider: "openai",
+      apiKey: environment.OPENAI_API_KEY,
+      model: environment.OPENAI_TTS_MODEL,
+      voice: environment.OPENAI_TTS_VOICE,
+      timeoutMs: environment.AI_TIMEOUT_MS,
+      maxRetries: environment.AI_MAX_RETRIES,
+    },
+    logger.child("ai-tts"),
+  );
+  const audioBrief = new AudioBriefService(
+    {
+      kpiRegistry: registry.kpi,
+      performance,
+      okrRegistry: registry.okr,
+      execution,
+    },
+    audioBriefLlm,
+    audioBriefTts,
+    logger.child("audio-brief"),
+  );
+
   const pixelrag = environment.PIXELRAG_SERVICE_URL
     ? new PixelRagClient(
         environment.PIXELRAG_SERVICE_URL,
@@ -189,7 +229,7 @@ async function bootstrap(): Promise<void> {
         authorization, iam, rules, governance, governanceEscalation, strategy, strategyTraversal, traceabilityRead,
         strategyHierarchy,
         registry, audit, auditTap, performance, scorecard, execution, portfolio, schedulerRead, value,
-        aiSuggestion, assistant, integrations, pixelrag,
+        aiSuggestion, assistant, audioBrief, integrations, pixelrag,
       };
     },
     middleware(request, response, next) {

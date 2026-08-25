@@ -9,6 +9,7 @@ import { valueRouter } from "./value";
 import { aiSuggestionRouter } from "./ai-suggestion";
 import { integrationsRouter } from "./integrations";
 import { assistantRouter } from "./assistant";
+import { audioBriefRouter } from "./audio-brief";
 import { pixelRagRouter } from "./pixelrag";
 import { pixelRagDocumentManagementRouter } from "./pixelrag-document-management";
 import { pixelRagVisualRouter } from "./pixelrag-visual";
@@ -26,6 +27,7 @@ export const rootRouter = mergeRouters(
     aiSuggestion: aiSuggestionRouter,
     integrations: integrationsRouter,
     assistant: assistantRouter,
+    audioBrief: audioBriefRouter,
     pixelrag: pixelRagRouter,
     pixelragDocuments: pixelRagDocumentManagementRouter,
     pixelragVisual: pixelRagVisualRouter,
