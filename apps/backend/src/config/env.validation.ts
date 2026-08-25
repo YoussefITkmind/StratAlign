@@ -291,6 +291,39 @@ const environmentSchema = z.object({
     .default(2),
 
   /**
+   * OpenAI credentials for the Executive Audio Brief.
+   *
+   * Separate from `AI_API_KEY` on purpose. `AI_PROVIDER` selects the vendor
+   * for the platform's general AI surface and may legitimately be Anthropic or
+   * disabled; the audio brief needs OpenAI specifically, for both the script
+   * and the speech. Keeping its key distinct means neither feature can silently
+   * change vendor when the other is reconfigured.
+   *
+   * Optional, like every other AI key here: an unset value downgrades the
+   * audio brief to a refusal rather than failing startup.
+   */
+  OPENAI_API_KEY: z
+    .string()
+    .min(1)
+    .optional(),
+
+  /** Unset falls back to the OpenAI default in `llm.factory.ts`. */
+  OPENAI_MODEL: z
+    .string()
+    .min(1)
+    .optional(),
+
+  OPENAI_TTS_MODEL: z
+    .string()
+    .min(1)
+    .default("gpt-4o-mini-tts"),
+
+  OPENAI_TTS_VOICE: z
+    .string()
+    .min(1)
+    .default("alloy"),
+
+  /**
    * PixelRAG document-intelligence service.
    *
    * Optional so the rest of StratAlign can start and operate normally when

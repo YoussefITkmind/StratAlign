@@ -15,6 +15,7 @@ import { valueGateRouter } from "@/server/routers/value-gate";
 import { aiSuggestionRouter } from "@/server/routers/ai-suggestion";
 import { integrationsRouter } from "@/server/routers/integrations";
 import { assistantRouter } from "@/server/routers/assistant";
+import { audioBriefRouter } from "@/server/routers/audio-brief";
 import { pixelRagRouter } from "@/server/routers/pixelrag";
 
 export const appRouter = router({
@@ -34,6 +35,7 @@ export const appRouter = router({
   aiSuggestion: aiSuggestionRouter,
   integrations: integrationsRouter,
   assistant: assistantRouter,
+  audioBrief: audioBriefRouter,
   pixelrag: pixelRagRouter,
 });
 
