@@ -22,15 +22,9 @@ export default async function Page() {
     const firstBalanced = balanced.find(
       (scorecard) => scorecard.isBalancedScorecard !== false && !scorecard.name?.startsWith("E2E "),
     );
-
-    if (firstBalanced) {
-      scorecardId = firstBalanced.id;
-    } else {
-      const scorecards = (await client.scorecard.list.query()) as Array<{ id: string }>;
-      if (scorecards.length > 0) scorecardId = scorecards[0]!.id;
-    }
+    if (firstBalanced) scorecardId = firstBalanced.id;
   } catch {
-    // Explicit demo fallback only when persisted scorecards cannot be resolved.
+    // Explicit demo fallback only when persisted Balanced Scorecards cannot be resolved.
   }
 
   redirect(`/strategy-maps/${scorecardId}`);
