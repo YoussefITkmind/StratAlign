@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowRight, Download, ExternalLink, Link2, Map as MapIcon, P
 import { trpc } from "@/lib/trpc/client";
 import StrategyMapFlowCanvas from "./StrategyMapFlowCanvas";
 import DeleteObjectiveModal from "./DeleteObjectiveModal";
+import DeleteConnectionModal from "./DeleteConnectionModal";
 import ScorecardObjectiveModal from "@/components/scorecards/ScorecardObjectiveModal";
 import type { MapLinkRow, MapPlacement } from "@/lib/buildStrategyMapFlow";
 import type { ObjectiveStatus, Perspective, Scorecard, ScorecardObjective } from "@/types/scorecard";
@@ -86,6 +87,7 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
   const [connectStrength, setConnectStrength] = useState<LinkStrength>("drives");
   const [objectiveEditor, setObjectiveEditor] = useState<{ objective?: ScorecardObjective; perspectiveId?: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ScorecardObjective | null>(null);
+  const [connectionDeleteTarget, setConnectionDeleteTarget] = useState<MapLinkRow | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -226,11 +228,18 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
     }
   };
 
-  const removeConnection = async (linkId: string) => {
-    if (!canConnect || !window.confirm("Delete this Strategy Map connection?")) return;
+  const requestConnectionDelete = (linkId: string) => {
+    if (!canConnect) return;
+    const link = visibleLinks.find((item) => item.id === linkId);
+    if (link) setConnectionDeleteTarget(link);
+  };
+
+  const confirmConnectionDelete = async () => {
+    if (!connectionDeleteTarget) return;
     setError(null); setMessage(null);
     try {
-      await deleteMapLink.mutateAsync({ scorecardId, linkId });
+      await deleteMapLink.mutateAsync({ scorecardId, linkId: connectionDeleteTarget.id });
+      setConnectionDeleteTarget(null);
       setMessage("Strategy Map connection deleted.");
       await utils.scorecard.get.invalidate({ scorecardId });
     } catch (caught) {
@@ -240,9 +249,10 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
 
   const handleObjectiveClick = (objectiveId: string) => {
     if (!connectMode) {
-      setSelectedObjectiveId(objectiveId);
+      setSelectedObjectiveId(objectiveId || null);
       return;
     }
+    if (!objectiveId) return;
     if (!pendingSource) {
       setPendingSource(objectiveId);
       return;
@@ -321,7 +331,7 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
 
       <div className="relative bg-[#f8fafc]">
         <div className={selectedObjective ? "lg:mr-[320px]" : ""}>
-          <StrategyMapFlowCanvas perspectives={perspectives} placements={filteredPlacements} links={filteredLinks} editing={canConnect} selectedObjectiveId={selectedObjectiveId} onSelectObjective={handleObjectiveClick} onRemoveLink={canConnect ? (linkId) => void removeConnection(linkId) : undefined} connecting={connectMode} pendingSourceId={pendingSource} infoLabel={infoCard} />
+          <StrategyMapFlowCanvas perspectives={perspectives} placements={filteredPlacements} links={filteredLinks} editing={canConnect} selectedObjectiveId={selectedObjectiveId} onSelectObjective={handleObjectiveClick} onRemoveLink={canConnect ? requestConnectionDelete : undefined} connecting={connectMode} pendingSourceId={pendingSource} infoLabel={infoCard} />
         </div>
 
         {selectedObjective && selectedPerspective && (
@@ -348,6 +358,16 @@ export default function ConnectedStrategyMapCanvas({ scorecardId }: { scorecardI
 
       {objectiveEditor && <ScorecardObjectiveModal objective={objectiveEditor.objective} perspectives={scorecard.perspectives} defaultPerspectiveId={objectiveEditor.perspectiveId} defaultOwnerName={scorecard.ownerName} busy={busy} onClose={() => setObjectiveEditor(null)} onSave={saveObjective} />}
       {deleteTarget && <DeleteObjectiveModal objectiveName={deleteTarget.name} busy={busy} onCancel={() => setDeleteTarget(null)} onDelete={() => void confirmDelete()} />}
+      {connectionDeleteTarget && (
+        <DeleteConnectionModal
+          sourceName={objectiveById.get(connectionDeleteTarget.fromObjectiveId)?.name ?? "Source objective"}
+          targetName={objectiveById.get(connectionDeleteTarget.toObjectiveId)?.name ?? "Target objective"}
+          relationshipLabel={LINK_CONFIG[connectionDeleteTarget.strength].label}
+          busy={deleteMapLink.isPending}
+          onCancel={() => setConnectionDeleteTarget(null)}
+          onDelete={() => void confirmConnectionDelete()}
+        />
+      )}
     </div>
   );
 }
