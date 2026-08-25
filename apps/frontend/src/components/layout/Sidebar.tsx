@@ -55,7 +55,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Strategy Hierarchy', href: '/strategy-hierarchy', icon: Layers },
       { label: 'Balanced Scorecards', href: '/balanced-scorecards', icon: BookOpen },
-      { label: 'Strategy Map', href: '/strategy-maps/demo', icon: Sparkles },
+      { label: 'Strategy Map', href: '/strategy-maps', icon: Sparkles },
     ],
   },
   {
@@ -172,7 +172,8 @@ export default function Sidebar({
               {!isCollapsed && (
                 <ul className="mt-1 space-y-0.5">
                   {section.items.map((item) => {
-                    const isActive = pathname === item.href;
+                    const isStrategyMap = item.href === '/strategy-maps';
+                    const isActive = pathname === item.href || (isStrategyMap && pathname.startsWith('/strategy-maps/'));
                     const Icon = item.icon;
 
                     return (
