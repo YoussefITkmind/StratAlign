@@ -80,7 +80,7 @@ function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiv
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [perspectives, placements, links, editing, selectedObjectiveId, connecting, pendingSourceId]);
 
-  const handleNodeClick: NodeMouseHandler = (_, node) => {
+  const handleNodeSelect: NodeMouseHandler = (_, node) => {
     if (node.type !== "objective") return;
     onSelectObjective(node.id);
   };
@@ -98,7 +98,8 @@ function FlowCanvas({ perspectives, placements, links, editing, selectedObjectiv
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onNodeClick={handleNodeClick}
+        onNodeClick={handleNodeSelect}
+        onNodeMouseEnter={handleNodeSelect}
         onEdgeClick={handleEdgeClick}
         onMove={(_, viewport) => setZoomPct(Math.round(viewport.zoom * 100))}
         nodesDraggable={false}
