@@ -64,16 +64,25 @@ export const registryRouter = router({
         type: z.enum(["quantitative", "milestone"]),
         targetValue: z.number().finite(),
         unit: z.string().trim().min(1).max(50),
+        titleEn: z.string().trim().min(1).max(300).nullish(),
+        titleAr: z.string().trim().min(1).max(300).nullish(),
       }).strict()).min(1).max(20),
     }).strict()).mutation(({ ctx, input }) =>
       forward(() => backend(ctx).registry.okr.create.mutate(input))),
+  }),
+  keyResult: router({
+    updateProgress: authenticatedProcedure.input(z.object({
+      keyResultId: id,
+      currentValue: z.number().finite(),
+    }).strict()).mutation(({ ctx, input }) =>
+      forward(() => backend(ctx).registry.keyResult.updateProgress.mutate(input))),
   }),
   alignment: router({
     set: authenticatedProcedure.input(z.object({
       kpiDefinitionId: id,
       alignments: z.array(z.object({
         strategyNodeId: z.string().trim().min(1).max(200),
-        alignmentType: z.enum(["objective", "play", "sector", "project"]),
+        alignmentType: z.enum(["objective", "play", "sector", "project", "theme"]),
       }).strict()).max(100),
     }).strict()).mutation(({ ctx, input }) =>
       forward(() => backend(ctx).registry.alignment.set.mutate(input))),
