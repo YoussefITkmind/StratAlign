@@ -92,14 +92,21 @@ export interface ScorecardServiceContract {
   getPublishedMap(scorecardId: string): Promise<unknown>;
 }
 
+export interface ScorecardUiServiceContract {
+  list(): Promise<Array<{ scorecardId: string; uiData: unknown }>>;
+  save(input: { scorecardId: string; uiData: Record<string, unknown> }): Promise<{ scorecardId: string; uiData: unknown }>;
+}
+
 declare module "./index" {
   interface TrpcContext {
     scorecard?: ScorecardServiceContract;
+    scorecardUi?: ScorecardUiServiceContract;
   }
 }
 
 const id = z.string().uuid();
 const weights = z.record(id, z.number().finite().positive());
+const uiData = z.record(z.string(), z.unknown());
 
 const scorecardAuthor = () => requireRole("strategy_analyst", "seo_administrator");
 const mapEditor = () => requireRole("strategy_analyst");
@@ -109,6 +116,13 @@ function service(ctx: { scorecard?: ScorecardServiceContract }): ScorecardServic
     throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Scorecard service unavailable" });
   }
   return ctx.scorecard;
+}
+
+function uiService(ctx: { scorecardUi?: ScorecardUiServiceContract }): ScorecardUiServiceContract {
+  if (!ctx.scorecardUi) {
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Scorecard UI persistence unavailable" });
+  }
+  return ctx.scorecardUi;
 }
 
 function fail(error: unknown): never {
@@ -143,6 +157,16 @@ export const scorecardRouter = router({
     .mutation(async ({ ctx, input }) => {
       try { return await service(ctx).createScorecard(input); } catch (error) { return fail(error); }
     }),
+  ui: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      try { return await uiService(ctx).list(); } catch (error) { return fail(error); }
+    }),
+    save: scorecardAuthor()
+      .input(z.object({ scorecardId: id, uiData }).strict())
+      .mutation(async ({ ctx, input }) => {
+        try { return await uiService(ctx).save(input); } catch (error) { return fail(error); }
+      }),
+  }),
   perspective: router({
     add: scorecardAuthor()
       .input(z.object({ scorecardId: id, nameEn: z.string().trim().min(1).max(300), nameAr: z.string().trim().min(1).max(300), order: z.number().int().min(0), approvalCaseId: id }).strict())
