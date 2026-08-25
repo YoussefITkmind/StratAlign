@@ -1,10 +1,11 @@
 import { ArrowRight, Trash2 } from "lucide-react";
+import type { LinkStrength } from "@/lib/strategyMapVisualConfig";
 
 export interface MapLinkRow {
   id: string;
   fromObjectiveId: string;
   toObjectiveId: string;
-  strength: "weak" | "strong";
+  strength: LinkStrength;
 }
 
 export default function MapLinks({
