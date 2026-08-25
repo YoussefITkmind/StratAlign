@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   Search, Download, Plus, BookOpen,
@@ -270,7 +271,12 @@ export default function BalancedScorecardsPage() {
           const statusCfg = SCORECARD_STATUS_CONFIG[sc.status];
           const color = scoreColor(sc.score);
           return (
-            <div key={sc.id} className="flex flex-col gap-2 border-b border-gray-100 px-4 py-3 last:border-b-0 hover:bg-gray-50 md:h-16 md:flex-row md:items-center md:justify-between md:py-0">
+            <Link
+              key={sc.id}
+              href={`/balanced-scorecards/${sc.id}`}
+              aria-label={`Open ${sc.name}`}
+              className="flex flex-col gap-2 border-b border-gray-100 px-4 py-3 last:border-b-0 hover:bg-gray-50 md:h-16 md:flex-row md:items-center md:justify-between md:py-0"
+            >
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50">
                   <BookOpen className="h-4 w-4 text-blue-600" />
@@ -296,7 +302,7 @@ export default function BalancedScorecardsPage() {
                 </div>
                 <div className="hidden w-9 shrink-0 md:block" aria-hidden="true" />
               </div>
-            </div>
+            </Link>
           );
         })}
       </div>
