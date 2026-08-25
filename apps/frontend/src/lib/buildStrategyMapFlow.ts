@@ -1,6 +1,7 @@
 import type { Node, Edge } from "@xyflow/react";
 import {
   LANE_HEIGHT, NODE_WIDTH, NODE_HEIGHT, COLUMN_WIDTH, COLUMN_START_X, LANE_LABEL_WIDTH,
+  type LinkStrength,
 } from "@/lib/strategyMapVisualConfig";
 
 export interface MapPerspective { id: string; nameEn: string; nameAr: string; order: number; weight?: number }
@@ -16,7 +17,7 @@ export interface MapLinkRow {
   id: string;
   fromObjectiveId: string;
   toObjectiveId: string;
-  strength: "weak" | "strong";
+  strength: LinkStrength;
 }
 
 export function buildLaneAndObjectiveNodes(
