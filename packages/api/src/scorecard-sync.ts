@@ -101,7 +101,7 @@ function fail(error: unknown): never {
 }
 
 const author = () => requireRole("strategy_analyst", "seo_administrator");
-const mapEditor = () => requireRole("strategy_analyst");
+const mapEditor = () => requireRole("strategy_analyst", "seo_administrator");
 
 const objectiveInput = z.object({
   scorecardId: id,
