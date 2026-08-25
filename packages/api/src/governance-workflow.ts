@@ -7,10 +7,22 @@ interface GovernanceCaseRecord {
   entityType: string;
   entityId: string;
   submittedBy: string;
+  approvalParticipantId: string | null;
   currentState: string;
 }
 
 type GovernanceCaseWithRuntime = GovernanceCaseRecord & Record<string, unknown>;
+
+type GovernanceWorkflowEvent =
+  | {
+      type: "APPROVE" | "REJECT" | "REQUEST_CHANGES";
+      actorUserId: string;
+      rationale?: string;
+    }
+  | {
+      type: "RESUBMIT";
+      actorUserId: string;
+    };
 
 interface GovernanceWorkflowService {
   getCase(caseId: string): Promise<GovernanceCaseWithRuntime>;
@@ -20,11 +32,8 @@ interface GovernanceWorkflowService {
   ): Promise<GovernanceCaseWithRuntime | null>;
   transition(input: {
     caseId: string;
-    event: {
-      type: "RESUBMIT";
-      actorUserId: string;
-    };
-  }): Promise<unknown>;
+    event: GovernanceWorkflowEvent;
+  }): Promise<GovernanceCaseWithRuntime>;
 }
 
 interface IamDirectoryService {
@@ -91,6 +100,49 @@ export const governanceWorkflowRouter = router({
       return [{ id, name: displayName || email || "User" }];
     });
   }),
+
+  decide: protectedProcedure
+    .input(
+      z.object({
+        caseId: z.string().uuid(),
+        decision: z.enum(["approve", "reject", "request_changes"]),
+        rationale: z.string().trim().max(4000).optional(),
+      }).strict(),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const service = governance(ctx);
+      const approvalCase = await service.getCase(input.caseId);
+
+      if (approvalCase.approvalParticipantId !== ctx.session.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only the assigned approver can decide this approval case.",
+        });
+      }
+
+      if (approvalCase.currentState !== "PENDING_APPROVAL") {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Only a pending approval case can be decided.",
+        });
+      }
+
+      const type =
+        input.decision === "approve"
+          ? "APPROVE" as const
+          : input.decision === "request_changes"
+            ? "REQUEST_CHANGES" as const
+            : "REJECT" as const;
+
+      return service.transition({
+        caseId: input.caseId,
+        event: {
+          type,
+          actorUserId: ctx.session.user.id,
+          ...(input.rationale ? { rationale: input.rationale } : {}),
+        },
+      });
+    }),
 
   resubmit: protectedProcedure
     .input(z.object({ caseId: z.string().uuid() }).strict())

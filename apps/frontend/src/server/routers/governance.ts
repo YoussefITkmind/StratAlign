@@ -211,7 +211,7 @@ export const governanceRouter = router({
     }).strict())
     .mutation(async ({ ctx, input }) => {
       try {
-        const item = await backend(ctx).governance.decide.mutate({
+        const item = await backend(ctx).governanceWorkflow.decide.mutate({
           caseId: input.id,
           decision:
             input.decision === "approved"
