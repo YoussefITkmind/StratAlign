@@ -360,7 +360,7 @@ export class ExecutionService {
         u.display_name AS owner_display_name, i.stage, i.updated_at,
         s.status AS latest_status, s.confidence AS latest_confidence,
         (j.id IS NOT NULL) AS has_jira_link,
-        COALESCE(p.project_count, 0)::int AS linked_project_count,
+        (CASE WHEN j.id IS NULL THEN 0 ELSE 1 END)::int AS linked_project_count,
         EXISTS (
           SELECT 1 FROM "strategy"."owner_assignments" oa
           WHERE oa.node_id = i.strategic_play_node_id
@@ -376,11 +376,6 @@ export class ExecutionService {
         LIMIT 1
       ) s ON true
       LEFT JOIN "execution"."jira_links" j ON j.initiative_id = i.id
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*) AS project_count
-        FROM "execution"."projects" pr
-        WHERE pr.parent_initiative_id = i.id
-      ) p ON true
       ORDER BY i.updated_at DESC, i.id DESC
     `;
 
