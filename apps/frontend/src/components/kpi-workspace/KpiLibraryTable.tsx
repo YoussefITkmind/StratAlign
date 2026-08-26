@@ -6,6 +6,7 @@ import {
   TrendingUp, Users, Activity, Zap, Pencil, Check, Clock,
 } from "lucide-react";
 import { kpiLibraryRows, type KpiLibraryRow, type KpiPerspective, type KpiApproval, type KpiStatus } from "@/data/mockKpiLibrary";
+import { trpc } from "@/lib/trpc/client";
 import KpiDetailDrawer from "./KpiDetailDrawer";
 import AiSuggestModal from "./AiSuggestModal";
 import CreateKpiModal from "./CreateKpiModal";
@@ -65,7 +66,12 @@ function HeaderCell({ label, className = "" }: { label: string; className?: stri
   );
 }
 
+function normaliseName(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 export default function KpiLibraryTable() {
+  const registryKpis = trpc.registry.kpi.list.useQuery();
   const [allRows, setAllRows] = useState<KpiLibraryRow[]>(kpiLibraryRows);
   const [search, setSearch] = useState("");
   const [perspective, setPerspective] = useState<"all" | KpiPerspective>("all");
@@ -75,10 +81,34 @@ export default function KpiLibraryTable() {
   const [selectedKpi, setSelectedKpi] = useState<KpiLibraryRow | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
-  const departments = useMemo(() => Array.from(new Set(allRows.map((r) => r.department))).sort(), [allRows]);
+  const persistedRows = useMemo<KpiLibraryRow[]>(() => {
+    const existingNames = new Set(allRows.map((row) => normaliseName(row.name)));
+    return (registryKpis.data ?? [])
+      .filter((item) => !existingNames.has(normaliseName(item.version.nameEn)))
+      .map((item) => ({
+        id: item.definition.id,
+        name: item.version.nameEn,
+        tag: "Registry",
+        perspective: "internal",
+        department: "Unassigned",
+        owner: { initials: "RG", name: "Assigned owner", color: "bg-slate-500" },
+        actual: "—",
+        target: "—",
+        variance: "—",
+        favorable: true,
+        trend: [0, 0, 0, 0, 0, 0],
+        freq: item.version.frequency === "quarterly" ? "Quarterly" : "Monthly",
+        approval: item.version.publishedAt ? "approved" : "draft",
+        status: "on-track",
+        description: item.version.descriptionEn ?? undefined,
+      }));
+  }, [allRows, registryKpis.data]);
+
+  const displayRows = useMemo(() => [...persistedRows, ...allRows], [persistedRows, allRows]);
+  const departments = useMemo(() => Array.from(new Set(displayRows.map((r) => r.department))).sort(), [displayRows]);
 
   const rows = useMemo(() => {
-    return allRows.filter((row) => {
+    return displayRows.filter((row) => {
       if (perspective !== "all" && row.perspective !== perspective) return false;
       if (department !== "all" && row.department !== department) return false;
       if (status !== "all" && row.status !== status) return false;
@@ -86,7 +116,7 @@ export default function KpiLibraryTable() {
       if (search.trim() && !row.name.toLowerCase().includes(search.trim().toLowerCase())) return false;
       return true;
     });
-  }, [allRows, search, perspective, department, status, approval]);
+  }, [displayRows, search, perspective, department, status, approval]);
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white">
@@ -328,7 +358,13 @@ export function KpiStatusBadge({ label, count, tone }: { label: string; count: n
 }
 
 export function KpiLibraryActions() {
+  const utils = trpc.useUtils();
   const [showAiSuggest, setShowAiSuggest] = useState(false);
+  const closeAiSuggest = () => {
+    setShowAiSuggest(false);
+    void utils.registry.kpi.list.invalidate();
+  };
+
   return (
     <div className="flex items-center gap-2">
       <button className="flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
@@ -341,7 +377,7 @@ export function KpiLibraryActions() {
         <Sparkles className="h-4 w-4" /> AI Suggest
       </button>
 
-      {showAiSuggest && <AiSuggestModal onClose={() => setShowAiSuggest(false)} />}
+      {showAiSuggest && <AiSuggestModal onClose={closeAiSuggest} />}
     </div>
   );
 }
