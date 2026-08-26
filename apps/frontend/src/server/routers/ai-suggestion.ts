@@ -37,10 +37,9 @@ const acceptInput = z.object({
   themeNodeId: id,
   kind: z.enum(["kpi", "okr"]),
   titleEn: z.string().trim().min(1).max(300),
-  // Required: AI generation is English-only, so the reviewer supplies this
-  // before accepting. The domain layer (KpiRegistryService/OkrService)
-  // genuinely refuses to persist a KPI/OKR without it — unchanged from
-  // before this migration.
+  // Required by the underlying registry contract. The AI suggestion proxy
+  // supplies the English title as the fallback when generation leaves this
+  // empty, so reviewers do not have to provide a separate Arabic title.
   titleAr: z.string().trim().min(1).max(300),
   descriptionEn: z.string().trim().max(2000).nullish(),
   descriptionAr: z.string().trim().max(2000).nullish(),
@@ -65,8 +64,16 @@ export const aiSuggestionRouter = router({
     themeNodeId: id,
     kinds: z.array(z.enum(["kpi", "okr"])).min(1).max(2),
     maxSuggestions: z.number().int().min(1).max(12),
-  }).strict()).mutation(({ ctx, input }) =>
-    forward(() => backend(ctx).aiSuggestion.generate.mutate(input))),
+  }).strict()).mutation(async ({ ctx, input }) => {
+    const result = await forward(() => backend(ctx).aiSuggestion.generate.mutate(input));
+    return {
+      ...result,
+      suggestions: result.suggestions.map((suggestion) => ({
+        ...suggestion,
+        titleAr: suggestion.titleAr ?? suggestion.titleEn,
+      })),
+    };
+  }),
 
   accept: authenticatedProcedure.input(acceptInput)
     .mutation(({ ctx, input }) =>
