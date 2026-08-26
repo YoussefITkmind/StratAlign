@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
 import { usePublishAssistantContext } from "@/lib/assistant/assistant-context";
+import { StrategyNodeDetailPanel } from "@/components/strategy/StrategyNodeDetailPanel";
 import {
   buildCanonicalForest,
   CANONICAL_NODE_TYPE_LABELS,
@@ -117,11 +118,36 @@ function flattenForest(forest: readonly CanonicalStrategyTreeNode[]) {
   return rows;
 }
 
+function dedupeForest(forest: readonly CanonicalStrategyTreeNode[]): CanonicalStrategyTreeNode[] {
+  const seen = new Set<string>();
+  const visit = (node: CanonicalStrategyTreeNode): CanonicalStrategyTreeNode | null => {
+    if (seen.has(node.id)) return null;
+    seen.add(node.id);
+    const children = node.children
+      .map(visit)
+      .filter((child): child is CanonicalStrategyTreeNode => Boolean(child));
+    return { ...node, children };
+  };
+  return forest.map(visit).filter((node): node is CanonicalStrategyTreeNode => Boolean(node));
+}
+
+function matchesListFilters(node: CanonicalStrategyNode, filters: CanonicalHierarchyFilters) {
+  const search = filters.search.trim().toLowerCase();
+  const searchMatch =
+    !search ||
+    node.nameEn.toLowerCase().includes(search) ||
+    CANONICAL_NODE_TYPE_LABELS[node.type].toLowerCase().includes(search);
+  const typeMatch = filters.type === "all" || node.type === filters.type;
+  const stateMatch = filters.state === "all" || node.state === filters.state;
+  return searchMatch && typeMatch && stateMatch;
+}
+
 export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Props) {
   const utils = trpc.useUtils();
   const plans = trpc.strategy.plans.useQuery();
   const nodes = trpc.strategy.nodes.useQuery();
   const people = trpc.governance.listApprovers.useQuery();
+  const initiatives = trpc.execution.initiative.list.useQuery({ scope: "all" });
 
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -166,9 +192,18 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
     [nodes.data, selectedPlanId],
   );
 
-  const forest = useMemo(() => buildCanonicalForest(planNodes, edges.data ?? []), [planNodes, edges.data]);
+  const rawForest = useMemo(
+    () => buildCanonicalForest(planNodes, edges.data ?? []),
+    [planNodes, edges.data],
+  );
+  const forest = useMemo(() => dedupeForest(rawForest), [rawForest]);
   const filteredForest = useMemo(() => filterCanonicalForest(forest, filters), [forest, filters]);
-  const flatRows = useMemo(() => flattenForest(filteredForest), [filteredForest]);
+  const listNodes = useMemo(
+    () => planNodes
+      .filter((node) => matchesListFilters(node, filters))
+      .sort((a, b) => CANONICAL_NODE_TYPE_LABELS[a.type].localeCompare(CANONICAL_NODE_TYPE_LABELS[b.type]) || a.nameEn.localeCompare(b.nameEn)),
+    [filters, planNodes],
+  );
   const filtering = Boolean(filters.search.trim() || filters.type !== "all" || filters.state !== "all");
 
   const peopleById = useMemo(
@@ -214,6 +249,7 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
       utils.strategy.plans.invalidate(),
       utils.strategy.nodes.invalidate(),
       selectedPlanId ? utils.strategy.edges.invalidate({ planVersionId: selectedPlanId }) : Promise.resolve(),
+      utils.execution.initiative.list.invalidate(),
     ]);
   };
 
@@ -307,8 +343,9 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
   };
 
   const handleRetire = async (node: CanonicalStrategyTreeNode) => {
-    if (node.children.length > 0) {
-      setError("Retire child nodes first. A parent with active children cannot be retired from this editor.");
+    const hasOutgoingRelationships = (edges.data ?? []).some((edge) => edge.fromNodeId === node.id);
+    if (hasOutgoingRelationships) {
+      setError("Remove or retire child relationships first. A connected parent cannot be retired from this editor.");
       return;
     }
     if (!window.confirm(`Retire “${node.nameEn}”?`)) return;
@@ -348,14 +385,10 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
 
   return (
     <div className="w-full p-6">
-      <div className="mb-4 flex items-center gap-1.5 text-sm text-gray-500">
-        <span>Home</span><ChevronRight className="h-3.5 w-3.5" /><span>Strategy</span><ChevronRight className="h-3.5 w-3.5" /><span className="font-medium text-gray-900">Strategy Hierarchy</span>
-      </div>
-
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-[26px] font-bold text-gray-900">Strategy Hierarchy</h1>
-          <p className="mt-1 text-sm text-gray-500">Manage your complete organizational strategy · {planNodes.length} nodes</p>
+          <p className="mt-1 text-sm text-gray-500">Manage your complete organizational strategy · {planNodes.length} canonical nodes</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button onClick={exportJson} disabled={!selectedPlan} className="flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40">
@@ -386,57 +419,34 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
-            <select
-              value={selectedPlanId}
-              onChange={(event) => setSelectedPlanId(event.target.value)}
-              className="min-w-[280px] appearance-none rounded-full border border-gray-300 bg-white py-2 pl-4 pr-10 text-sm font-medium text-gray-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-            >
+            <select value={selectedPlanId} onChange={(event) => setSelectedPlanId(event.target.value)} className="min-w-[280px] appearance-none rounded-full border border-gray-300 bg-white py-2 pl-4 pr-10 text-sm font-medium text-gray-800 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
               {!plans.data?.length && <option value="">No plan versions</option>}
-              {plans.data?.map((plan) => (
-                <option key={plan.id} value={plan.id}>
-                  {plan.name} · {PLAN_STATUS_LABELS[plan.status as PlanStatus]}
-                </option>
-              ))}
+              {plans.data?.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} · {PLAN_STATUS_LABELS[plan.status as PlanStatus]}</option>)}
             </select>
             <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           </div>
-          {selectedPlan && (
-            <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold ${PLAN_STATUS_STYLES[selectedPlan.status as PlanStatus]}`}>
-              <CircleDot className="h-3.5 w-3.5" /> {PLAN_STATUS_LABELS[selectedPlan.status as PlanStatus]}
-            </span>
-          )}
-          <button onClick={() => void refresh()} className="rounded-full border border-gray-300 p-2.5 text-gray-500 hover:bg-gray-50" title="Refresh persisted strategy">
-            <RefreshCw className="h-4 w-4" />
-          </button>
+          {selectedPlan && <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-2 text-xs font-semibold ${PLAN_STATUS_STYLES[selectedPlan.status as PlanStatus]}`}><CircleDot className="h-3.5 w-3.5" /> {PLAN_STATUS_LABELS[selectedPlan.status as PlanStatus]}</span>}
+          <button onClick={() => void refresh()} className="rounded-full border border-gray-300 p-2.5 text-gray-500 hover:bg-gray-50" title="Refresh persisted strategy"><RefreshCw className="h-4 w-4" /></button>
         </div>
-        {selectedPlan?.status === "draft" && <span className="text-xs text-gray-500">Draft plans are editable. Activate when the hierarchy is complete.</span>}
+        {selectedPlan?.status === "draft" && <span className="text-xs text-gray-500">Draft plans are editable. Activation closes the previous active plan and publishes this hierarchy.</span>}
       </div>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-            <input
-              value={filters.search}
-              onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
-              placeholder="Search nodes..."
-              className="w-64 rounded-full border border-gray-300 py-2 pl-9 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-            />
+            <input value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Search nodes..." className="w-64 rounded-full border border-gray-300 py-2 pl-9 pr-4 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
           </div>
           <select value={filters.type} onChange={(event) => setFilters((current) => ({ ...current, type: event.target.value as CanonicalHierarchyFilters["type"] }))} className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500">
             <option value="all">All Types</option>
             {Object.entries(CANONICAL_NODE_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
           <select value={filters.state} onChange={(event) => setFilters((current) => ({ ...current, state: event.target.value as CanonicalHierarchyFilters["state"] }))} className="rounded-full border border-gray-300 px-4 py-2 text-sm text-gray-700 outline-none focus:border-indigo-500">
-            <option value="all">All States</option>
-            <option value="draft">Draft</option>
-            <option value="active">Active</option>
+            <option value="all">All States</option><option value="draft">Draft</option><option value="active">Active</option><option value="retired">Retired</option>
           </select>
         </div>
-
         <div className="flex items-center gap-2">
-          <button onClick={expandAll} title="Expand all" className="rounded-lg border border-gray-300 p-2 text-gray-500 hover:bg-gray-50"><Maximize2 className="h-4 w-4" /></button>
-          <button onClick={collapseAll} title="Collapse all" className="rounded-lg border border-gray-300 p-2 text-gray-500 hover:bg-gray-50"><Minimize2 className="h-4 w-4" /></button>
+          {view === "tree" && <><button onClick={expandAll} title="Expand all" className="rounded-lg border border-gray-300 p-2 text-gray-500 hover:bg-gray-50"><Maximize2 className="h-4 w-4" /></button><button onClick={collapseAll} title="Collapse all" className="rounded-lg border border-gray-300 p-2 text-gray-500 hover:bg-gray-50"><Minimize2 className="h-4 w-4" /></button></>}
           <div className="flex items-center rounded-full border border-gray-300 p-1">
             <button onClick={() => setView("tree")} className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${view === "tree" ? "bg-gray-900 text-white" : "text-gray-600"}`}><Network className="h-3.5 w-3.5" /> Tree</button>
             <button onClick={() => setView("list")} className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${view === "list" ? "bg-gray-900 text-white" : "text-gray-600"}`}><LayoutList className="h-3.5 w-3.5" /> List</button>
@@ -444,53 +454,59 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-        <div className="grid grid-cols-[minmax(0,1fr)_120px_120px] items-center border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-          <span>Name</span><span>Owner</span><span>State</span>
+      <div className={`grid items-start gap-4 ${selectedNode && selectedPlan ? "xl:grid-cols-[minmax(0,1fr)_380px]" : ""}`}>
+        <div className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white">
+          <div className="grid grid-cols-[minmax(0,1fr)_150px_110px] items-center border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <span>Name</span><span>Created by</span><span>State</span>
+          </div>
+
+          {loading && <div className="flex items-center justify-center gap-2 px-4 py-16 text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin" /> Loading strategy hierarchy…</div>}
+          {!loading && queryError && <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center text-sm text-red-500"><AlertTriangle className="h-5 w-5" />Couldn&apos;t load the strategy hierarchy. Please try again.</div>}
+          {!loading && !queryError && !selectedPlan && <EmptyState title="No strategy plan yet" body="Create a draft plan to start building the canonical strategy hierarchy." action={canManageStrategy ? () => setShowPlanModal(true) : undefined} actionLabel="Create Draft Plan" />}
+          {!loading && !queryError && selectedPlan && forest.length === 0 && <EmptyState title="This plan has no strategy nodes" body={isDraft ? "Start with a Corporate Strategy, then add Themes, Objectives and Strategic Plays underneath it." : "No active strategy nodes were found for this plan."} action={canEdit ? () => setEditor({ mode: "create", parent: null }) : undefined} actionLabel="Add Corporate Strategy" />}
+          {!loading && !queryError && view === "tree" && forest.length > 0 && filteredForest.length === 0 && <EmptyState title="No nodes match your filters" body="Change the search or filters to see more of this strategy." />}
+          {!loading && !queryError && view === "list" && planNodes.length > 0 && listNodes.length === 0 && <EmptyState title="No nodes match your filters" body="Change the search or filters to see more of this strategy." />}
+
+          {!loading && !queryError && view === "tree" && filteredForest.map((root, index) => (
+            <HierarchyRow
+              key={root.id}
+              node={root}
+              depth={0}
+              lines={[]}
+              hasNextSibling={index < filteredForest.length - 1}
+              expandedIds={expandedIds}
+              forceExpanded={filtering}
+              setExpandedIds={setExpandedIds}
+              canEdit={canEdit}
+              selectedNodeId={selectedNodeId}
+              peopleById={peopleById}
+              onSelect={setSelectedNodeId}
+              onAdd={(node) => setEditor({ mode: "create", parent: node })}
+              onEdit={(node) => setEditor({ mode: "edit", node })}
+              onRetire={handleRetire}
+            />
+          ))}
+
+          {!loading && !queryError && view === "list" && listNodes.map((node) => (
+            <ListRow key={node.id} node={node} selected={node.id === selectedNodeId} creatorName={peopleById.get(node.createdBy) ?? "—"} onSelect={() => setSelectedNodeId(node.id)} />
+          ))}
         </div>
 
-        {loading && <div className="flex items-center justify-center gap-2 px-4 py-16 text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin" /> Loading strategy hierarchy…</div>}
-        {!loading && queryError && <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center text-sm text-red-500"><AlertTriangle className="h-5 w-5" />Couldn&apos;t load the strategy hierarchy. Please try again.</div>}
-        {!loading && !queryError && !selectedPlan && <EmptyState title="No strategy plan yet" body="Create a draft plan to start building the canonical strategy hierarchy." action={canManageStrategy ? () => setShowPlanModal(true) : undefined} actionLabel="Create Draft Plan" />}
-        {!loading && !queryError && selectedPlan && forest.length === 0 && <EmptyState title="This plan has no strategy nodes" body={isDraft ? "Start with a Corporate Strategy, then add Themes, Objectives and Strategic Plays underneath it." : "No active strategy nodes were found for this plan."} action={canEdit ? () => setEditor({ mode: "create", parent: null }) : undefined} actionLabel="Add Corporate Strategy" />}
-        {!loading && !queryError && forest.length > 0 && filteredForest.length === 0 && <EmptyState title="No nodes match your filters" body="Change the search or filters to see more of this strategy." />}
-
-        {!loading && !queryError && view === "tree" && filteredForest.map((root, index) => (
-          <HierarchyRow
-            key={root.id}
-            node={root}
-            depth={0}
-            lines={[]}
-            hasNextSibling={index < filteredForest.length - 1}
-            expandedIds={expandedIds}
-            forceExpanded={filtering}
-            setExpandedIds={setExpandedIds}
-            canEdit={canEdit}
-            selectedNodeId={selectedNodeId}
+        {selectedNode && selectedPlan && (
+          <StrategyNodeDetailPanel
+            node={selectedNode}
+            plan={selectedPlan}
+            nodes={planNodes}
+            edges={edges.data ?? []}
             peopleById={peopleById}
-            onSelect={setSelectedNodeId}
-            onAdd={(node) => setEditor({ mode: "create", parent: node })}
-            onEdit={(node) => setEditor({ mode: "edit", node })}
-            onRetire={handleRetire}
+            initiatives={initiatives.data ?? []}
+            onClose={() => setSelectedNodeId(null)}
           />
-        ))}
-
-        {!loading && !queryError && view === "list" && flatRows.map(({ node, depth }, rowIndex) => (
-          <ListRow key={`${node.id}:${depth}:${rowIndex}`} node={node} depth={depth} selected={node.id === selectedNodeId} ownerName={peopleById.get(node.createdBy) ?? "Unassigned"} onSelect={() => setSelectedNodeId(node.id)} />
-        ))}
+        )}
       </div>
 
       {showPlanModal && <NewPlanModal pending={createPlan.isPending} onClose={() => setShowPlanModal(false)} onCreate={(name) => createPlan.mutate({ name })} />}
-      {editor && selectedPlan && (
-        <NodeEditorModal
-          state={editor}
-          people={people.data ?? []}
-          pending={createNode.isPending || linkEdge.isPending || updateNode.isPending || assignOwner.isPending}
-          onClose={() => setEditor(null)}
-          onCreate={handleCreateNode}
-          onUpdate={handleUpdateNode}
-        />
-      )}
+      {editor && selectedPlan && <NodeEditorModal state={editor} people={people.data ?? []} pending={createNode.isPending || linkEdge.isPending || updateNode.isPending || assignOwner.isPending} onClose={() => setEditor(null)} onCreate={handleCreateNode} onUpdate={handleUpdateNode} />}
     </div>
   );
 }
@@ -515,9 +531,9 @@ function HierarchyRow({ node, depth, lines, hasNextSibling, expandedIds, forceEx
 }) {
   const hasChildren = node.children.length > 0;
   const open = forceExpanded || expandedIds.has(node.id);
-  const typeStyle = TYPE_STYLES[node.type];
+  const style = TYPE_STYLES[node.type];
   const Icon = TYPE_ICONS[node.type];
-  const ownerName = peopleById.get(node.createdBy) ?? "Unassigned";
+  const creatorName = peopleById.get(node.createdBy) ?? "—";
   const allowedChildren = getAllowedChildRelationships(node.type);
   const selected = selectedNodeId === node.id;
 
@@ -529,33 +545,24 @@ function HierarchyRow({ node, depth, lines, hasNextSibling, expandedIds, forceEx
 
   return (
     <>
-      <div onClick={() => onSelect(node.id)} className={`group grid min-h-[52px] cursor-pointer grid-cols-[minmax(0,1fr)_120px_120px] items-stretch border-b border-gray-100 hover:bg-gray-50 ${selected ? "bg-indigo-50/60 hover:bg-indigo-50/60" : ""}`}>
+      <div onClick={() => onSelect(node.id)} className={`group grid min-h-[54px] cursor-pointer grid-cols-[minmax(0,1fr)_150px_110px] items-stretch border-b border-gray-100 transition hover:bg-gray-50 ${selected ? "bg-indigo-50/70 hover:bg-indigo-50/70" : ""}`}>
         <div className="flex min-w-0 items-stretch">
           {depth > 0 && Array.from({ length: depth }).map((_, column) => {
             const elbow = column === depth - 1;
-            return (
-              <div key={column} className="relative w-6 shrink-0">
-                {elbow ? <><span className="absolute left-1/2 top-0 w-px -translate-x-1/2 bg-gray-200" style={{ height: ELBOW_Y }} />{hasNextSibling && <span className="absolute bottom-0 left-1/2 w-px -translate-x-1/2 bg-gray-200" style={{ top: ELBOW_Y }} />}<span className="absolute left-1/2 h-px w-3 -translate-y-1/2 bg-gray-200" style={{ top: ELBOW_Y }} /></> : lines[column] && <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-gray-200" />}
-              </div>
-            );
+            return <div key={column} className="relative w-6 shrink-0">{elbow ? <><span className="absolute left-1/2 top-0 w-px -translate-x-1/2 bg-gray-200" style={{ height: ELBOW_Y }} />{hasNextSibling && <span className="absolute bottom-0 left-1/2 w-px -translate-x-1/2 bg-gray-200" style={{ top: ELBOW_Y }} />}<span className="absolute left-1/2 h-px w-3 -translate-y-1/2 bg-gray-200" style={{ top: ELBOW_Y }} /></> : lines[column] && <span className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-gray-200" />}</div>;
           })}
-          <div className="relative w-7 shrink-0">
-            {hasChildren && <button onClick={(event) => { event.stopPropagation(); toggle(); }} className="absolute left-1/2 top-[26px] -translate-x-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700">{open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</button>}
-          </div>
+          <div className="relative w-7 shrink-0">{hasChildren && <button onClick={(event) => { event.stopPropagation(); toggle(); }} className="absolute left-1/2 top-[27px] -translate-x-1/2 -translate-y-1/2 rounded p-0.5 text-gray-400 hover:bg-gray-200 hover:text-gray-700">{open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</button>}</div>
           <div className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-3">
-            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${typeStyle.bg}`}><Icon className={`h-3.5 w-3.5 ${typeStyle.text}`} /></span>
+            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${style.bg}`}><Icon className={`h-4 w-4 ${style.text}`} /></span>
             <div className="flex min-w-0 items-center gap-2">
-              <span className="truncate text-[15px] font-medium text-gray-900">{node.nameEn}</span>
-              <span className="hidden shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 xl:inline">{CANONICAL_NODE_TYPE_LABELS[node.type]}</span>
+              <span className="truncate text-[14px] font-semibold text-gray-900">{node.nameEn}</span>
+              <span className="hidden shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 lg:inline">{CANONICAL_NODE_TYPE_LABELS[node.type]}</span>
               {node.relationshipFromParent && <span className="hidden shrink-0 text-[10px] text-gray-400 2xl:inline">{CANONICAL_RELATIONSHIP_LABELS[node.relationshipFromParent]}</span>}
             </div>
             {canEdit && <div className="ml-auto hidden items-center gap-0.5 group-hover:flex">{allowedChildren.length > 0 && <button onClick={(event) => { event.stopPropagation(); onAdd(node); }} title="Add child" className="rounded p-1 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600"><Plus className="h-3.5 w-3.5" /></button>}<button onClick={(event) => { event.stopPropagation(); onEdit(node); }} title="Edit" className="rounded p-1 text-gray-400 hover:bg-blue-50 hover:text-blue-600"><Edit3 className="h-3.5 w-3.5" /></button><button onClick={(event) => { event.stopPropagation(); onRetire(node); }} title="Retire" className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button></div>}
           </div>
         </div>
-        <div className="flex items-center gap-2 px-2">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-[10px] font-semibold text-white" title={ownerName}>{initials(ownerName)}</span>
-          <span className="truncate text-xs text-gray-500">{ownerName}</span>
-        </div>
+        <div className="flex items-center gap-2 px-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-[10px] font-semibold text-white">{initials(creatorName)}</span><span className="truncate text-xs text-gray-500">{creatorName}</span></div>
         <div className="flex items-center px-2"><span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${NODE_STATE_STYLES[node.state]}`}>{CANONICAL_STATE_LABELS[node.state]}</span></div>
       </div>
       {hasChildren && open && node.children.map((child, index) => <HierarchyRow key={child.id} node={child} depth={depth + 1} lines={[...lines, hasNextSibling]} hasNextSibling={index < node.children.length - 1} expandedIds={expandedIds} forceExpanded={forceExpanded} setExpandedIds={setExpandedIds} canEdit={canEdit} selectedNodeId={selectedNodeId} peopleById={peopleById} onSelect={onSelect} onAdd={onAdd} onEdit={onEdit} onRetire={onRetire} />)}
@@ -563,10 +570,10 @@ function HierarchyRow({ node, depth, lines, hasNextSibling, expandedIds, forceEx
   );
 }
 
-function ListRow({ node, depth, selected, ownerName, onSelect }: { node: CanonicalStrategyTreeNode; depth: number; selected: boolean; ownerName: string; onSelect: () => void }) {
-  const typeStyle = TYPE_STYLES[node.type];
+function ListRow({ node, selected, creatorName, onSelect }: { node: CanonicalStrategyNode; selected: boolean; creatorName: string; onSelect: () => void }) {
+  const style = TYPE_STYLES[node.type];
   const Icon = TYPE_ICONS[node.type];
-  return <div onClick={onSelect} className={`grid min-h-[52px] cursor-pointer grid-cols-[minmax(0,1fr)_120px_120px] items-center border-b border-gray-100 px-4 hover:bg-gray-50 ${selected ? "bg-indigo-50/60" : ""}`}><div className="flex min-w-0 items-center gap-2.5" style={{ paddingLeft: depth * 16 }}><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${typeStyle.bg}`}><Icon className={`h-3.5 w-3.5 ${typeStyle.text}`} /></span><span className="truncate text-[15px] text-gray-900">{node.nameEn}</span><span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">{CANONICAL_NODE_TYPE_LABELS[node.type]}</span></div><div className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-500 text-[10px] font-semibold text-white">{initials(ownerName)}</span><span className="truncate text-xs text-gray-500">{ownerName}</span></div><div><span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${NODE_STATE_STYLES[node.state]}`}>{CANONICAL_STATE_LABELS[node.state]}</span></div></div>;
+  return <div onClick={onSelect} className={`grid min-h-[54px] cursor-pointer grid-cols-[minmax(0,1fr)_150px_110px] items-center border-b border-gray-100 px-4 transition hover:bg-gray-50 ${selected ? "bg-indigo-50/70" : ""}`}><div className="flex min-w-0 items-center gap-2.5"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${style.bg}`}><Icon className={`h-4 w-4 ${style.text}`} /></span><div className="min-w-0"><p className="truncate text-[14px] font-semibold text-gray-900">{node.nameEn}</p><p className="mt-0.5 text-[10px] font-medium text-gray-400">{CANONICAL_NODE_TYPE_LABELS[node.type]}</p></div></div><div className="flex items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-500 text-[10px] font-semibold text-white">{initials(creatorName)}</span><span className="truncate text-xs text-gray-500">{creatorName}</span></div><div><span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${NODE_STATE_STYLES[node.state]}`}>{CANONICAL_STATE_LABELS[node.state]}</span></div></div>;
 }
 
 function EmptyState({ title, body, action, actionLabel }: { title: string; body: string; action?: () => void; actionLabel?: string }) {
@@ -575,7 +582,7 @@ function EmptyState({ title, body, action, actionLabel }: { title: string; body:
 
 function NewPlanModal({ pending, onClose, onCreate }: { pending: boolean; onClose: () => void; onCreate: (name: string) => void }) {
   const [name, setName] = useState("");
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"><div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><div className="flex items-start justify-between"><div><h2 className="text-lg font-bold text-slate-900">New Strategy Plan</h2><p className="mt-1 text-sm text-slate-500">Create a real draft plan version in the canonical strategy model.</p></div><button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button></div><label className="mt-5 block text-sm font-semibold text-slate-700">Plan name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. FY2027 Corporate Strategy" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" /></label><div className="mt-5 flex justify-end gap-2"><button onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button disabled={!name.trim() || pending} onClick={() => onCreate(name.trim())} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{pending ? "Creating…" : "Create Draft Plan"}</button></div></div></div>;
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"><div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><div className="flex items-start justify-between"><div><h2 className="text-lg font-bold text-slate-900">New Strategy Plan</h2><p className="mt-1 text-sm text-slate-500">Create a persisted draft strategy plan.</p></div><button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button></div><label className="mt-5 block text-sm font-semibold text-slate-700">Plan name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. FY2027 Corporate Strategy" className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" /></label><div className="mt-5 flex justify-end gap-2"><button onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button disabled={!name.trim() || pending} onClick={() => onCreate(name.trim())} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{pending ? "Creating…" : "Create Draft Plan"}</button></div></div></div>;
 }
 
 function NodeEditorModal({ state, people, pending, onClose, onCreate, onUpdate }: {
@@ -587,11 +594,7 @@ function NodeEditorModal({ state, people, pending, onClose, onCreate, onUpdate }
   onUpdate: (input: { node: CanonicalStrategyTreeNode; name: string; ownerUserId: string }) => Promise<void>;
 }) {
   const parent = state.mode === "create" ? state.parent : null;
-  const allowed = state.mode === "create"
-    ? parent
-      ? getAllowedChildRelationships(parent.type).map((item) => item.type)
-      : (["corporate_strategy"] as CanonicalStrategyNodeType[])
-    : [state.node.type];
+  const allowed = state.mode === "create" ? parent ? getAllowedChildRelationships(parent.type).map((item) => item.type) : (["corporate_strategy"] as CanonicalStrategyNodeType[]) : [state.node.type];
   const [type, setType] = useState<CanonicalStrategyNodeType>(allowed[0]!);
   const [name, setName] = useState(state.mode === "edit" ? state.node.nameEn : "");
   const [ownerUserId, setOwnerUserId] = useState("");
