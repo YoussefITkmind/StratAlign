@@ -1,21 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Plus, Search, Sparkles } from "lucide-react";
+import {
+  ExternalLink,
+  FolderKanban,
+  Link2,
+  Plus,
+  Search,
+  Target,
+} from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
-import { COLOR_TOKENS, MOCK_INITIATIVES, type InitiativeColor } from "@/data/mockInitiativesBoard";
 import { CreateInitiativeModal } from "@/components/initiatives/CreateInitiativeModal";
 
 type FilterKey = "all" | "on_track" | "at_risk" | "off_track" | "mine";
-type BackendStatus = "on_track" | "at_risk" | "off_track";
+type RegisterTab = "initiatives" | "projects";
+
+interface Props {
+  defaultTab?: RegisterTab;
+}
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "all", label: "All" },
   { key: "on_track", label: "On Track" },
   { key: "at_risk", label: "At Risk" },
   { key: "off_track", label: "Off Track" },
-  { key: "mine", label: "My Plays" },
+  { key: "mine", label: "Mine" },
 ];
 
 const STAGE_LABEL: Record<string, string> = {
@@ -25,153 +35,268 @@ const STAGE_LABEL: Record<string, string> = {
   scale: "Scale",
   done: "Done",
 };
-const STATUS_LABEL: Record<string, string> = { on_track: "On Track", at_risk: "At Risk", off_track: "Off Track" };
-const CONFIDENCE_LABEL: Record<string, string> = { high: "High", medium: "Medium", low: "Low" };
 
-const BOARD_STATUS_TO_BACKEND: Record<string, BackendStatus | null> = {
-  "On Track": "on_track",
-  "At Risk": "at_risk",
-  Behind: "off_track",
-  "In Progress": null,
-  Draft: null,
+const STATUS_LABEL: Record<string, string> = {
+  on_track: "On Track",
+  at_risk: "At Risk",
+  off_track: "Off Track",
 };
-const BOARD_STAGE_TO_BACKEND: Record<string, string> = {
-  Discovery: "design",
-  Execution: "execute",
-  Delivery: "scale",
-  Planning: "design",
+
+const CONFIDENCE_LABEL: Record<string, string> = {
+  high: "High",
+  medium: "Medium",
+  low: "Low",
 };
-const BOARD_CONFIDENCE_TO_BACKEND: Record<string, "high" | "medium" | "low"> = { High: "high", Medium: "medium", Low: "low" };
 
-interface RegisterRow {
-  id: string;
-  nameEn: string;
-  playName: string;
-  owner: string;
-  stage: string;
-  status: BackendStatus | null;
-  confidence: "high" | "medium" | "low" | null;
-  linked: number;
-  updatedAt: string | Date;
-  color: InitiativeColor;
-  isMyPlay: boolean;
+const PRIORITY_LABEL: Record<string, string> = {
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+function statusClass(status: string | null) {
+  if (status === "on_track") return "bg-emerald-50 text-emerald-700";
+  if (status === "at_risk") return "bg-amber-50 text-amber-700";
+  if (status === "off_track") return "bg-red-50 text-red-700";
+  return "bg-slate-50 text-slate-500";
 }
 
-const MOCK_ROWS: RegisterRow[] = MOCK_INITIATIVES.map((item) => ({
-  id: item.id,
-  nameEn: item.name,
-  playName: item.play,
-  owner: item.owner,
-  stage: BOARD_STAGE_TO_BACKEND[item.stage],
-  status: BOARD_STATUS_TO_BACKEND[item.status],
-  confidence: BOARD_CONFIDENCE_TO_BACKEND[item.confidence],
-  linked: item.linkedProjects,
-  updatedAt: item.lastUpdate,
-  color: item.color,
-  isMyPlay: item.isMyPlay,
-}));
-
-function badgeClass(tone: "neutral" | "emerald" | "amber" | "red") {
-  switch (tone) {
-    case "emerald":
-      return "bg-emerald-50 text-emerald-700";
-    case "amber":
-      return "bg-orange-50 text-orange-700";
-    case "red":
-      return "bg-red-50 text-red-700";
-    default:
-      return "bg-slate-50 text-slate-500";
-  }
+function priorityClass(priority: string) {
+  if (priority === "critical") return "bg-red-50 text-red-700";
+  if (priority === "high") return "bg-orange-50 text-orange-700";
+  if (priority === "medium") return "bg-blue-50 text-blue-700";
+  return "bg-slate-50 text-slate-600";
 }
 
-function statusTone(status: string | null): "neutral" | "emerald" | "amber" | "red" {
-  if (status === "on_track") return "emerald";
-  if (status === "at_risk") return "amber";
-  if (status === "off_track") return "red";
-  return "neutral";
+function formatDate(value: string | Date | null) {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
-export function RegisterView() {
+function formatBudget(value: string | null) {
+  if (!value) return "—";
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return value;
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+export function RegisterView({ defaultTab = "initiatives" }: Props) {
   const utils = trpc.useUtils();
+  const [tab, setTab] = useState<RegisterTab>(defaultTab);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const list = trpc.execution.initiative.list.useQuery({
+  const initiatives = trpc.execution.initiative.list.useQuery({
     status: filter === "on_track" || filter === "at_risk" || filter === "off_track" ? filter : undefined,
     scope: filter === "mine" ? "mine" : "all",
   });
+  const projects = trpc.execution.project.list.useQuery({});
   const nodes = trpc.strategy.nodes.useQuery();
-  const playNameById = new Map((nodes.data ?? []).map((node) => [node.id, node.nameEn]));
+  const people = trpc.governance.listApprovers.useQuery();
 
-  const usingMockData = !list.isLoading && ((list.data?.length ?? 0) === 0 || list.isError);
-
-  const realRows: RegisterRow[] = (list.data ?? []).map((item) => ({
-    id: item.id,
-    nameEn: item.nameEn,
-    playName: playNameById.get(item.strategicPlayNodeId) ?? "—",
-    owner: item.ownerUserId,
-    stage: item.stage,
-    status: item.latestStatus,
-    confidence: item.latestConfidence,
-    linked: item.hasJiraLink ? 1 : 0,
-    updatedAt: item.updatedAt,
-    color: colorForId(item.id),
-    isMyPlay: false,
-  }));
-
-  const mockRows = MOCK_ROWS.filter((row) => {
-    if (filter === "mine") return row.isMyPlay;
-    if (filter === "all") return true;
-    return row.status === filter;
-  });
-
-  const rows = (usingMockData ? mockRows : realRows).filter((row) =>
-    search.trim() ? row.nameEn.toLowerCase().includes(search.trim().toLowerCase()) : true
+  const playNameById = useMemo(
+    () => new Map((nodes.data ?? []).map((node) => [node.id, node.nameEn])),
+    [nodes.data],
   );
+  const initiativeNameById = useMemo(
+    () => new Map((initiatives.data ?? []).map((item) => [item.id, item.nameEn])),
+    [initiatives.data],
+  );
+  const personNameById = useMemo(
+    () => new Map((people.data ?? []).map((person) => [person.id, person.name])),
+    [people.data],
+  );
+
+  const query = search.trim().toLowerCase();
+  const filteredInitiatives = (initiatives.data ?? []).filter((item) => {
+    if (!query) return true;
+    return (
+      item.nameEn.toLowerCase().includes(query) ||
+      (playNameById.get(item.strategicPlayNodeId) ?? "").toLowerCase().includes(query) ||
+      (item.ownerDisplayName ?? "").toLowerCase().includes(query)
+    );
+  });
+  const filteredProjects = (projects.data ?? []).filter((project) => {
+    if (!query) return true;
+    return (
+      project.name.toLowerCase().includes(query) ||
+      (project.department ?? "").toLowerCase().includes(query) ||
+      (initiativeNameById.get(project.parentInitiativeId ?? "") ?? "").toLowerCase().includes(query) ||
+      (personNameById.get(project.ownerUserId) ?? "").toLowerCase().includes(query)
+    );
+  });
 
   return (
     <div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-2" data-testid="initiative-filter-chips">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              data-testid={`filter-chip-${f.key}`}
-              onClick={() => setFilter(f.key)}
-              className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium transition ${
-                filter === f.key ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="inline-flex w-fit rounded-xl border border-slate-200 bg-white p-1">
+          <button
+            type="button"
+            onClick={() => setTab("initiatives")}
+            className={`flex items-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-semibold transition ${
+              tab === "initiatives" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <Target className="h-4 w-4" />
+            Initiatives
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${tab === "initiatives" ? "bg-white/20" : "bg-slate-100"}`}>
+              {initiatives.data?.length ?? 0}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("projects")}
+            className={`flex items-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-semibold transition ${
+              tab === "projects" ? "bg-violet-600 text-white" : "text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <FolderKanban className="h-4 w-4" />
+            Projects
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${tab === "projects" ? "bg-white/20" : "bg-slate-100"}`}>
+              {projects.data?.length ?? 0}
+            </span>
+          </button>
         </div>
+
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search register..."
-              className="w-full rounded-lg border border-slate-200 py-2 pl-8 pr-3 text-[13px] outline-none focus:border-blue-400 sm:w-56"
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={`Search ${tab}...`}
+              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-8 pr-3 text-[13px] outline-none focus:border-blue-400 sm:w-64"
             />
           </div>
-          <button
-            data-testid="new-initiative-button"
-            onClick={() => setCreating(true)}
-            className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-700"
-          >
-            <Plus className="h-4 w-4" />
-            New Initiative
-          </button>
+          {tab === "initiatives" && (
+            <button
+              data-testid="new-initiative-button"
+              onClick={() => setCreating(true)}
+              className="flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-blue-700"
+            >
+              <Plus className="h-4 w-4" /> New Initiative
+            </button>
+          )}
         </div>
       </div>
 
-      {usingMockData && (
-        <div className="mt-4 flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3.5 py-2.5 text-[12.5px] text-blue-700">
-          <Sparkles className="h-3.5 w-3.5 shrink-0" />
-          Showing sample data — connect the Execution API to see live initiatives.
+      {tab === "initiatives" && (
+        <>
+          <div className="mt-4 flex flex-wrap gap-2" data-testid="initiative-filter-chips">
+            {FILTERS.map((item) => (
+              <button
+                key={item.key}
+                data-testid={`filter-chip-${item.key}`}
+                onClick={() => setFilter(item.key)}
+                className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-medium transition ${
+                  filter === item.key ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[820px] text-start text-[13px]" data-testid="initiative-register-grid">
+                <thead className="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 text-start font-medium">Initiative</th>
+                    <th className="px-4 py-3 text-start font-medium">Strategic Play</th>
+                    <th className="px-4 py-3 text-start font-medium">Owner</th>
+                    <th className="px-4 py-3 text-start font-medium">Stage</th>
+                    <th className="px-4 py-3 text-start font-medium">Status</th>
+                    <th className="px-4 py-3 text-start font-medium">Confidence</th>
+                    <th className="px-4 py-3 text-start font-medium">Projects</th>
+                    <th className="px-4 py-3 text-start font-medium">Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredInitiatives.map((item) => (
+                    <tr key={item.id} data-testid="initiative-row" className="border-t border-slate-100 hover:bg-slate-50">
+                      <td className="px-4 py-3">
+                        <Link href={`/initiatives-projects/${item.id}`} className="font-semibold text-slate-900 hover:text-blue-700 hover:underline">
+                          {item.nameEn}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{playNameById.get(item.strategicPlayNodeId) ?? "—"}</td>
+                      <td className="px-4 py-3 text-slate-600">{item.ownerDisplayName ?? personNameById.get(item.ownerUserId) ?? "—"}</td>
+                      <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">{STAGE_LABEL[item.stage] ?? item.stage}</span></td>
+                      <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${statusClass(item.latestStatus)}`}>{item.latestStatus ? STATUS_LABEL[item.latestStatus] : "No status"}</span></td>
+                      <td className="px-4 py-3 text-slate-600">{item.latestConfidence ? CONFIDENCE_LABEL[item.latestConfidence] : "—"}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-700">{item.linkedProjectCount}</td>
+                      <td className="px-4 py-3 text-slate-400">{formatDate(item.updatedAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {initiatives.isLoading && <p className="p-7 text-center text-[13px] text-slate-400">Loading persisted initiatives…</p>}
+            {initiatives.isError && <p className="p-7 text-center text-[13px] text-red-500">Could not load persisted initiatives.</p>}
+            {!initiatives.isLoading && !initiatives.isError && filteredInitiatives.length === 0 && <p className="p-8 text-center text-[13px] text-slate-400">No persisted initiatives match this view.</p>}
+          </div>
+        </>
+      )}
+
+      {tab === "projects" && (
+        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          <div className="border-b border-slate-100 px-4 py-3">
+            <h3 className="text-sm font-semibold text-slate-900">Persisted Projects</h3>
+            <p className="mt-0.5 text-xs text-slate-500">Standalone and initiative-linked projects stored in Execution.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[920px] text-start text-[13px]" data-testid="project-register-grid">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-start font-medium">Project</th>
+                  <th className="px-4 py-3 text-start font-medium">Parent Initiative</th>
+                  <th className="px-4 py-3 text-start font-medium">Owner</th>
+                  <th className="px-4 py-3 text-start font-medium">Department</th>
+                  <th className="px-4 py-3 text-start font-medium">Priority</th>
+                  <th className="px-4 py-3 text-start font-medium">Budget</th>
+                  <th className="px-4 py-3 text-start font-medium">Dates</th>
+                  <th className="px-4 py-3 text-start font-medium">Links</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProjects.map((project) => (
+                  <tr key={project.id} data-testid="project-row" className="border-t border-slate-100 hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-slate-900">{project.name}</div>
+                      {project.description && <div className="mt-0.5 max-w-[280px] truncate text-[11px] text-slate-400">{project.description}</div>}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{project.parentInitiativeId ? initiativeNameById.get(project.parentInitiativeId) ?? "Linked initiative" : "Standalone"}</td>
+                    <td className="px-4 py-3 text-slate-600">{personNameById.get(project.ownerUserId) ?? "—"}</td>
+                    <td className="px-4 py-3 text-slate-600">{project.department ?? "—"}</td>
+                    <td className="px-4 py-3"><span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${priorityClass(project.priority)}`}>{PRIORITY_LABEL[project.priority] ?? project.priority}</span></td>
+                    <td className="px-4 py-3 font-medium text-slate-700">{formatBudget(project.budgetAmount)}</td>
+                    <td className="px-4 py-3 text-[11px] text-slate-500">{formatDate(project.startDate)}<span className="mx-1">→</span>{formatDate(project.endDate)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        {project.jiraBoardUrl && <a href={project.jiraBoardUrl} target="_blank" rel="noreferrer" title="Open Jira" className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50 hover:text-blue-600"><ExternalLink className="h-3.5 w-3.5" /></a>}
+                        {project.confluenceSpaceUrl && <a href={project.confluenceSpaceUrl} target="_blank" rel="noreferrer" title="Open Confluence" className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50 hover:text-blue-600"><Link2 className="h-3.5 w-3.5" /></a>}
+                        {!project.jiraBoardUrl && !project.confluenceSpaceUrl && <span className="text-slate-300">—</span>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {projects.isLoading && <p className="p-7 text-center text-[13px] text-slate-400">Loading persisted projects…</p>}
+          {projects.isError && <p className="p-7 text-center text-[13px] text-red-500">Could not load persisted projects.</p>}
+          {!projects.isLoading && !projects.isError && filteredProjects.length === 0 && <p className="p-8 text-center text-[13px] text-slate-400">No persisted projects yet. Create one from the main Execution view.</p>}
         </div>
       )}
 
@@ -180,108 +305,13 @@ export function RegisterView() {
           onClose={() => setCreating(false)}
           onCreated={async () => {
             setCreating(false);
-            await utils.execution.initiative.list.invalidate();
+            await Promise.all([
+              utils.execution.initiative.list.invalidate(),
+              utils.execution.project.list.invalidate(),
+            ]);
           }}
         />
       )}
-
-      {/* Desktop / tablet: full grid. */}
-      <div className="mt-5 hidden overflow-hidden rounded-2xl border border-slate-200 bg-white sm:block">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-start text-[13px]" data-testid="initiative-register-grid">
-            <thead className="bg-slate-50 text-slate-500">
-              <tr>
-                <th className="px-4 py-2.5 text-start font-medium">Initiative</th>
-                <th className="px-4 py-2.5 text-start font-medium">Play</th>
-                <th className="px-4 py-2.5 text-start font-medium">Owner</th>
-                <th className="px-4 py-2.5 text-start font-medium">Stage</th>
-                <th className="px-4 py-2.5 text-start font-medium">Status</th>
-                <th className="px-4 py-2.5 text-start font-medium">Confidence</th>
-                <th className="px-4 py-2.5 text-start font-medium">Linked</th>
-                <th className="px-4 py-2.5 text-start font-medium">Last Update</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} data-testid="initiative-row" className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-3">
-                    <Link href={`/initiatives-projects/${row.id}`} className="flex items-center gap-2 font-semibold text-slate-900 hover:underline">
-                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${COLOR_TOKENS[row.color].dot}`} />
-                      {row.nameEn}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{row.playName}</td>
-                  <td className="px-4 py-3 text-slate-400"><span className="break-all">{row.owner}</span></td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClass("neutral")}`}>
-                      {STAGE_LABEL[row.stage] ?? row.stage}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClass(statusTone(row.status))}`}>
-                      {row.status ? STATUS_LABEL[row.status] : "No status yet"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{row.confidence ? CONFIDENCE_LABEL[row.confidence] : "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{row.linked}</td>
-                  <td className="px-4 py-3 text-slate-400">{new Date(row.updatedAt).toLocaleDateString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {list.isLoading && !usingMockData && <p className="p-6 text-center text-[13px] text-slate-400">Loading…</p>}
-        {rows.length === 0 && !list.isLoading && (
-          <p className="p-8 text-center text-[13px] text-slate-400">No initiatives match this filter yet.</p>
-        )}
-      </div>
-
-      {/* Mobile: stacked cards instead of a cramped table. */}
-      <div className="mt-5 space-y-2.5 sm:hidden">
-        {rows.map((row) => (
-          <Link
-            key={row.id}
-            href={`/initiatives-projects/${row.id}`}
-            data-testid="initiative-row"
-            className="block rounded-2xl border border-slate-200 bg-white p-4"
-          >
-            <div className="flex items-center gap-2">
-              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${COLOR_TOKENS[row.color].dot}`} />
-              <span className="font-semibold text-slate-900">{row.nameEn}</span>
-            </div>
-            <p className="mt-0.5 text-[12px] text-slate-400">{row.playName}</p>
-            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClass("neutral")}`}>
-                {STAGE_LABEL[row.stage] ?? row.stage}
-              </span>
-              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${badgeClass(statusTone(row.status))}`}>
-                {row.status ? STATUS_LABEL[row.status] : "No status yet"}
-              </span>
-              {row.confidence && (
-                <span className="rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500">
-                  {CONFIDENCE_LABEL[row.confidence]} confidence
-                </span>
-              )}
-            </div>
-            <div className="mt-2.5 flex items-center justify-between text-[11.5px] text-slate-400">
-              <span className="truncate">{row.owner}</span>
-              <span>{new Date(row.updatedAt).toLocaleDateString()}</span>
-            </div>
-          </Link>
-        ))}
-        {rows.length === 0 && !list.isLoading && (
-          <p className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-[13px] text-slate-400">
-            No initiatives match this filter yet.
-          </p>
-        )}
-      </div>
     </div>
   );
-}
-
-const PALETTE: InitiativeColor[] = ["sky", "violet", "emerald", "purple", "red", "orange", "pink", "amber"];
-function colorForId(id: string): InitiativeColor {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  return PALETTE[hash % PALETTE.length];
 }
