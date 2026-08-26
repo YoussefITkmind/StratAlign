@@ -27,6 +27,7 @@ import { CreateProjectModal } from "@/components/initiatives/CreateProjectModal"
 const MAX_ASSISTANT_CONTEXT_INITIATIVES = 30;
 
 type ViewKey = "cards" | "kanban" | "gantt" | "register";
+type RegisterTab = "initiatives" | "projects";
 
 const VIEWS: { key: ViewKey; label: string; icon: typeof LayoutGrid }[] = [
   { key: "cards", label: "Cards", icon: LayoutGrid },
@@ -40,6 +41,7 @@ const DEPARTMENTS = ["All Departments", ...Array.from(new Set(MOCK_INITIATIVES.m
 
 export function InitiativesBoardPage() {
   const [view, setView] = useState<ViewKey>("cards");
+  const [registerDefaultTab, setRegisterDefaultTab] = useState<RegisterTab>("initiatives");
   const [priority, setPriority] = useState<(typeof PRIORITIES)[number]>("All Priority");
   const [status, setStatus] = useState("All Status");
   const [department, setDepartment] = useState("All Departments");
@@ -49,8 +51,9 @@ export function InitiativesBoardPage() {
   const [creatingProject, setCreatingProject] = useState(false);
   const utils = trpc.useUtils();
 
-  // Real execution data, fetched independently of the (still mock-backed)
-  // board below — this is what grounds the assistant.
+  // The Cards/Kanban/Gantt presentations are still based on their legacy demo
+  // dataset. The Register is the persisted execution source of truth and now
+  // contains both real initiatives and real projects.
   const initiativeListQuery = trpc.execution.initiative.list.useQuery({ scope: "all" });
   const assistantData = useMemo(() => {
     const rows = initiativeListQuery.data ?? [];
@@ -121,7 +124,7 @@ export function InitiativesBoardPage() {
             <span className="hidden sm:inline">Export</span>
           </button>
           <button
-            onClick={() => setBudgetLocked((v) => !v)}
+            onClick={() => setBudgetLocked((value) => !value)}
             className={`flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-[13px] font-medium transition ${
               budgetLocked ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" : "border-amber-200 bg-amber-50 text-amber-700"
             }`}
@@ -139,32 +142,32 @@ export function InitiativesBoardPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search initiatives..."
                 className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-[13px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 sm:w-60"
               />
             </div>
             <div className="flex flex-wrap items-center gap-1.5 rounded-full bg-slate-100 p-1">
-              {PRIORITIES.map((p) => (
+              {PRIORITIES.map((item) => (
                 <button
-                  key={p}
-                  onClick={() => setPriority(p)}
+                  key={item}
+                  onClick={() => setPriority(item)}
                   className={`rounded-full px-3 py-1.5 text-[12.5px] font-medium transition ${
-                    priority === p ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-200"
+                    priority === item ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-200"
                   }`}
                 >
-                  {p}
+                  {item}
                 </button>
               ))}
             </div>
             <div className="relative">
               <select
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onChange={(event) => setStatus(event.target.value)}
                 className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-[13px] text-slate-600 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
               >
-                {["All Status", "Draft", "In Progress", "On Track", "At Risk", "Behind"].map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                {["All Status", "Draft", "In Progress", "On Track", "At Risk", "Behind"].map((item) => (
+                  <option key={item} value={item}>{item}</option>
                 ))}
               </select>
               <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -172,11 +175,11 @@ export function InitiativesBoardPage() {
             <div className="relative">
               <select
                 value={department}
-                onChange={(e) => setDepartment(e.target.value)}
+                onChange={(event) => setDepartment(event.target.value)}
                 className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-[13px] text-slate-600 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
               >
-                {DEPARTMENTS.map((d) => (
-                  <option key={d} value={d}>{d}</option>
+                {DEPARTMENTS.map((item) => (
+                  <option key={item} value={item}>{item}</option>
                 ))}
               </select>
               <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -192,19 +195,16 @@ export function InitiativesBoardPage() {
               onClick={() => setCreating(true)}
               className="flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-700"
             >
-              <Plus className="h-4 w-4" />
-              Create Initiative
+              <Plus className="h-4 w-4" /> Create Initiative
             </button>
             <button
               onClick={() => setCreatingProject(true)}
               className="flex items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-violet-700"
             >
-              <Layers className="h-4 w-4" />
-              Create Project
+              <Layers className="h-4 w-4" /> Create Project
             </button>
             <button className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">
-              <Link2 className="h-4 w-4" />
-              Link Initiative
+              <Link2 className="h-4 w-4" /> Link Initiative
             </button>
           </div>
         </>
@@ -214,7 +214,7 @@ export function InitiativesBoardPage() {
         {view === "cards" && <CardsView initiatives={filtered} />}
         {view === "kanban" && <KanbanView initiatives={filtered} />}
         {view === "gantt" && <GanttView initiatives={filtered} />}
-        {view === "register" && <RegisterView />}
+        {view === "register" && <RegisterView key={registerDefaultTab} defaultTab={registerDefaultTab} />}
       </div>
 
       {creating && (
@@ -222,6 +222,7 @@ export function InitiativesBoardPage() {
           onClose={() => setCreating(false)}
           onCreated={async () => {
             setCreating(false);
+            setRegisterDefaultTab("initiatives");
             await utils.execution.initiative.list.invalidate();
             setView("register");
           }}
@@ -233,10 +234,12 @@ export function InitiativesBoardPage() {
           onClose={() => setCreatingProject(false)}
           onCreated={async () => {
             setCreatingProject(false);
+            setRegisterDefaultTab("projects");
             await Promise.all([
               utils.execution.project.list.invalidate(),
               utils.execution.initiative.list.invalidate(),
             ]);
+            setView("register");
           }}
         />
       )}
