@@ -1,8 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, ChevronDown, Sparkles, X, Check } from "lucide-react";
+import { Search, ChevronDown, Sparkles, Check } from "lucide-react";
 import { trpc } from "@/lib/trpc/client";
+import SyncInvestigationModal, {
+  type SyncInvestigationResultView,
+} from "@/components/data-integrations/SyncInvestigationModal";
 
 const LOG_STATUS_META: Record<string, { label: string; text: string; dot: string }> = {
   SUCCESS: { label: "Success", text: "text-emerald-600", dot: "bg-emerald-500" },
@@ -10,6 +13,7 @@ const LOG_STATUS_META: Record<string, { label: string; text: string; dot: string
   PARTIAL: { label: "Partial", text: "text-orange-600", dot: "bg-orange-500" },
   RUNNING: { label: "Running", text: "text-blue-600", dot: "bg-blue-500 animate-pulse" },
 };
+const UNKNOWN_LOG_STATUS_META = { label: "Unknown", text: "text-slate-500", dot: "bg-slate-400" };
 
 export default function SyncLogsTab({ search }: { search: string }) {
   const query = trpc.integrations.syncLogs.list.useQuery();
@@ -19,8 +23,11 @@ export default function SyncLogsTab({ search }: { search: string }) {
   const [intOpen, setIntOpen] = useState(false);
   const [filter, setFilter] = useState("All");
   const [selected, setSelected] = useState<string[]>([]);
-  const [aiOpen, setAiOpen] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
+  const [investigating, setInvestigating] = useState<{ id: string; integration: string } | null>(null);
+  const [result, setResult] = useState<SyncInvestigationResultView | null>(null);
+  const [investigationError, setInvestigationError] = useState<string | null>(null);
+
+  const investigation = trpc.integrations.syncLogs.investigate.useMutation();
 
   const integrations = useMemo(
     () => ["All Integrations", ...Array.from(new Set(logs.map((l) => l.integration)))],
@@ -54,15 +61,33 @@ export default function SyncLogsTab({ search }: { search: string }) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }
 
-  function runInvestigation() {
-    setAiOpen(true);
-    setAiLoading(true);
-    setTimeout(() => setAiLoading(false), 1600);
+  async function runInvestigation(log: { id: string; integration: string }) {
+    if (investigation.isPending) return;
+    setInvestigating({ id: log.id, integration: log.integration });
+    setResult(null);
+    setInvestigationError(null);
+    try {
+      const diagnosis = await investigation.mutateAsync({ syncLogId: log.id });
+      setResult(diagnosis);
+    } catch (error) {
+      setInvestigationError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Unable to investigate this sync run. Try again.",
+      );
+    }
   }
+
+  function closeInvestigation() {
+    setInvestigating(null);
+    setResult(null);
+    setInvestigationError(null);
+  }
+
+  const firstFailed = logs.find((l) => l.status === "FAILED");
 
   return (
     <div>
-      {/* Stats */}
       <div className="grid grid-cols-3 gap-4 sm:grid-cols-6">
         <Stat label="SUCCESSFUL" value={counts.Success} color="text-emerald-600" />
         <Stat label="FAILED" value={counts.Failed} color="text-red-600" />
@@ -72,233 +97,58 @@ export default function SyncLogsTab({ search }: { search: string }) {
         <Stat label="RECORDS OUT" value={`${Math.round(recordsOut / 1000)}K`} color="text-slate-700" />
       </div>
 
-      {/* AI banner */}
-      {failedCount > 0 && (
+      {failedCount > 0 && firstFailed && (
         <div className="mt-5 flex items-center justify-between gap-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3.5">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-600 text-white">
-              <Sparkles className="h-4 w-4" />
-            </span>
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-600 text-white"><Sparkles className="h-4 w-4" /></span>
             <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-slate-900">AI Sync Drop Investigator</p>
-                <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">
-                  Possible AI feature
-                </span>
-              </div>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {failedCount} failed {failedCount === 1 ? "sync" : "syncs"} detected — AI can
-                analyse logs to identify root causes and suggest fixes.
-              </p>
+              <div className="flex items-center gap-2"><p className="text-sm font-semibold text-slate-900">AI Sync Investigator</p><span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">AI-assisted</span></div>
+              <p className="mt-0.5 text-xs text-slate-500">{failedCount} failed {failedCount === 1 ? "sync" : "syncs"} detected — AI can analyse the recorded logs to suggest a likely cause and next steps.</p>
             </div>
           </div>
-          <button
-            onClick={runInvestigation}
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-violet-700"
-          >
-            <Sparkles className="h-3.5 w-3.5" />
-            Investigate with AI
-          </button>
+          <button onClick={() => runInvestigation(firstFailed)} disabled={investigation.isPending} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-violet-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"><Sparkles className="h-3.5 w-3.5" />Investigate latest failure</button>
         </div>
       )}
 
-      {/* Filters */}
       <div className="mt-5 flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[180px] max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            readOnly
-            value={search}
-            placeholder="Search logs..."
-            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
-          />
-        </div>
+        <div className="relative flex-1 min-w-[180px] max-w-xs"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input readOnly value={search} placeholder="Search logs..." className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100" /></div>
         <div className="relative">
-          <button
-            onClick={() => setIntOpen(!intOpen)}
-            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-          >
-            {integration}
-            <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-          </button>
-          {intOpen && (
-            <div className="absolute left-0 z-30 mt-1.5 w-56 animate-fade-in rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
-              {integrations.map((o) => (
-                <button
-                  key={o}
-                  onClick={() => {
-                    setIntegration(o);
-                    setIntOpen(false);
-                  }}
-                  className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  {o}
-                  {o === integration && <Check className="h-3.5 w-3.5 text-blue-600" />}
-                </button>
-              ))}
-            </div>
-          )}
+          <button onClick={() => setIntOpen(!intOpen)} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">{integration}<ChevronDown className="h-3.5 w-3.5 text-slate-400" /></button>
+          {intOpen && <div className="absolute left-0 z-30 mt-1.5 w-56 animate-fade-in rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">{integrations.map((o) => <button key={o} onClick={() => { setIntegration(o); setIntOpen(false); }} className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">{o}{o === integration && <Check className="h-3.5 w-3.5 text-blue-600" />}</button>)}</div>}
         </div>
-        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
-          {filters.map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-                filter === f ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
+        <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">{filters.map((f) => <button key={f} onClick={() => setFilter(f)} className={`rounded-md px-3 py-1.5 text-xs font-medium ${filter === f ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-800"}`}>{f}</button>)}</div>
         <span className="ml-auto text-sm text-slate-400">{filtered.length} logs</span>
       </div>
 
-      {/* Table */}
       <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="w-full min-w-[860px] text-left text-sm">
-          <thead>
-            <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wide text-slate-400">
-              <th className="w-10 px-4 py-3">
-                <input
-                  type="checkbox"
-                  checked={selected.length === filtered.length && filtered.length > 0}
-                  onChange={toggleAll}
-                  className="h-3.5 w-3.5 rounded border-slate-300"
-                />
-              </th>
-              <th className="px-2 py-3 font-medium">Integration</th>
-              <th className="px-2 py-3 font-medium">Started</th>
-              <th className="px-2 py-3 font-medium">Duration</th>
-              <th className="px-2 py-3 font-medium">Status</th>
-              <th className="px-2 py-3 font-medium">Records In</th>
-              <th className="px-2 py-3 font-medium">Records Out</th>
-              <th className="px-2 py-3 font-medium">Errors</th>
-              <th className="px-4 py-3 font-medium">Message</th>
-            </tr>
-          </thead>
+          <thead><tr className="border-b border-slate-100 text-[11px] uppercase tracking-wide text-slate-400"><th className="w-10 px-4 py-3"><input type="checkbox" checked={selected.length === filtered.length && filtered.length > 0} onChange={toggleAll} className="h-3.5 w-3.5 rounded border-slate-300" /></th><th className="px-2 py-3 font-medium">Integration</th><th className="px-2 py-3 font-medium">Started</th><th className="px-2 py-3 font-medium">Duration</th><th className="px-2 py-3 font-medium">Status</th><th className="px-2 py-3 font-medium">Records In</th><th className="px-2 py-3 font-medium">Records Out</th><th className="px-2 py-3 font-medium">Errors</th><th className="px-4 py-3 font-medium">Message</th><th className="px-4 py-3 text-right font-medium">Investigate</th></tr></thead>
           <tbody>
             {filtered.map((l) => {
-              const meta = LOG_STATUS_META[l.status];
+              const meta = LOG_STATUS_META[l.status] ?? UNKNOWN_LOG_STATUS_META;
               return (
                 <tr key={l.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(l.id)}
-                      onChange={() => toggleOne(l.id)}
-                      className="h-3.5 w-3.5 rounded border-slate-300"
-                    />
-                  </td>
-                  <td className="px-2 py-3">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-semibold text-white ${l.color}`}
-                      >
-                        {l.icon}
-                      </span>
-                      <span className="font-medium text-slate-800">{l.integration}</span>
-                    </div>
-                  </td>
-                  <td className="px-2 py-3 whitespace-nowrap text-slate-500">{l.started}</td>
-                  <td className="px-2 py-3 whitespace-nowrap text-slate-500">{l.duration}</td>
-                  <td className="px-2 py-3">
-                    <span className={`flex items-center gap-1.5 font-medium ${meta.text}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
-                      {meta.label}
-                    </span>
-                  </td>
-                  <td className="px-2 py-3 text-slate-600">{l.recordsIn ?? "—"}</td>
-                  <td className="px-2 py-3 text-slate-600">{l.recordsOut ?? "—"}</td>
-                  <td className="px-2 py-3">
-                    {l.errors ? (
-                      <span className="text-orange-600 font-medium">{l.errors}</span>
-                    ) : (
-                      <span className="text-slate-300">—</span>
-                    )}
-                  </td>
+                  <td className="px-4 py-3"><input type="checkbox" checked={selected.includes(l.id)} onChange={() => toggleOne(l.id)} className="h-3.5 w-3.5 rounded border-slate-300" /></td>
+                  <td className="px-2 py-3"><div className="flex items-center gap-2"><span className={`flex h-6 w-6 items-center justify-center rounded-md text-[10px] font-semibold text-white ${l.color}`}>{l.icon}</span><span className="font-medium text-slate-800">{l.integration}</span></div></td>
+                  <td className="px-2 py-3 whitespace-nowrap text-slate-500">{l.started}</td><td className="px-2 py-3 whitespace-nowrap text-slate-500">{l.duration}</td>
+                  <td className="px-2 py-3"><span className={`flex items-center gap-1.5 font-medium ${meta.text}`}><span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />{meta.label}</span></td>
+                  <td className="px-2 py-3 text-slate-600">{l.recordsIn ?? "—"}</td><td className="px-2 py-3 text-slate-600">{l.recordsOut ?? "—"}</td>
+                  <td className="px-2 py-3">{l.errors ? <span className="text-orange-600 font-medium">{l.errors}</span> : <span className="text-slate-300">—</span>}</td>
                   <td className="px-4 py-3 max-w-xs text-slate-500">{l.message}</td>
+                  <td className="px-4 py-3 text-right"><button onClick={() => runInvestigation(l)} disabled={investigation.isPending} aria-label={`Investigate ${l.integration} sync run`} className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"><Sparkles className="h-3.5 w-3.5" />{investigation.isPending && investigating?.id === l.id ? "Investigating…" : "Investigate"}</button></td>
                 </tr>
               );
             })}
-            {!query.isLoading && filtered.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-400">
-                  No logs match your filters.
-                </td>
-              </tr>
-            )}
+            {!query.isLoading && filtered.length === 0 && <tr><td colSpan={10} className="px-4 py-10 text-center text-sm text-slate-400">No logs match your filters.</td></tr>}
           </tbody>
         </table>
       </div>
 
-      {/* AI modal */}
-      {aiOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
-          onClick={() => setAiOpen(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg animate-fade-in rounded-2xl bg-white p-5 shadow-xl"
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-600 text-white">
-                  <Sparkles className="h-4 w-4" />
-                </span>
-                <div>
-                  <p className="text-base font-semibold text-slate-900">Sync Drop Investigator</p>
-                  <p className="text-xs text-slate-400">Analyzing {failedCount} failed syncs</p>
-                </div>
-              </div>
-              <button onClick={() => setAiOpen(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {aiLoading ? (
-              <div className="mt-6 flex flex-col items-center gap-3 py-8">
-                <div className="h-8 w-8 animate-spin-slow rounded-full border-2 border-violet-200 border-t-violet-600" />
-                <p className="text-sm text-slate-400">Reviewing sync logs and error patterns…</p>
-              </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold text-slate-700">Snowflake ETL Service</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Root cause: the stored API token expired. Reconnect the integration and
-                    rotate the credential in API Keys to restore syncing.
-                  </p>
-                </div>
-                <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                  <p className="text-xs font-semibold text-slate-700">NetSuite ERP</p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Root cause: connection timed out. This usually means the account is
-                    disconnected — reconnect it from the Connections tab.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setAiOpen(false)}
-                  className="mt-2 w-full rounded-lg bg-slate-900 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                >
-                  Got it
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {investigating && <SyncInvestigationModal integration={investigating.integration} isLoading={investigation.isPending} error={investigationError} result={result} onClose={closeInvestigation} />}
     </div>
   );
 }
 
 function Stat({ label, value, color }: { label: string; value: number | string; color: string }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-center">
-      <p className={`text-2xl font-bold ${color}`}>{value}</p>
-      <p className="mt-0.5 text-[10px] font-medium tracking-wide text-slate-400">{label}</p>
-    </div>
-  );
+  return <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-center"><p className={`text-2xl font-bold ${color}`}>{value}</p><p className="mt-0.5 text-[10px] font-medium tracking-wide text-slate-400">{label}</p></div>;
 }
