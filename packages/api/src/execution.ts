@@ -5,6 +5,9 @@ import { protectedProcedure, requireRole, router } from "./index";
 export const initiativeStageSchema = z.enum(["design", "pilot", "execute", "scale", "done"]);
 export const initiativeStatusSchema = z.enum(["on_track", "at_risk", "off_track"]);
 export const confidenceSchema = z.enum(["high", "medium", "low"]);
+export const prioritySchema = z.enum(["critical", "high", "medium", "low"]);
+
+const optionalUrl = z.string().trim().url().max(2048).nullable().optional();
 
 export const initiativeRegisterInputSchema = z.object({
   nameEn: z.string().trim().min(1).max(300),
@@ -12,6 +15,37 @@ export const initiativeRegisterInputSchema = z.object({
   strategicPlayNodeId: z.string().uuid(),
   ownerUserId: z.string().uuid(),
   stage: initiativeStageSchema,
+  priority: prioritySchema.optional(),
+  department: z.string().trim().max(200).nullable().optional(),
+  startDate: z.coerce.date().nullable().optional(),
+  endDate: z.coerce.date().nullable().optional(),
+  tags: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
+  budgetAmount: z.coerce.number().nonnegative().max(1_000_000_000_000).nullable().optional(),
+  currency: z.string().trim().length(3).optional(),
+}).strict().refine(
+  (input) => !input.startDate || !input.endDate || input.endDate >= input.startDate,
+  { message: "End date cannot be before the start date", path: ["endDate"] },
+);
+
+export const projectCreateInputSchema = z.object({
+  name: z.string().trim().min(1).max(300),
+  description: z.string().trim().max(4000).nullable().optional(),
+  department: z.string().trim().max(200).nullable().optional(),
+  ownerUserId: z.string().uuid(),
+  parentInitiativeId: z.string().uuid().nullable().optional(),
+  startDate: z.coerce.date().nullable().optional(),
+  endDate: z.coerce.date().nullable().optional(),
+  budgetAmount: z.coerce.number().nonnegative().max(1_000_000_000_000).nullable().optional(),
+  priority: prioritySchema.optional(),
+  jiraBoardUrl: optionalUrl,
+  confluenceSpaceUrl: optionalUrl,
+}).strict().refine(
+  (input) => !input.startDate || !input.endDate || input.endDate >= input.startDate,
+  { message: "End date cannot be before the start date", path: ["endDate"] },
+);
+
+export const projectListInputSchema = z.object({
+  parentInitiativeId: z.string().uuid().optional(),
 }).strict();
 
 export const initiativeTransitionInputSchema = z.object({
@@ -57,6 +91,24 @@ export interface ExecutionListItemView {
   latestConfidence: "high" | "medium" | "low" | null;
   hasJiraLink: boolean;
   linkedProjectCount: number;
+  updatedAt: Date;
+}
+
+export interface ProjectApiView {
+  id: string;
+  name: string;
+  description: string | null;
+  department: string | null;
+  ownerUserId: string;
+  parentInitiativeId: string | null;
+  startDate: Date | null;
+  endDate: Date | null;
+  budgetAmount: string | null;
+  priority: "critical" | "high" | "medium" | "low";
+  jiraBoardUrl: string | null;
+  confluenceSpaceUrl: string | null;
+  createdBy: string;
+  createdAt: Date;
   updatedAt: Date;
 }
 
@@ -116,9 +168,31 @@ export interface ExecutionServiceContract {
     strategicPlayNodeId: string;
     ownerUserId: string;
     stage: "design" | "pilot" | "execute" | "scale" | "done";
+    priority?: "critical" | "high" | "medium" | "low";
+    department?: string | null;
+    startDate?: Date | null;
+    endDate?: Date | null;
+    tags?: string[];
+    budgetAmount?: number | null;
+    currency?: string;
     actorUserId: string;
     actorIsSeoAdministrator: boolean;
   }): Promise<unknown>;
+  createProject(input: {
+    name: string;
+    description?: string | null;
+    department?: string | null;
+    ownerUserId: string;
+    parentInitiativeId?: string | null;
+    startDate?: Date | null;
+    endDate?: Date | null;
+    budgetAmount?: number | null;
+    priority?: "critical" | "high" | "medium" | "low";
+    jiraBoardUrl?: string | null;
+    confluenceSpaceUrl?: string | null;
+    actorUserId: string;
+  }): Promise<ProjectApiView>;
+  listProjects(input: { parentInitiativeId?: string }): Promise<ProjectApiView[]>;
   transitionStage(input: {
     initiativeId: string;
     toStage: "design" | "pilot" | "execute" | "scale" | "done";
@@ -185,7 +259,8 @@ function mapExecutionError(error: unknown): never {
     code === "EXECUTION_INVALID_PLAY" ||
     code === "EXECUTION_INITIATIVE_NOT_FOUND" ||
     code === "EXECUTION_JIRA_LINK_NOT_FOUND" ||
-    code === "EXECUTION_INVALID_STAGE_TRANSITION"
+    code === "EXECUTION_INVALID_STAGE_TRANSITION" ||
+    code === "EXECUTION_INVALID_DATE_RANGE"
   ) {
     throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Invalid execution request" });
   }
@@ -251,6 +326,29 @@ export const executionRouter = router({
             actorIsSeoAdministrator: ctx.authorizationState.roles.includes("seo_administrator"),
           });
         } catch (error) { return mapExecutionError(error); }
+      }),
+  }),
+  project: router({
+    list: protectedProcedure
+      .input(projectListInputSchema)
+      .query(async ({ ctx, input }) => {
+        try {
+          return await service(ctx).listProjects(input);
+        } catch (error) {
+          return mapExecutionError(error);
+        }
+      }),
+    create: requireRole("initiative_owner", "objective_play_owner", "seo_administrator")
+      .input(projectCreateInputSchema)
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await service(ctx).createProject({
+            ...input,
+            actorUserId: ctx.session.user.id,
+          });
+        } catch (error) {
+          return mapExecutionError(error);
+        }
       }),
   }),
   milestone: router({
