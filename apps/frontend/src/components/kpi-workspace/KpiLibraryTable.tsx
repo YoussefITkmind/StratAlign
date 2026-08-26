@@ -98,7 +98,7 @@ export default function KpiLibraryTable() {
         favorable: true,
         trend: [0, 0, 0, 0, 0, 0],
         freq: item.version.frequency === "quarterly" ? "Quarterly" : "Monthly",
-        approval: item.version.publishedAt ? "approved" : "draft",
+        approval: item.version.publishedAt ? "approved" : item.version.approvalCaseId ? "pending" : "draft",
         status: "on-track",
         description: item.version.descriptionEn ?? undefined,
       }));
@@ -173,8 +173,6 @@ export default function KpiLibraryTable() {
         </span>
       </div>
 
-      {/* Below md: a stacked card per KPI — the 12-column grid has no room to
-          breathe on a phone, so it adapts instead of squeezing or scrolling. */}
       <div className="divide-y divide-gray-100 md:hidden">
         {rows.map((row) => (
           <KpiCard key={row.id} row={row} onSelect={() => setSelectedKpi(row)} />
@@ -182,7 +180,6 @@ export default function KpiLibraryTable() {
         {rows.length === 0 && <p className="p-10 text-center text-sm text-gray-400">No KPIs match these filters.</p>}
       </div>
 
-      {/* md and up: the full table. */}
       <div className="hidden md:block">
         <div className={`grid ${GRID_COLS} items-center gap-3 border-b border-gray-100 px-4 py-2.5`}>
           <div />
