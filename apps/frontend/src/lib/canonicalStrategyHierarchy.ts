@@ -66,21 +66,25 @@ export const CANONICAL_STATE_LABELS: Record<CanonicalStrategyNodeState, string> 
 export const CANONICAL_RELATIONSHIP_LABELS: Record<CanonicalStrategyEdgeType, string> = {
   contains: "Contains",
   executed_by: "Executed by",
-  belongs_to_portfolio: "Belongs to portfolio",
+  belongs_to_portfolio: "Grouped under",
   aligns_to: "Aligns to",
 };
 
 export const ROOT_NODE_TYPES: readonly CanonicalStrategyNodeType[] = ["corporate_strategy"];
 
+// Mirrors strategy.relationship_rules after migration
+// 20260812184500_wire_portfolio_relationship_rules. Portfolio/AoF grouping is
+// deliberately represented by contains + belongs_to_portfolio rather than the
+// older strategic_play -> area_of_focus aligns_to relationship.
 const CHILD_RELATIONSHIPS: Record<CanonicalStrategyNodeType, readonly ChildRelationship[]> = {
   corporate_strategy: [{ type: "theme", edgeType: "contains" }],
   theme: [{ type: "objective", edgeType: "contains" }],
   objective: [{ type: "strategic_play", edgeType: "executed_by" }],
   strategic_play: [
     { type: "portfolio", edgeType: "belongs_to_portfolio" },
-    { type: "area_of_focus", edgeType: "aligns_to" },
+    { type: "area_of_focus", edgeType: "belongs_to_portfolio" },
   ],
-  portfolio: [],
+  portfolio: [{ type: "area_of_focus", edgeType: "contains" }],
   area_of_focus: [],
 };
 
