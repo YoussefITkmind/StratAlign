@@ -162,7 +162,14 @@ export async function seedCanonicalStrategy(prisma: PrismaClient): Promise<void>
     return;
   }
 
-  await prisma.planVersion.upsert({
+  // The strategy schema deliberately permits only one ACTIVE plan at a time.
+  // Reuse that plan when it already exists, otherwise create our demo plan.
+  const existingActivePlan = await prisma.planVersion.findFirst({
+    where: { status: "ACTIVE" },
+    orderBy: { opensAt: "desc" },
+  });
+
+  const targetPlan = existingActivePlan ?? await prisma.planVersion.upsert({
     where: { id: IDS.plan },
     update: {
       name: DEMO_PLAN_NAME,
@@ -178,6 +185,12 @@ export async function seedCanonicalStrategy(prisma: PrismaClient): Promise<void>
     },
   });
 
+  console.log(
+    existingActivePlan
+      ? `Using existing active strategy plan: “${targetPlan.name}”`
+      : `Created active demo strategy plan: “${targetPlan.name}”`,
+  );
+
   for (const node of NODES) {
     await prisma.strategyNode.upsert({
       where: { id: node.id },
@@ -185,7 +198,7 @@ export async function seedCanonicalStrategy(prisma: PrismaClient): Promise<void>
         type: node.type,
         nameEn: node.nameEn,
         nameAr: node.nameAr,
-        planVersionId: IDS.plan,
+        planVersionId: targetPlan.id,
         state: "ACTIVE",
       },
       create: {
@@ -193,7 +206,7 @@ export async function seedCanonicalStrategy(prisma: PrismaClient): Promise<void>
         type: node.type,
         nameEn: node.nameEn,
         nameAr: node.nameAr,
-        planVersionId: IDS.plan,
+        planVersionId: targetPlan.id,
         state: "ACTIVE",
         createdBy: administrator.id,
       },
@@ -207,7 +220,7 @@ export async function seedCanonicalStrategy(prisma: PrismaClient): Promise<void>
           fromNodeId: edge.from,
           toNodeId: edge.to,
           edgeType: edge.type,
-          planVersionId: IDS.plan,
+          planVersionId: targetPlan.id,
         },
       },
       update: {},
@@ -215,7 +228,7 @@ export async function seedCanonicalStrategy(prisma: PrismaClient): Promise<void>
         fromNodeId: edge.from,
         toNodeId: edge.to,
         edgeType: edge.type,
-        planVersionId: IDS.plan,
+        planVersionId: targetPlan.id,
       },
     });
   }
@@ -242,6 +255,6 @@ export async function seedCanonicalStrategy(prisma: PrismaClient): Promise<void>
   }
 
   console.log(
-    `Canonical strategy seeded: ${NODES.length} nodes, ${EDGES.length} relationships in “${DEMO_PLAN_NAME}”`,
+    `Canonical strategy seeded: ${NODES.length} nodes, ${EDGES.length} relationships in “${targetPlan.name}”`,
   );
 }
