@@ -22,6 +22,7 @@ import { KanbanView } from "@/components/initiatives/KanbanView";
 import { GanttView } from "@/components/initiatives/GanttView";
 import { RegisterView } from "@/components/initiatives/RegisterView";
 import { CreateInitiativeModal } from "@/components/initiatives/CreateInitiativeModal";
+import { CreateProjectModal } from "@/components/initiatives/CreateProjectModal";
 
 const MAX_ASSISTANT_CONTEXT_INITIATIVES = 30;
 
@@ -45,10 +46,9 @@ export function InitiativesBoardPage() {
   const [search, setSearch] = useState("");
   const [budgetLocked, setBudgetLocked] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(false);
   const utils = trpc.useUtils();
 
-  // Real execution data, fetched independently of the (still mock-backed)
-  // board below — this is what grounds the assistant.
   const initiativeListQuery = trpc.execution.initiative.list.useQuery({ scope: "all" });
   const assistantData = useMemo(() => {
     const rows = initiativeListQuery.data ?? [];
@@ -100,107 +100,32 @@ export function InitiativesBoardPage() {
               const Icon = v.icon;
               const active = view === v.key;
               return (
-                <button
-                  key={v.key}
-                  data-testid={`view-tab-${v.key}`}
-                  onClick={() => setView(v.key)}
-                  className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition sm:px-3 ${
-                    active ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">{v.label}</span>
+                <button key={v.key} data-testid={`view-tab-${v.key}`} onClick={() => setView(v.key)} className={`flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition sm:px-3 ${active ? "bg-blue-600 text-white shadow-sm" : "text-slate-500 hover:bg-slate-50"}`}>
+                  <Icon className="h-3.5 w-3.5" /><span className="hidden sm:inline">{v.label}</span>
                 </button>
               );
             })}
           </div>
-          <button className="flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">
-            <Download className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Export</span>
-          </button>
-          <button
-            onClick={() => setBudgetLocked((v) => !v)}
-            className={`flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-[13px] font-medium transition ${
-              budgetLocked ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" : "border-amber-200 bg-amber-50 text-amber-700"
-            }`}
-          >
-            <Lock className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Budget {budgetLocked ? "Locked" : "Unlocked"}</span>
-          </button>
+          <button className="flex shrink-0 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Download className="h-3.5 w-3.5" /><span className="hidden sm:inline">Export</span></button>
+          <button onClick={() => setBudgetLocked((v) => !v)} className={`flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-2 text-[13px] font-medium transition ${budgetLocked ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50" : "border-amber-200 bg-amber-50 text-amber-700"}`}><Lock className="h-3.5 w-3.5" /><span className="hidden sm:inline">Budget {budgetLocked ? "Locked" : "Unlocked"}</span></button>
         </div>
       </div>
 
       {view !== "register" && (
         <>
           <div className="mt-5 flex flex-wrap items-center gap-2.5">
-            <div className="relative w-full sm:w-auto">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search initiatives..."
-                className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-[13px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 sm:w-60"
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5 rounded-full bg-slate-100 p-1">
-              {PRIORITIES.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPriority(p)}
-                  className={`rounded-full px-3 py-1.5 text-[12.5px] font-medium transition ${
-                    priority === p ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-200"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-            <div className="relative">
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-[13px] text-slate-600 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-              >
-                {["All Status", "Draft", "In Progress", "On Track", "At Risk", "Behind"].map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            </div>
-            <div className="relative">
-              <select
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-[13px] text-slate-600 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-              >
-                {DEPARTMENTS.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            </div>
-            <span className="ml-auto shrink-0 text-[12.5px] text-slate-400">
-              {filtered.length} of {MOCK_INITIATIVES.length} initiatives
-            </span>
+            <div className="relative w-full sm:w-auto"><Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search initiatives..." className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-8 pr-3 text-[13px] outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 sm:w-60" /></div>
+            <div className="flex flex-wrap items-center gap-1.5 rounded-full bg-slate-100 p-1">{PRIORITIES.map((p) => <button key={p} onClick={() => setPriority(p)} className={`rounded-full px-3 py-1.5 text-[12.5px] font-medium transition ${priority === p ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-200"}`}>{p}</button>)}</div>
+            <div className="relative"><select value={status} onChange={(e) => setStatus(e.target.value)} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-[13px] text-slate-600 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400">{["All Status", "Draft", "In Progress", "On Track", "At Risk", "Behind"].map((s) => <option key={s} value={s}>{s}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" /></div>
+            <div className="relative"><select value={department} onChange={(e) => setDepartment(e.target.value)} className="appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-3 pr-8 text-[13px] text-slate-600 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400">{DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}</select><ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" /></div>
+            <span className="ml-auto shrink-0 text-[12.5px] text-slate-400">{filtered.length} of {MOCK_INITIATIVES.length} initiatives</span>
           </div>
 
           <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <span className="text-[12.5px] font-semibold uppercase tracking-wide text-slate-400">New:</span>
-            <button
-              onClick={() => setCreating(true)}
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-700"
-            >
-              <Plus className="h-4 w-4" />
-              Create Initiative
-            </button>
-            <button className="flex items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-violet-700">
-              <Layers className="h-4 w-4" />
-              Create Project
-            </button>
-            <button className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">
-              <Link2 className="h-4 w-4" />
-              Link Initiative
-            </button>
+            <button onClick={() => setCreating(true)} className="flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-blue-700"><Plus className="h-4 w-4" />Create Initiative</button>
+            <button onClick={() => setCreatingProject(true)} className="flex items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-violet-700"><Layers className="h-4 w-4" />Create Project</button>
+            <button className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50"><Link2 className="h-4 w-4" />Link Initiative</button>
           </div>
         </>
       )}
@@ -213,14 +138,11 @@ export function InitiativesBoardPage() {
       </div>
 
       {creating && (
-        <CreateInitiativeModal
-          onClose={() => setCreating(false)}
-          onCreated={async () => {
-            setCreating(false);
-            await utils.execution.initiative.list.invalidate();
-            setView("register");
-          }}
-        />
+        <CreateInitiativeModal onClose={() => setCreating(false)} onCreated={async () => { setCreating(false); await utils.execution.initiative.list.invalidate(); setView("register"); }} />
+      )}
+
+      {creatingProject && (
+        <CreateProjectModal onClose={() => setCreatingProject(false)} onCreated={async () => { setCreatingProject(false); await utils.execution.initiative.list.invalidate(); setView("register"); }} />
       )}
     </div>
   );
