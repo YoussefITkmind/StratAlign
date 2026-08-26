@@ -21,16 +21,40 @@ export const strategyRouter = router({
     .query(({ ctx, input }) => forward(() => backend(ctx).strategy.edge.list.query(input))),
   stagedChanges: authenticatedProcedure.input(z.object({ planVersionId: id }).strict())
     .query(({ ctx, input }) => forward(() => backend(ctx).strategy.stagedChange.list.query(input))),
+
+  createPlan: authenticatedProcedure
+    .input(z.object({ name: z.string().trim().min(1).max(300) }).strict())
+    .mutation(({ ctx, input }) => forward(() => backend(ctx).strategy.planVersion.create.mutate(input))),
+
   createNode: authenticatedProcedure.input(z.object({
     type: z.enum(["corporate_strategy", "theme", "objective", "strategic_play", "portfolio", "area_of_focus"]),
     nameEn: z.string().trim().min(1).max(300), nameAr: z.string().trim().min(1).max(300),
     planVersionId: id, approvalCaseId: id.optional(), stagedChangeId: id.optional(),
   }).strict()).mutation(({ ctx, input }) => forward(() => backend(ctx).strategy.node.create.mutate(input))),
+
+  updateNode: authenticatedProcedure
+    .input(z.object({
+      nodeId: id,
+      nameEn: z.string().trim().min(1).max(300).optional(),
+      nameAr: z.string().trim().min(1).max(300).optional(),
+      approvalCaseId: id.optional(),
+    }).strict())
+    .mutation(({ ctx, input }) => forward(() => backend(ctx).strategy.node.update.mutate(input))),
+
+  retireNode: authenticatedProcedure
+    .input(z.object({ nodeId: id, approvalCaseId: id.optional() }).strict())
+    .mutation(({ ctx, input }) => forward(() => backend(ctx).strategy.node.retire.mutate(input))),
+
+  assignOwner: authenticatedProcedure
+    .input(z.object({ nodeId: id, ownerUserId: z.string().trim().min(1) }).strict())
+    .mutation(({ ctx, input }) => forward(() => backend(ctx).strategy.owner.assign.mutate(input))),
+
   linkEdge: authenticatedProcedure.input(z.object({
     fromNodeId: id, toNodeId: id,
     edgeType: z.enum(["contains", "executed_by", "belongs_to_portfolio", "aligns_to"]),
     planVersionId: id, approvalCaseId: id.optional(), stagedChangeId: id.optional(),
   }).strict()).mutation(({ ctx, input }) => forward(() => backend(ctx).strategy.edge.link.mutate(input))),
+
   openPlan: authenticatedProcedure.input(z.object({ planVersionId: id }).strict())
     .mutation(({ ctx, input }) => forward(() => backend(ctx).strategy.planVersion.open.mutate(input))),
 });
