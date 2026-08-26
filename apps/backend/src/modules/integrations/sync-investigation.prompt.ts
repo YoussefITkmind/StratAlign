@@ -3,6 +3,14 @@ import type {
   SyncInvestigationEvidence,
   VolumeEvidence,
 } from "./sync-investigation.evidence";
+import {
+  MAX_ACTION_ITEMS,
+  MAX_ACTION_LENGTH,
+  MAX_CAUSE_LENGTH,
+  MAX_DIAGNOSIS_LENGTH,
+  MAX_EVIDENCE_ITEMS,
+  MAX_EVIDENCE_LENGTH,
+} from "./sync-investigation.schema";
 
 export const SYNC_INVESTIGATION_FEATURE = "integrations.sync-investigation";
 
@@ -30,15 +38,20 @@ export const SYNC_INVESTIGATION_SYSTEM_PROMPT = [
   "9. `confidence` reflects how well the evidence supports `likelyCause`: \"high\" only when an explicit error message names the cause, \"medium\" when the evidence points clearly in one direction, \"low\" otherwise. Never use \"high\" when `insufficientData` is true.",
   "10. Be concise. `diagnosis` is at most two short sentences. Every list item is one short line. This is read inside a table row, not a report.",
   "11. Write in English only.",
+  "12. Hard length limits, enforced exactly as stated — a response that exceeds any of these is rejected outright, not truncated:",
+  `    - "diagnosis": at most ${MAX_DIAGNOSIS_LENGTH} characters.`,
+  `    - "likelyCause": at most ${MAX_CAUSE_LENGTH} characters, or null.`,
+  `    - "evidence": a JSON array of at most ${MAX_EVIDENCE_ITEMS} strings, each at most ${MAX_EVIDENCE_LENGTH} characters. Fewer, shorter items are always safe; do not pad the array to reach the maximum.`,
+  `    - "recommendedActions": a JSON array of at most ${MAX_ACTION_ITEMS} strings, each at most ${MAX_ACTION_LENGTH} characters.`,
   "",
   "Respond with a single JSON object and nothing else. No prose, no code fence, no trailing commentary.",
-  "Shape:",
+  "Shape (illustrative item count only — stay within the limits in rule 12):",
   "{",
   '  "diagnosis": "…",',
   '  "likelyCause": "…" or null,',
   '  "confidence": "low" | "medium" | "high",',
-  '  "evidence": ["…"],',
-  '  "recommendedActions": ["…"],',
+  '  "evidence": ["…", "…"],',
+  '  "recommendedActions": ["…", "…"],',
   '  "insufficientData": false',
   "}",
 ].join("\n");
