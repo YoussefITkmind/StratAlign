@@ -259,8 +259,6 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
       const created = await createNode.mutateAsync({
         type: input.type,
         nameEn: input.name,
-        // The canonical schema still requires nameAr. Keep that storage detail
-        // internal by mirroring the English name instead of asking the user for it.
         nameAr: input.name,
         planVersionId: selectedPlan.id,
       });
@@ -298,8 +296,6 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
   }) => {
     setError(null);
     try {
-      // Existing bilingual storage is left untouched on edit; users manage only
-      // the primary display name from this page.
       await updateNode.mutateAsync({ nodeId: input.node.id, nameEn: input.name });
       if (input.ownerUserId) await assignOwner.mutateAsync({ nodeId: input.node.id, ownerUserId: input.ownerUserId });
       setEditor(null);
@@ -479,8 +475,8 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
           />
         ))}
 
-        {!loading && !queryError && view === "list" && flatRows.map(({ node, depth }) => (
-          <ListRow key={node.id} node={node} depth={depth} selected={node.id === selectedNodeId} ownerName={peopleById.get(node.createdBy) ?? "Unassigned"} onSelect={() => setSelectedNodeId(node.id)} />
+        {!loading && !queryError && view === "list" && flatRows.map(({ node, depth }, rowIndex) => (
+          <ListRow key={`${node.id}:${depth}:${rowIndex}`} node={node} depth={depth} selected={node.id === selectedNodeId} ownerName={peopleById.get(node.createdBy) ?? "Unassigned"} onSelect={() => setSelectedNodeId(node.id)} />
         ))}
       </div>
 
