@@ -84,17 +84,22 @@ export const strategyEdgeTypeSchema = enumParser(STRATEGY_EDGE_TYPES);
 export const planVersionStateSchema = enumParser(PLAN_VERSION_STATES);
 
 /**
- * Authoritative TSD-03 relationship set.
- * objective -> strategic_play is represented only by executed_by. We do not
- * duplicate the same pair with aligns_to. Area of Focus alignment belongs to
- * Strategic Play, which keeps the graph unambiguous for cardinality checks.
+ * Authoritative relationship set matching the database after
+ * 20260812184500_wire_portfolio_relationship_rules.
+ *
+ * Objective -> Strategic Play uses executed_by.
+ * Portfolio -> Area of Focus uses contains.
+ * Strategic Play can be grouped under at most one Portfolio and at most one
+ * Area of Focus through belongs_to_portfolio. The older Strategic Play ->
+ * Area of Focus aligns_to rule was deliberately retired by that migration.
  */
 export const DEFAULT_RELATIONSHIP_RULES: readonly RelationshipRule[] = [
   { fromType: "corporate_strategy", toType: "theme", edgeType: "contains", minCount: 1, maxCount: null },
   { fromType: "theme", toType: "objective", edgeType: "contains", minCount: 1, maxCount: null },
   { fromType: "objective", toType: "strategic_play", edgeType: "executed_by", minCount: 1, maxCount: null },
   { fromType: "strategic_play", toType: "portfolio", edgeType: "belongs_to_portfolio", minCount: 0, maxCount: 1 },
-  { fromType: "strategic_play", toType: "area_of_focus", edgeType: "aligns_to", minCount: 0, maxCount: null },
+  { fromType: "portfolio", toType: "area_of_focus", edgeType: "contains", minCount: 0, maxCount: null },
+  { fromType: "strategic_play", toType: "area_of_focus", edgeType: "belongs_to_portfolio", minCount: 0, maxCount: 1 },
 ] as const;
 
 export class InvalidStrategyRelationshipError extends Error {
