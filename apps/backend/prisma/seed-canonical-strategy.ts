@@ -48,11 +48,7 @@ type NodeType =
   | "PORTFOLIO"
   | "AREA_OF_FOCUS";
 
-type EdgeType =
-  | "CONTAINS"
-  | "EXECUTED_BY"
-  | "BELONGS_TO_PORTFOLIO"
-  | "ALIGNS_TO";
+type EdgeType = "CONTAINS" | "EXECUTED_BY" | "BELONGS_TO_PORTFOLIO";
 
 interface DemoNode {
   id: string;
@@ -111,6 +107,11 @@ const NODES: DemoNode[] = [
   { id: IDS.talentFocus, type: "AREA_OF_FOCUS", nameEn: "Leadership & Future Skills", nameAr: "القيادة ومهارات المستقبل" },
 ];
 
+// Current authoritative strategy relationships after
+// 20260812184500_wire_portfolio_relationship_rules:
+//   portfolio -> area_of_focus uses CONTAINS
+//   strategic_play -> area_of_focus uses BELONGS_TO_PORTFOLIO
+// The earlier ALIGNS_TO relationship is intentionally no longer seeded.
 const EDGES: DemoEdge[] = [
   { from: IDS.corporate, to: IDS.growth, type: "CONTAINS" },
   { from: IDS.corporate, to: IDS.customer, type: "CONTAINS" },
@@ -136,15 +137,28 @@ const EDGES: DemoEdge[] = [
   { from: IDS.criticalCapabilities, to: IDS.skillsAcademy, type: "EXECUTED_BY" },
   { from: IDS.innovationPipeline, to: IDS.ventureStudio, type: "EXECUTED_BY" },
 
+  { from: IDS.commercialPortfolio, to: IDS.europeFocus, type: "CONTAINS" },
+  { from: IDS.digitalPortfolio, to: IDS.customerDigitalFocus, type: "CONTAINS" },
+  { from: IDS.transformationPortfolio, to: IDS.aiAutomationFocus, type: "CONTAINS" },
+  { from: IDS.transformationPortfolio, to: IDS.talentFocus, type: "CONTAINS" },
+
+  { from: IDS.crossSell, to: IDS.commercialPortfolio, type: "BELONGS_TO_PORTFOLIO" },
   { from: IDS.emeaExpansion, to: IDS.commercialPortfolio, type: "BELONGS_TO_PORTFOLIO" },
+  { from: IDS.partnerNetwork, to: IDS.commercialPortfolio, type: "BELONGS_TO_PORTFOLIO" },
+  { from: IDS.cxRedesign, to: IDS.digitalPortfolio, type: "BELONGS_TO_PORTFOLIO" },
   { from: IDS.selfService, to: IDS.digitalPortfolio, type: "BELONGS_TO_PORTFOLIO" },
   { from: IDS.automation, to: IDS.transformationPortfolio, type: "BELONGS_TO_PORTFOLIO" },
+  { from: IDS.controlTower, to: IDS.transformationPortfolio, type: "BELONGS_TO_PORTFOLIO" },
+  { from: IDS.skillsAcademy, to: IDS.transformationPortfolio, type: "BELONGS_TO_PORTFOLIO" },
+  { from: IDS.ventureStudio, to: IDS.transformationPortfolio, type: "BELONGS_TO_PORTFOLIO" },
 
-  { from: IDS.emeaExpansion, to: IDS.europeFocus, type: "ALIGNS_TO" },
-  { from: IDS.cxRedesign, to: IDS.customerDigitalFocus, type: "ALIGNS_TO" },
-  { from: IDS.selfService, to: IDS.customerDigitalFocus, type: "ALIGNS_TO" },
-  { from: IDS.automation, to: IDS.aiAutomationFocus, type: "ALIGNS_TO" },
-  { from: IDS.skillsAcademy, to: IDS.talentFocus, type: "ALIGNS_TO" },
+  { from: IDS.emeaExpansion, to: IDS.europeFocus, type: "BELONGS_TO_PORTFOLIO" },
+  { from: IDS.partnerNetwork, to: IDS.europeFocus, type: "BELONGS_TO_PORTFOLIO" },
+  { from: IDS.cxRedesign, to: IDS.customerDigitalFocus, type: "BELONGS_TO_PORTFOLIO" },
+  { from: IDS.selfService, to: IDS.customerDigitalFocus, type: "BELONGS_TO_PORTFOLIO" },
+  { from: IDS.automation, to: IDS.aiAutomationFocus, type: "BELONGS_TO_PORTFOLIO" },
+  { from: IDS.skillsAcademy, to: IDS.talentFocus, type: "BELONGS_TO_PORTFOLIO" },
+  { from: IDS.ventureStudio, to: IDS.aiAutomationFocus, type: "BELONGS_TO_PORTFOLIO" },
 ];
 
 export async function seedCanonicalStrategy(prisma: PrismaClient): Promise<void> {
@@ -162,8 +176,6 @@ export async function seedCanonicalStrategy(prisma: PrismaClient): Promise<void>
     return;
   }
 
-  // The strategy schema deliberately permits only one ACTIVE plan at a time.
-  // Reuse that plan when it already exists, otherwise create our demo plan.
   const existingActivePlan = await prisma.planVersion.findFirst({
     where: { status: "ACTIVE" },
     orderBy: { opensAt: "desc" },
