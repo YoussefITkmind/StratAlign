@@ -9,7 +9,7 @@ import { StrategyNode, NodeType, NodeStatus } from "@/types/strategy";
 import { TYPE_CONFIG, STATUS_CONFIG } from "@/lib/strategyConfig";
 import { collectIds, filterTree, flatten, isFiltering, findNode, Filters } from "@/lib/treeUtils";
 import { trpc } from "@/lib/trpc/client";
-import { usePublishAssistantContext } from "@/lib/assistant/assistant-context";
+import { useAssistant, usePublishAssistantContext } from "@/lib/assistant/assistant-context";
 import TreeRow from "./TreeRow";
 import AddNodeModal, { NodeFormValues } from "./AddNodeModal";
 import NodeDetailPanel from "./NodeDetailPanel";
@@ -25,6 +25,7 @@ type ModalState = { mode: "add"; parentId: string } | { mode: "edit"; node: Stra
 
 export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
   const utils = trpc.useUtils();
+  const assistant = useAssistant();
   const treeQuery = trpc.strategyHierarchy.tree.useQuery();
   const createMutation = trpc.strategyHierarchy.createNode.useMutation();
   const updateMutation = trpc.strategyHierarchy.updateNode.useMutation();
@@ -73,6 +74,14 @@ export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
     };
   }, [tree, totalNodes]);
   usePublishAssistantContext("strategy_hierarchy", assistantEntity, assistantData);
+
+  const generateStrategyBrief = () => {
+    if (!tree || assistant.isSending) return;
+    assistant.open();
+    assistant.sendMessage(
+      "Generate a concise strategy brief for the strategy hierarchy currently on screen. Summarize the strategic direction, major themes and objectives, progress signals, key risks or gaps visible in the hierarchy, and the most important management priorities. Ground the brief only in the strategy data provided in this page context.",
+    );
+  };
 
   const toggle = (id: string) =>
     setExpandedIds((prev) => {
@@ -168,8 +177,12 @@ export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
           <button className="flex items-center gap-1.5 rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
             <Share2 className="h-4 w-4" /> Share
           </button>
-          <button className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-blue-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:opacity-90">
-            <Sparkles className="h-4 w-4" /> Generate Strategy Brief
+          <button
+            onClick={generateStrategyBrief}
+            disabled={!tree || assistant.isSending}
+            className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-blue-500 px-4 py-2 text-sm font-medium text-white shadow-sm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {assistant.isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Generate Strategy Brief
           </button>
           {canManageStrategy && (
             <button
@@ -226,18 +239,8 @@ export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
             <Minimize2 className="h-4 w-4" />
           </button>
           <div className="flex items-center rounded-full border border-gray-300 p-1">
-            <button
-              onClick={() => setView("tree")}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${view === "tree" ? "bg-gray-900 text-white" : "text-gray-600"}`}
-            >
-              <Network className="h-3.5 w-3.5" /> Tree
-            </button>
-            <button
-              onClick={() => setView("list")}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${view === "list" ? "bg-gray-900 text-white" : "text-gray-600"}`}
-            >
-              <LayoutList className="h-3.5 w-3.5" /> List
-            </button>
+            <button onClick={() => setView("tree")} className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${view === "tree" ? "bg-gray-900 text-white" : "text-gray-600"}`}><Network className="h-3.5 w-3.5" /> Tree</button>
+            <button onClick={() => setView("list")} className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ${view === "list" ? "bg-gray-900 text-white" : "text-gray-600"}`}><LayoutList className="h-3.5 w-3.5" /> List</button>
           </div>
         </div>
       </div>
@@ -247,122 +250,41 @@ export default function StrategyHierarchyPage({ canManageStrategy }: Props) {
         <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-gray-200 bg-white">
           <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
             <span>Name</span>
-            <div className="hidden items-center gap-6 md:flex">
-              <span className="w-20">Own</span>
-              <span className="w-36">Progress</span>
-            </div>
+            <div className="hidden items-center gap-6 md:flex"><span className="w-20">Own</span><span className="w-36">Progress</span></div>
           </div>
 
-          {treeQuery.isLoading && (
-            <div className="flex items-center justify-center gap-2 px-4 py-16 text-sm text-gray-400">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading strategy hierarchy…
-            </div>
-          )}
-
-          {treeQuery.isError && (
-            <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center text-sm text-red-500">
-              <AlertTriangle className="h-5 w-5" />
-              Couldn&apos;t load the strategy hierarchy. Please try again.
-            </div>
-          )}
-
-          {!treeQuery.isLoading && !treeQuery.isError && !tree && (
-            <div className="px-4 py-16 text-center text-sm text-gray-400">No strategy data yet.</div>
-          )}
-
-          {tree && !filteredTree && (
-            <div className="px-4 py-16 text-center text-sm text-gray-400">No nodes match your filters.</div>
-          )}
+          {treeQuery.isLoading && <div className="flex items-center justify-center gap-2 px-4 py-16 text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin" /> Loading strategy hierarchy…</div>}
+          {treeQuery.isError && <div className="flex flex-col items-center justify-center gap-2 px-4 py-16 text-center text-sm text-red-500"><AlertTriangle className="h-5 w-5" />Couldn&apos;t load the strategy hierarchy. Please try again.</div>}
+          {!treeQuery.isLoading && !treeQuery.isError && !tree && <div className="px-4 py-16 text-center text-sm text-gray-400">No strategy data yet.</div>}
+          {tree && !filteredTree && <div className="px-4 py-16 text-center text-sm text-gray-400">No nodes match your filters.</div>}
 
           {filteredTree && view === "tree" && (
-            <TreeRow
-              node={filteredTree}
-              depth={0}
-              lines={[]}
-              hasNextSibling={false}
-              expandedIds={expandedIds}
-              forceExpanded={filtering}
-              onToggle={toggle}
-              canAddChild={canManageStrategy}
-              onAddChild={(id) => setModal({ mode: "add", parentId: id })}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-            />
+            <TreeRow node={filteredTree} depth={0} lines={[]} hasNextSibling={false} expandedIds={expandedIds} forceExpanded={filtering} onToggle={toggle} canAddChild={canManageStrategy} onAddChild={(id) => setModal({ mode: "add", parentId: id })} selectedId={selectedId} onSelect={setSelectedId} />
           )}
 
-          {filteredTree && view === "list" &&
-            listRows.map(({ node }) => {
-              const typeCfg = TYPE_CONFIG[node.type];
-              const statusCfg = STATUS_CONFIG[node.status];
-              const Icon = typeCfg.icon;
-              const isSelected = node.id === selectedId;
-              return (
-                <div
-                  key={node.id}
-                  onClick={() => setSelectedId(node.id)}
-                  className={`flex min-h-[52px] cursor-pointer flex-col justify-center gap-1.5 border-b border-gray-100 px-4 py-2.5 hover:bg-gray-50 md:h-[52px] md:flex-row md:items-center md:justify-between md:py-0 ${isSelected ? "bg-indigo-50/70 hover:bg-indigo-50/70" : ""}`}
-                >
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${typeCfg.bg}`}>
-                      <Icon className={`h-3.5 w-3.5 ${typeCfg.text}`} />
-                    </span>
-                    <span className="truncate text-[15px] text-gray-900">{node.name}</span>
-                    <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">{typeCfg.label}</span>
-                  </div>
-                  <div className="flex items-center gap-3 pl-[38px] md:shrink-0 md:gap-6 md:pl-0">
-                    <div className="flex shrink-0 items-center gap-2 md:w-20">
-                      <span className={`h-2 w-2 shrink-0 rounded-full ${statusCfg.dot}`} />
-                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${node.owner.color}`}>
-                        {node.owner.initials}
-                      </span>
-                    </div>
-                    <div className="flex min-w-0 flex-1 items-center gap-2 md:w-36 md:flex-none">
-                      <div className="h-1.5 min-w-[40px] flex-1 overflow-hidden rounded-full bg-gray-100 md:w-24 md:flex-none">
-                        <div className={`h-full rounded-full ${statusCfg.bar}`} style={{ width: `${node.progress}%` }} />
-                      </div>
-                      <span className="w-9 shrink-0 text-right text-sm text-gray-600">{node.progress}%</span>
-                    </div>
-                  </div>
+          {filteredTree && view === "list" && listRows.map(({ node }) => {
+            const typeCfg = TYPE_CONFIG[node.type];
+            const statusCfg = STATUS_CONFIG[node.status];
+            const Icon = typeCfg.icon;
+            const isSelected = node.id === selectedId;
+            return (
+              <div key={node.id} onClick={() => setSelectedId(node.id)} className={`flex min-h-[52px] cursor-pointer flex-col justify-center gap-1.5 border-b border-gray-100 px-4 py-2.5 hover:bg-gray-50 md:h-[52px] md:flex-row md:items-center md:justify-between md:py-0 ${isSelected ? "bg-indigo-50/70 hover:bg-indigo-50/70" : ""}`}>
+                <div className="flex min-w-0 items-center gap-2.5"><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${typeCfg.bg}`}><Icon className={`h-3.5 w-3.5 ${typeCfg.text}`} /></span><span className="truncate text-[15px] text-gray-900">{node.name}</span><span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">{typeCfg.label}</span></div>
+                <div className="flex items-center gap-3 pl-[38px] md:shrink-0 md:gap-6 md:pl-0">
+                  <div className="flex shrink-0 items-center gap-2 md:w-20"><span className={`h-2 w-2 shrink-0 rounded-full ${statusCfg.dot}`} /><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${node.owner.color}`}>{node.owner.initials}</span></div>
+                  <div className="flex min-w-0 flex-1 items-center gap-2 md:w-36 md:flex-none"><div className="h-1.5 min-w-[40px] flex-1 overflow-hidden rounded-full bg-gray-100 md:w-24 md:flex-none"><div className={`h-full rounded-full ${statusCfg.bar}`} style={{ width: `${node.progress}%` }} /></div><span className="w-9 shrink-0 text-right text-sm text-gray-600">{node.progress}%</span></div>
                 </div>
-              );
-            })}
+              </div>
+            );
+          })}
         </div>
 
-        {selectedNode && tree && (
-          <NodeDetailPanel
-            node={selectedNode}
-            isRoot={selectedNode.id === tree.id}
-            canManage={canManageStrategy}
-            onClose={() => setSelectedId(null)}
-            onSelect={setSelectedId}
-            onAddChild={(parentId) => setModal({ mode: "add", parentId })}
-            onEdit={(node) => setModal({ mode: "edit", node })}
-            onDelete={handleDelete}
-          />
-        )}
+        {selectedNode && tree && <NodeDetailPanel node={selectedNode} isRoot={selectedNode.id === tree.id} canManage={canManageStrategy} onClose={() => setSelectedId(null)} onSelect={setSelectedId} onAddChild={(parentId) => setModal({ mode: "add", parentId })} onEdit={(node) => setModal({ mode: "edit", node })} onDelete={handleDelete} />}
       </div>
       </div>
 
-      {canManageStrategy && modal?.mode === "add" && (
-        <AddNodeModal
-          tree={tree!}
-          defaultParentId={modal.parentId}
-          onClose={() => setModal(null)}
-          onAdd={handleAdd}
-          onEdit={handleEdit}
-        />
-      )}
-
-      {canManageStrategy && modal?.mode === "edit" && (
-        <AddNodeModal
-          tree={tree!}
-          defaultParentId={modal.node.id}
-          editNode={modal.node}
-          onClose={() => setModal(null)}
-          onAdd={handleAdd}
-          onEdit={handleEdit}
-        />
-      )}
+      {canManageStrategy && modal?.mode === "add" && <AddNodeModal tree={tree!} defaultParentId={modal.parentId} onClose={() => setModal(null)} onAdd={handleAdd} onEdit={handleEdit} />}
+      {canManageStrategy && modal?.mode === "edit" && <AddNodeModal tree={tree!} defaultParentId={modal.node.id} editNode={modal.node} onClose={() => setModal(null)} onAdd={handleAdd} onEdit={handleEdit} />}
     </div>
   );
 }
