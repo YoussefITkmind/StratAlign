@@ -249,8 +249,7 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
   const handleCreateNode = async (input: {
     parent: CanonicalStrategyTreeNode | null;
     type: CanonicalStrategyNodeType;
-    nameEn: string;
-    nameAr: string;
+    name: string;
     ownerUserId: string;
   }) => {
     if (!selectedPlan || selectedPlan.status !== "draft") return;
@@ -259,8 +258,10 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
     try {
       const created = await createNode.mutateAsync({
         type: input.type,
-        nameEn: input.nameEn,
-        nameAr: input.nameAr,
+        nameEn: input.name,
+        // The canonical schema still requires nameAr. Keep that storage detail
+        // internal by mirroring the English name instead of asking the user for it.
+        nameAr: input.name,
         planVersionId: selectedPlan.id,
       });
       if ("kind" in created) throw new Error("Draft strategy edit was unexpectedly staged for approval.");
@@ -282,7 +283,7 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
       }
 
       setEditor(null);
-      setNotice(`${CANONICAL_NODE_TYPE_LABELS[input.type]} “${input.nameEn}” created.`);
+      setNotice(`${CANONICAL_NODE_TYPE_LABELS[input.type]} “${input.name}” created.`);
       await refresh();
     } catch (cause) {
       if (createdNodeId) await retireNode.mutateAsync({ nodeId: createdNodeId }).catch(() => undefined);
@@ -292,16 +293,17 @@ export default function CanonicalStrategyHierarchyPage({ canManageStrategy }: Pr
 
   const handleUpdateNode = async (input: {
     node: CanonicalStrategyTreeNode;
-    nameEn: string;
-    nameAr: string;
+    name: string;
     ownerUserId: string;
   }) => {
     setError(null);
     try {
-      await updateNode.mutateAsync({ nodeId: input.node.id, nameEn: input.nameEn, nameAr: input.nameAr });
+      // Existing bilingual storage is left untouched on edit; users manage only
+      // the primary display name from this page.
+      await updateNode.mutateAsync({ nodeId: input.node.id, nameEn: input.name });
       if (input.ownerUserId) await assignOwner.mutateAsync({ nodeId: input.node.id, ownerUserId: input.ownerUserId });
       setEditor(null);
-      setNotice(`“${input.nameEn}” updated.`);
+      setNotice(`“${input.name}” updated.`);
       await refresh();
     } catch (cause) {
       setError(errorMessage(cause));
@@ -546,13 +548,10 @@ function HierarchyRow({ node, depth, lines, hasNextSibling, expandedIds, forceEx
           </div>
           <div className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-3">
             <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${typeStyle.bg}`}><Icon className={`h-3.5 w-3.5 ${typeStyle.text}`} /></span>
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className="truncate text-[15px] font-medium text-gray-900">{node.nameEn}</span>
-                <span className="hidden shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 xl:inline">{CANONICAL_NODE_TYPE_LABELS[node.type]}</span>
-                {node.relationshipFromParent && <span className="hidden shrink-0 text-[10px] text-gray-400 2xl:inline">{CANONICAL_RELATIONSHIP_LABELS[node.relationshipFromParent]}</span>}
-              </div>
-              <div className="truncate text-[11px] text-gray-400" dir="rtl">{node.nameAr}</div>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-[15px] font-medium text-gray-900">{node.nameEn}</span>
+              <span className="hidden shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 xl:inline">{CANONICAL_NODE_TYPE_LABELS[node.type]}</span>
+              {node.relationshipFromParent && <span className="hidden shrink-0 text-[10px] text-gray-400 2xl:inline">{CANONICAL_RELATIONSHIP_LABELS[node.relationshipFromParent]}</span>}
             </div>
             {canEdit && <div className="ml-auto hidden items-center gap-0.5 group-hover:flex">{allowedChildren.length > 0 && <button onClick={(event) => { event.stopPropagation(); onAdd(node); }} title="Add child" className="rounded p-1 text-gray-400 hover:bg-indigo-50 hover:text-indigo-600"><Plus className="h-3.5 w-3.5" /></button>}<button onClick={(event) => { event.stopPropagation(); onEdit(node); }} title="Edit" className="rounded p-1 text-gray-400 hover:bg-blue-50 hover:text-blue-600"><Edit3 className="h-3.5 w-3.5" /></button><button onClick={(event) => { event.stopPropagation(); onRetire(node); }} title="Retire" className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button></div>}
           </div>
@@ -588,22 +587,24 @@ function NodeEditorModal({ state, people, pending, onClose, onCreate, onUpdate }
   people: Array<{ id: string; name: string }>;
   pending: boolean;
   onClose: () => void;
-  onCreate: (input: { parent: CanonicalStrategyTreeNode | null; type: CanonicalStrategyNodeType; nameEn: string; nameAr: string; ownerUserId: string }) => Promise<void>;
-  onUpdate: (input: { node: CanonicalStrategyTreeNode; nameEn: string; nameAr: string; ownerUserId: string }) => Promise<void>;
+  onCreate: (input: { parent: CanonicalStrategyTreeNode | null; type: CanonicalStrategyNodeType; name: string; ownerUserId: string }) => Promise<void>;
+  onUpdate: (input: { node: CanonicalStrategyTreeNode; name: string; ownerUserId: string }) => Promise<void>;
 }) {
   const parent = state.mode === "create" ? state.parent : null;
-  const allowed = state.mode === "create" ? parent ? getAllowedChildRelationships(parent.type).map((item) => item.type) : (["corporate_strategy"] as CanonicalStrategyNodeType[]) : [state.node.type];
+  const allowed = state.mode === "create"
+    ? parent
+      ? getAllowedChildRelationships(parent.type).map((item) => item.type)
+      : (["corporate_strategy"] as CanonicalStrategyNodeType[])
+    : [state.node.type];
   const [type, setType] = useState<CanonicalStrategyNodeType>(allowed[0]!);
-  const [nameEn, setNameEn] = useState(state.mode === "edit" ? state.node.nameEn : "");
-  const [nameAr, setNameAr] = useState(state.mode === "edit" ? state.node.nameAr : "");
+  const [name, setName] = useState(state.mode === "edit" ? state.node.nameEn : "");
   const [ownerUserId, setOwnerUserId] = useState("");
-  const valid = Boolean(nameEn.trim() && nameAr.trim());
+  const valid = Boolean(name.trim());
 
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4"><div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"><div className="flex items-start justify-between"><div><h2 className="text-lg font-bold text-slate-900">{state.mode === "create" ? `Add ${CANONICAL_NODE_TYPE_LABELS[type]}` : `Edit ${CANONICAL_NODE_TYPE_LABELS[state.node.type]}`}</h2><p className="mt-1 text-sm text-slate-500">{parent ? `Under “${parent.nameEn}”` : "Root of this strategy plan"}</p></div><button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="h-5 w-5" /></button></div>
     {state.mode === "create" && allowed.length > 1 && <label className="mt-5 block text-sm font-semibold text-slate-700">Type<select value={type} onChange={(event) => setType(event.target.value as CanonicalStrategyNodeType)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm">{allowed.map((value) => <option key={value} value={value}>{CANONICAL_NODE_TYPE_LABELS[value]}</option>)}</select></label>}
-    <label className="mt-4 block text-sm font-semibold text-slate-700">English name<input value={nameEn} onChange={(event) => setNameEn(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" /></label>
-    <label className="mt-4 block text-sm font-semibold text-slate-700">Arabic name<input dir="rtl" value={nameAr} onChange={(event) => setNameAr(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" /></label>
+    <label className="mt-4 block text-sm font-semibold text-slate-700">Name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" /></label>
     <label className="mt-4 block text-sm font-semibold text-slate-700">Owner <span className="font-normal text-slate-400">(optional)</span><select value={ownerUserId} onChange={(event) => setOwnerUserId(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm"><option value="">No owner change</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
-    <div className="mt-6 flex justify-end gap-2"><button onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button disabled={!valid || pending} onClick={() => void (state.mode === "create" ? onCreate({ parent, type, nameEn: nameEn.trim(), nameAr: nameAr.trim(), ownerUserId }) : onUpdate({ node: state.node, nameEn: nameEn.trim(), nameAr: nameAr.trim(), ownerUserId }))} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{pending ? "Saving…" : state.mode === "create" ? "Add Node" : "Save Changes"}</button></div>
+    <div className="mt-6 flex justify-end gap-2"><button onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button disabled={!valid || pending} onClick={() => void (state.mode === "create" ? onCreate({ parent, type, name: name.trim(), ownerUserId }) : onUpdate({ node: state.node, name: name.trim(), ownerUserId }))} className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{pending ? "Saving…" : state.mode === "create" ? "Add Node" : "Save Changes"}</button></div>
   </div></div>;
 }
